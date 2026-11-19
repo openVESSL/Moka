@@ -298,6 +298,74 @@ mod tests {
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS, "locked even with the right password");
     }
 
+    /// Every route except a short public list refuses anonymous callers.
+    #[tokio::test]
+    async fn every_route_requires_sign_in() {
+        use utoipa::OpenApi;
+        let app = test_app().await;
+        let public = [
+            "GET /api/v1/health",
+            "GET /api/v1/auth/status",
+            "POST /api/v1/auth/setup",
+            "POST /api/v1/auth/login",
+            "POST /api/v1/auth/logout",
+        ];
+        let doc = serde_json::to_value(api::ApiDoc::openapi()).unwrap();
+        let mut routes: Vec<(String, String)> = Vec::new();
+        for (path, item) in doc["paths"].as_object().unwrap() {
+            for method in item.as_object().unwrap().keys() {
+                routes.push((method.to_uppercase(), path.clone()));
+            }
+        }
+        // routes that are not in the API document
+        for extra in [
+            "GET /api/v1/events",
+            "GET /api/v1/images/w342/abc.jpg",
+            "GET /api/v1/files/1/stream",
+            "GET /api/v1/hls/abc/index.m3u8",
+        ] {
+            let (m, p) = extra.split_once(' ').unwrap();
+            routes.push((m.into(), p.into()));
+        }
+        assert!(routes.len() > 40, "found {} routes", routes.len());
+
+        for (method, path) in routes {
+            let key = format!("{method} {path}");
+            if public.contains(&key.as_str()) {
+                continue;
+            }
+            // fill path parameters with something plausible
+            let uri: String = path
+                .split('/')
+                .map(|seg| if seg.starts_with('{') { "1" } else { seg })
+                .collect::<Vec<_>>()
+                .join("/");
+            let res = app.clone().oneshot(json(&method, &uri, "{}")).await.unwrap();
+            assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{key} answered without sign-in");
+        }
+    }
+
+    #[tokio::test]
+    async fn secrets_never_come_back_from_the_api() {
+        let app = test_app().await;
+        let creds = r#"{"username":"ana","password":"long enough"}"#;
+        let res = app.clone().oneshot(json("POST", "/api/v1/auth/setup", creds)).await.unwrap();
+        let c = res.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+        let body =
+            r#"{"name":"x","kind":"torznab","base_url":"http://idx.local","api_key":"SUPER-SECRET-KEY"}"#;
+        let res = app.clone().oneshot(authed("POST", "/api/v1/indexers", &c, body)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = r#"{"name":"q","base_url":"http://q.local","username":"u","password":"SUPER-SECRET-PW"}"#;
+        app.clone().oneshot(authed("POST", "/api/v1/download-clients", &c, body)).await.unwrap();
+        for uri in ["/api/v1/indexers", "/api/v1/download-clients"] {
+            let res = app.clone().oneshot(authed("GET", uri, &c, "")).await.unwrap();
+            let text =
+                String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+            assert!(!text.contains("SUPER-SECRET"), "{uri} leaked a secret: {text}");
+            assert!(text.contains("_set\":true"), "{uri} should say a secret is stored");
+        }
+    }
+
     #[tokio::test]
     async fn unknown_api_route_is_json_404() {
         let res = test_app().await.oneshot(json("GET", "/api/v1/nope", "")).await.unwrap();

@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::{Json, Router, routing::get, routing::post};
 use koda_core::Permissions;
 use koda_db::connectors::{DownloadClientInput, IndexerInput};
-use koda_download::{QbitConfig, Qbittorrent};
+use koda_download::{ClientConfig, Kind};
 use koda_indexers::{IndexerConfig, IndexerKind};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -197,7 +197,7 @@ async fn one_indexer(s: &AppState, id: i64) -> ApiResult<Json<Indexer>> {
 pub struct DownloadClient {
     pub id: i64,
     pub name: String,
-    /// qbittorrent
+    /// qbittorrent | transmission | sabnzbd
     pub kind: String,
     pub base_url: String,
     pub username: Option<String>,
@@ -224,9 +224,11 @@ impl From<koda_db::connectors::DownloadClient> for DownloadClient {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DownloadClientBody {
     pub name: String,
+    /// qbittorrent (default), transmission or sabnzbd
+    pub kind: Option<String>,
     pub base_url: String,
     pub username: Option<String>,
-    /// Omit when editing to keep the stored password.
+    /// Omit when editing to keep the stored password. For SABnzbd: the API key.
     pub password: Option<String>,
     pub category: Option<String>,
     pub enabled: Option<bool>,
@@ -234,14 +236,22 @@ pub struct DownloadClientBody {
 
 impl DownloadClientBody {
     fn validate(self) -> ApiResult<DownloadClientInput> {
+        let kind_name = self.kind.as_deref().unwrap_or("qbittorrent");
+        let kind = Kind::parse(kind_name).ok_or_else(|| {
+            ApiError::BadRequest("kind must be qbittorrent, transmission or sabnzbd".into())
+        })?;
         let category =
             self.category.map(|c| c.trim().to_owned()).filter(|c| !c.is_empty()).unwrap_or("koda".into());
         if !category.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.')) {
             return Err(ApiError::BadRequest("category may only use letters, digits, - _ and .".into()));
         }
         Ok(DownloadClientInput {
-            name: Some(self.name.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or("qBittorrent".into()),
-            kind: "qbittorrent".into(),
+            name: Some(self.name.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(match kind {
+                Kind::Qbittorrent => "qBittorrent".into(),
+                Kind::Transmission => "Transmission".into(),
+                Kind::Sabnzbd => "SABnzbd".into(),
+            }),
+            kind: kind_name.to_owned(),
             base_url: check_url(&self.base_url)?,
             username: self.username.filter(|u| !u.is_empty()),
             password: self.password.filter(|p| !p.is_empty()),
@@ -312,14 +322,18 @@ pub async fn test_client(
 ) -> ApiResult<Json<TestResult>> {
     user.require(Permissions::ADMIN)?;
     let c = body.validate()?;
-    let q = Qbittorrent::new(QbitConfig {
-        base_url: c.base_url,
-        username: c.username,
-        password: c.password,
-        category: c.category,
-    });
-    Ok(Json(match q.test().await {
-        Ok(v) => TestResult { ok: true, message: format!("Connected to qBittorrent {v}.") },
+    let kind = Kind::parse(&c.kind).unwrap_or(Kind::Qbittorrent);
+    let client = koda_download::Client::new(
+        kind,
+        ClientConfig {
+            base_url: c.base_url,
+            username: c.username,
+            password: c.password,
+            category: c.category,
+        },
+    );
+    Ok(Json(match client.test().await {
+        Ok(v) => TestResult { ok: true, message: format!("Connected to {} {v}.", c.name) },
         Err(e) => TestResult { ok: false, message: e.to_string() },
     }))
 }
@@ -346,7 +360,7 @@ pub struct ProwlarrImportResult {
     pub skipped: Vec<String>,
 }
 
-/// Adds every film-capable torrent indexer from Prowlarr, searched through
+/// Adds every film-capable indexer from Prowlarr (torrent and Usenet), searched through
 /// Prowlarr's own Torznab endpoints. Running it again updates them instead
 /// of adding duplicates.
 #[utoipa::path(post, path = "/api/v1/indexers/import/prowlarr", tag = "connectors", request_body = ProwlarrImport,
@@ -370,17 +384,13 @@ pub async fn import_prowlarr(
     let existing = koda_db::connectors::indexers(&s.db).await?;
     let mut out = ProwlarrImportResult { added: vec![], updated: vec![], skipped: vec![] };
     for p in list {
-        if p.protocol != koda_indexers::Protocol::Torrent {
-            out.skipped.push(format!("{}: Usenet needs a Usenet download client, not supported yet", p.name));
-            continue;
-        }
         if p.movie_categories.is_empty() {
             out.skipped.push(format!("{}: offers no film categories", p.name));
             continue;
         }
         let input = IndexerInput {
             name: format!("{} (Prowlarr)", p.name),
-            kind: "torznab".into(),
+            kind: if p.protocol == koda_indexers::Protocol::Torrent { "torznab" } else { "newznab" }.into(),
             base_url: format!("{base}/{}", p.id),
             api_path: "/api".into(),
             api_key: Some(key.to_owned()),

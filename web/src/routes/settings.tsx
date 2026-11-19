@@ -26,8 +26,8 @@ export function SettingsPage() {
         <ScanPanel />
       </Section>
       <Section
-        title="Download client"
-        intro="qBittorrent with its Web UI turned on. Downloads are added under their own category so you can tell them apart."
+        title="Download clients"
+        intro="qBittorrent or Transmission for torrents, SABnzbd for Usenet. Downloads are added under their own category so you can tell them apart."
       >
         <DownloadClientSection />
       </Section>

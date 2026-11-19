@@ -65,89 +65,117 @@ export function LibrarySection() {
   );
 }
 
-/** qBittorrent connection. One client for now. */
+const EMPTY_CLIENT = { kind: "qbittorrent", base_url: "", username: "", password: "", category: "koda" };
+const KIND_LABEL: Record<string, string> = { qbittorrent: "qBittorrent", transmission: "Transmission", sabnzbd: "SABnzbd" };
+
+/** Download clients: a torrent client, a Usenet client, or both. */
 export function DownloadClientSection() {
   const qc = useQueryClient();
   const { data: clients } = useQuery({
     queryKey: ["download-clients"],
     queryFn: () => unwrap(api.GET("/api/v1/download-clients")),
   });
-  const current = clients?.[0];
-  const [form, setForm] = useState({ base_url: "", username: "", password: "", category: "koda" });
-  useEffect(() => {
-    if (current)
-      setForm({
-        base_url: current.base_url,
-        username: current.username ?? "",
-        password: "",
-        category: current.category,
-      });
-  }, [current]);
-
+  const [form, setForm] = useState(EMPTY_CLIENT);
+  const usenet = form.kind === "sabnzbd";
   const body = () => ({
-    name: "qBittorrent",
+    name: KIND_LABEL[form.kind],
+    kind: form.kind,
     base_url: form.base_url,
-    username: form.username || null,
+    username: usenet ? null : form.username || null,
     password: form.password || null,
     category: form.category,
   });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["download-clients"] });
   const test = useMutation({ mutationFn: () => unwrap(api.POST("/api/v1/download-clients/test", { body: body() })) });
-  const save = useMutation({
-    mutationFn: () =>
-      current
-        ? unwrap(api.PUT("/api/v1/download-clients/{id}", { params: { path: { id: current.id } }, body: body() }))
-        : unwrap(api.POST("/api/v1/download-clients", { body: body() })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["download-clients"] }),
+  const add = useMutation({
+    mutationFn: () => unwrap(api.POST("/api/v1/download-clients", { body: body() })),
+    onSuccess: () => {
+      setForm(EMPTY_CLIENT);
+      test.reset();
+      invalidate();
+    },
   });
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const remove = useMutation({
+    mutationFn: (id: number) => unwrap(api.DELETE("/api/v1/download-clients/{id}", { params: { path: { id } } })),
+    onSuccess: invalidate,
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        save.mutate();
-      }}
-      className="mt-6 grid gap-6 sm:grid-cols-2"
-    >
-      <Field label="Web UI address" className="sm:col-span-2">
-        <input
-          className="chalk-input data text-base"
-          value={form.base_url}
-          onChange={set("base_url")}
-          placeholder="http://192.168.1.10:8080"
-          spellCheck={false}
-          required
-        />
-      </Field>
-      <Field label="Username">
-        <input className="chalk-input" value={form.username} onChange={set("username")} autoComplete="off" />
-      </Field>
-      <Field label="Password">
-        <input
-          className="chalk-input"
-          type="password"
-          value={form.password}
-          onChange={set("password")}
-          autoComplete="new-password"
-          placeholder={current?.password_set ? "Saved. Type to replace" : ""}
-        />
-      </Field>
-      <Field label="Category">
-        <input className="chalk-input data text-base" value={form.category} onChange={set("category")} />
-      </Field>
-      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button type="submit" className="btn-grease" disabled={save.isPending}>
-          {save.isPending ? "Saving…" : current ? "Save" : "Connect"}
-        </button>
-        <button type="button" className="btn-chalk" disabled={test.isPending} onClick={() => test.mutate()}>
-          {test.isPending ? "Testing…" : "Test connection"}
-        </button>
-        <TestLine result={test.data} error={test.error} />
-        {save.error && <p className="text-sm text-grease-hot">{save.error.message}</p>}
-        {save.isSuccess && !save.error && <p className="text-sm text-tape-available">Saved.</p>}
-      </div>
-    </form>
+    <div className="mt-6">
+      {clients && clients.length > 0 && (
+        <ul className="mb-8 border-t border-slate-line">
+          {clients.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-line py-3">
+              <span className="font-slate text-lg font-bold">{c.name}</span>
+              <span className="data min-w-0 flex-1 truncate text-sm text-chalk-dim">{c.base_url}</span>
+              <span className="data text-xs text-chalk-faint">category {c.category}</span>
+              <button
+                type="button"
+                className="text-chalk-faint hover:text-grease-hot"
+                onClick={() => remove.mutate(c.id)}
+                aria-label={`Remove ${c.name}`}
+              >
+                <Trash2 aria-hidden className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          add.mutate();
+        }}
+        className="grid gap-6 sm:grid-cols-[10rem_1fr]"
+      >
+        <Field label="Client">
+          <select className="chalk-input bg-slate" value={form.kind} onChange={set("kind")}>
+            <option value="qbittorrent">qBittorrent</option>
+            <option value="transmission">Transmission</option>
+            <option value="sabnzbd">SABnzbd (Usenet)</option>
+          </select>
+        </Field>
+        <Field label="Web address">
+          <input
+            className="chalk-input data text-base"
+            value={form.base_url}
+            onChange={set("base_url")}
+            placeholder={usenet ? "http://192.168.1.10:8080" : "http://192.168.1.10:8080"}
+            spellCheck={false}
+            required
+          />
+        </Field>
+        {!usenet && (
+          <Field label="Username">
+            <input className="chalk-input" value={form.username} onChange={set("username")} autoComplete="off" />
+          </Field>
+        )}
+        <Field label={usenet ? "API key" : "Password"}>
+          <input
+            className="chalk-input"
+            type="password"
+            value={form.password}
+            onChange={set("password")}
+            autoComplete="new-password"
+          />
+        </Field>
+        <Field label="Category">
+          <input className="chalk-input data text-base" value={form.category} onChange={set("category")} />
+        </Field>
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+          <button type="submit" className="btn-grease" disabled={add.isPending}>
+            {add.isPending ? "Adding…" : "Add client"}
+          </button>
+          <button type="button" className="btn-chalk" disabled={test.isPending} onClick={() => test.mutate()}>
+            {test.isPending ? "Testing…" : "Test connection"}
+          </button>
+          <TestLine result={test.data} error={test.error} />
+          {(add.error ?? remove.error) && <p className="text-sm text-grease-hot">{(add.error ?? remove.error)?.message}</p>}
+        </div>
+      </form>
+    </div>
   );
 }
 

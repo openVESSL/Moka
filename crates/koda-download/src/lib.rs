@@ -1,4 +1,5 @@
-//! Download clients. qBittorrent first; the [`Download`] shape is what any
+//! Download clients: qBittorrent, Transmission and SABnzbd behind one [`Client`].
+//! The [`Download`] shape is what any
 //! client gets normalized to.
 
 use std::time::Duration;
@@ -15,14 +16,17 @@ pub enum Status {
     Downloading,
     /// All data is on disk. It may still be seeding.
     Completed,
+    /// The client gave up on it (Usenet repair or unpack failed).
+    Failed,
     /// Something needs attention (stalled, missing files, client error).
     Warning,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Download {
-    /// Lowercase info hash.
-    pub hash: String,
+    /// How the client identifies the download: lowercase info hash for
+    /// torrents, the job id for Usenet.
+    pub id: String,
     pub name: String,
     pub status: Status,
     /// 0.0 to 1.0
@@ -39,20 +43,20 @@ pub struct Download {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("qBittorrent rejected the username or password")]
+    #[error("the download client rejected the username, password or API key")]
     Auth,
     #[error("qBittorrent banned this address after too many failed logins; wait and retry")]
     Banned,
-    #[error("qBittorrent did not accept the torrent")]
+    #[error("the download client did not accept the download")]
     Rejected,
-    #[error("qBittorrent returned HTTP {0}")]
+    #[error("the download client returned HTTP {0}")]
     Status(u16),
-    #[error("could not reach qBittorrent: {0}")]
+    #[error("could not reach the download client: {0}")]
     Http(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Clone)]
-pub struct QbitConfig {
+pub struct ClientConfig {
     pub base_url: String,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -62,7 +66,7 @@ pub struct QbitConfig {
 /// qBittorrent Web API v2 client. Keeps its login cookie and logs in again
 /// when the session expires.
 pub struct Qbittorrent {
-    cfg: QbitConfig,
+    cfg: ClientConfig,
     http: reqwest::Client,
     logged_in: Mutex<bool>,
 }
@@ -86,8 +90,112 @@ struct Torrent {
     root_path: Option<String>,
 }
 
+pub mod sabnzbd;
+pub mod transmission;
+
+pub use sabnzbd::Sabnzbd;
+pub use transmission::Transmission;
+
+/// Which download client a configuration talks to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Qbittorrent,
+    Transmission,
+    Sabnzbd,
+}
+
+impl Kind {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "qbittorrent" => Kind::Qbittorrent,
+            "transmission" => Kind::Transmission,
+            "sabnzbd" => Kind::Sabnzbd,
+            _ => return None,
+        })
+    }
+
+    /// True for BitTorrent clients, false for Usenet.
+    pub fn is_torrent(self) -> bool {
+        self != Kind::Sabnzbd
+    }
+}
+
+/// What to hand to a client.
+pub enum Payload<'a> {
+    Magnet(&'a str),
+    Torrent(&'a [u8]),
+    Nzb(&'a [u8]),
+}
+
+/// Any supported download client.
+pub enum Client {
+    Qbittorrent(Qbittorrent),
+    Transmission(Transmission),
+    Sabnzbd(Sabnzbd),
+}
+
+impl Client {
+    pub fn new(kind: Kind, cfg: ClientConfig) -> Self {
+        match kind {
+            Kind::Qbittorrent => Client::Qbittorrent(Qbittorrent::new(cfg)),
+            Kind::Transmission => Client::Transmission(Transmission::new(cfg)),
+            Kind::Sabnzbd => Client::Sabnzbd(Sabnzbd::new(cfg)),
+        }
+    }
+
+    /// Checks the connection and returns the client's version.
+    pub async fn test(&self) -> Result<String, Error> {
+        match self {
+            Client::Qbittorrent(c) => c.test().await,
+            Client::Transmission(c) => c.test().await,
+            Client::Sabnzbd(c) => c.test().await,
+        }
+    }
+
+    /// Adds a download and returns the id it will be listed under.
+    /// `known_hash` is the info hash worked out beforehand (qBittorrent does
+    /// not report it back).
+    pub async fn add(
+        &self,
+        payload: Payload<'_>,
+        name: &str,
+        known_hash: Option<&str>,
+    ) -> Result<String, Error> {
+        match (self, payload) {
+            (Client::Qbittorrent(c), Payload::Magnet(m)) => {
+                c.add_magnet(m).await.map(|_| known_hash.unwrap_or("").into())
+            }
+            (Client::Qbittorrent(c), Payload::Torrent(b)) => {
+                c.add_torrent_file(b, name).await.map(|_| known_hash.unwrap_or("").into())
+            }
+            (Client::Transmission(c), Payload::Magnet(m)) => c.add(Some(m), None).await,
+            (Client::Transmission(c), Payload::Torrent(b)) => c.add(None, Some(b)).await,
+            (Client::Sabnzbd(c), Payload::Nzb(b)) => c.add_nzb(b, name).await,
+            // a torrent client was given an .nzb or the other way around
+            _ => Err(Error::Rejected),
+        }
+    }
+
+    pub async fn list(&self) -> Result<Vec<Download>, Error> {
+        match self {
+            Client::Qbittorrent(c) => c.list().await,
+            Client::Transmission(c) => c.list().await,
+            Client::Sabnzbd(c) => c.list().await,
+        }
+    }
+
+    pub async fn remove(&self, id: &str, delete_files: bool) -> Result<(), Error> {
+        match self {
+            Client::Qbittorrent(c) => c.remove(id, delete_files).await,
+            Client::Transmission(c) => c.remove(id, delete_files).await,
+            Client::Sabnzbd(c) => c.remove(id, delete_files).await,
+        }
+    }
+}
+
 impl Qbittorrent {
-    pub fn new(cfg: QbitConfig) -> Self {
+    pub fn new(cfg: ClientConfig) -> Self {
         let http = koda_net::client_builder()
             .cookie_store(true)
             .timeout(Duration::from_secs(20))
@@ -246,7 +354,7 @@ fn normalize(t: Torrent) -> Download {
         .filter(|p| !p.is_empty() && *p != t.save_path)
         .or_else(|| (!t.content_path.is_empty()).then_some(t.content_path));
     Download {
-        hash: t.hash.to_ascii_lowercase(),
+        id: t.hash.to_ascii_lowercase(),
         name: t.name,
         progress: t.progress.clamp(0.0, 1.0),
         size_bytes: t.size,
@@ -319,7 +427,7 @@ mod tests {
     }
 
     fn client(base: &str, password: &str) -> Qbittorrent {
-        Qbittorrent::new(QbitConfig {
+        Qbittorrent::new(ClientConfig {
             base_url: base.into(),
             username: Some("admin".into()),
             password: Some(password.into()),
@@ -337,7 +445,7 @@ mod tests {
         let list = q.list().await.unwrap();
         assert_eq!(logins.load(Ordering::SeqCst), 1, "session cookie is reused");
 
-        assert_eq!(list[0].hash, "abcdef");
+        assert_eq!(list[0].id, "abcdef");
         assert_eq!(list[0].status, Status::Downloading);
         assert_eq!(list[0].eta_seconds, Some(120));
         assert!(!list[0].can_move_files);

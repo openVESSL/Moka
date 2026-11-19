@@ -259,7 +259,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Adds every film-capable torrent indexer from Prowlarr, searched through
+         * Adds every film-capable indexer from Prowlarr (torrent and Usenet), searched through
          *     Prowlarr's own Torznab endpoints. Running it again updates them instead
          *     of adding duplicates.
          */
@@ -775,7 +775,7 @@ export interface components {
             enabled: boolean;
             /** Format: int64 */
             id: number;
-            /** @description qbittorrent */
+            /** @description qbittorrent | transmission | sabnzbd */
             kind: string;
             name: string;
             password_set: boolean;
@@ -785,8 +785,10 @@ export interface components {
             base_url: string;
             category?: string | null;
             enabled?: boolean | null;
+            /** @description qbittorrent (default), transmission or sabnzbd */
+            kind?: string | null;
             name: string;
-            /** @description Omit when editing to keep the stored password. */
+            /** @description Omit when editing to keep the stored password. For SABnzbd: the API key. */
             password?: string | null;
             username?: string | null;
         };

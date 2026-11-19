@@ -14,7 +14,7 @@ use anyhow::{Context, anyhow, bail};
 use koda_core::{Quality, TitleState};
 use koda_db::titles::Title;
 use koda_decision::{Candidate, Evaluated, Profile, SizeLimit, Target, Term};
-use koda_download::{QbitConfig, Qbittorrent, Status};
+use koda_download::{ClientConfig, Kind, Status};
 use koda_indexers::{Capabilities, IndexerConfig, IndexerKind, MovieQuery, torrent::Payload};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
@@ -271,17 +271,24 @@ pub async fn search_and_grab(state: &AppState, title: &Title) -> anyhow::Result<
     Ok(())
 }
 
-pub fn download_client(state: &AppState, c: &koda_db::connectors::DownloadClient) -> Arc<Qbittorrent> {
+pub fn download_client(
+    state: &AppState,
+    c: &koda_db::connectors::DownloadClient,
+) -> Arc<koda_download::Client> {
     let mut clients = state.download_clients.lock().expect("clients lock");
     clients
         .entry(c.id)
         .or_insert_with(|| {
-            Arc::new(Qbittorrent::new(QbitConfig {
-                base_url: c.base_url.clone(),
-                username: c.username.clone(),
-                password: c.password.clone(),
-                category: c.category.clone(),
-            }))
+            let kind = Kind::parse(&c.kind).unwrap_or(Kind::Qbittorrent);
+            Arc::new(koda_download::Client::new(
+                kind,
+                ClientConfig {
+                    base_url: c.base_url.clone(),
+                    username: c.username.clone(),
+                    password: c.password.clone(),
+                    category: c.category.clone(),
+                },
+            ))
         })
         .clone()
 }
@@ -297,33 +304,49 @@ pub async fn grab(
     if koda_db::grabs::active(&state.db).await?.iter().any(|g| g.title_id == title_id) {
         bail!("This film is already downloading");
     }
+    let r = &cand.release;
+    let torrent = r.protocol == koda_indexers::Protocol::Torrent;
     let clients = koda_db::connectors::download_clients(&state.db).await?;
     let client_row = clients
         .into_iter()
-        .find(|c| c.enabled)
-        .ok_or_else(|| anyhow!("No download client is connected. Add qBittorrent in Settings."))?;
-    let r = &cand.release;
-    let payload = match (&r.magnet_url, &r.download_url) {
-        (Some(m), _) => Payload::Magnet(m.clone()),
-        (None, Some(url)) => {
-            state.indexers.fetch(url).await.context("could not download the .torrent file")?
-        }
-        (None, None) => bail!("The release has no download link"),
+        .find(|c| c.enabled && Kind::parse(&c.kind).is_some_and(|k| k.is_torrent() == torrent))
+        .ok_or_else(|| {
+            if torrent {
+                anyhow!("No torrent client is connected. Add qBittorrent or Transmission in Settings.")
+            } else {
+                anyhow!("No Usenet client is connected. Add SABnzbd in Settings.")
+            }
+        })?;
+    let fetched = match (&r.magnet_url, &r.download_url) {
+        (Some(m), _) if torrent => Payload::Magnet(m.clone()),
+        (_, Some(url)) => state.indexers.fetch(url).await.context("could not download the release file")?,
+        _ => bail!("The release has no download link"),
     };
-    let hash = payload
-        .info_hash()
-        .or_else(|| r.info_hash.clone())
-        .ok_or_else(|| anyhow!("Could not work out the torrent's hash, so it could not be tracked"))?;
+    let client = download_client(state, &client_row);
 
-    let qbit = download_client(state, &client_row);
-    // after a crash between sending and recording, the torrent may already be there
-    let already = qbit.list().await.map(|l| l.iter().any(|d| d.hash == hash)).unwrap_or(false);
-    if !already {
-        match &payload {
-            Payload::Magnet(m) => qbit.add_magnet(m).await?,
-            Payload::File(bytes) => qbit.add_torrent_file(bytes, &r.title).await?,
+    let id = if torrent {
+        let hash = fetched
+            .info_hash()
+            .or_else(|| r.info_hash.clone())
+            .ok_or_else(|| anyhow!("Could not work out the torrent's hash, so it could not be tracked"))?;
+        // after a crash between sending and recording, the torrent may already be there
+        let already = client.list().await.map(|l| l.iter().any(|d| d.id == hash)).unwrap_or(false);
+        if already {
+            hash
+        } else {
+            let payload = match &fetched {
+                Payload::Magnet(m) => koda_download::Payload::Magnet(m),
+                Payload::File(b) => koda_download::Payload::Torrent(b),
+            };
+            let returned = client.add(payload, &r.title, Some(&hash)).await?;
+            if returned.is_empty() { hash } else { returned }
         }
-    }
+    } else {
+        let Payload::File(nzb) = &fetched else {
+            bail!("The indexer returned a magnet link for a Usenet release")
+        };
+        client.add(koda_download::Payload::Nzb(nzb), &r.title, None).await?
+    };
     koda_db::grabs::create(
         &state.db,
         &koda_db::grabs::NewGrab {
@@ -333,7 +356,7 @@ pub async fn grab(
             release_title: r.title.clone(),
             size_bytes: r.size_bytes.and_then(|s| i64::try_from(s).ok()),
             quality: quality.map(|q| q.key()),
-            info_hash: hash,
+            info_hash: id,
         },
     )
     .await?;
@@ -373,7 +396,14 @@ async fn track_downloads(state: &AppState) -> anyhow::Result<bool> {
         };
         for g in grabs {
             let hash = g.info_hash.clone().unwrap_or_default();
-            match list.iter().find(|d| d.hash == hash) {
+            match list.iter().find(|d| d.id == hash) {
+                Some(d) if d.status == Status::Failed => {
+                    let why = d
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| "The download client gave up on this download".into());
+                    fail_grab(state, &g, &why).await?;
+                }
                 Some(d) if d.status == Status::Completed => {
                     if g.status != "completed" {
                         koda_db::grabs::set_status(
@@ -798,6 +828,134 @@ mod flow {
             files[0].path
         );
         assert_eq!(std::fs::metadata(&files[0].path).unwrap().len(), 4096);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod usenet_flow {
+    use super::*;
+    use axum::{Router, extract::Query, routing::get};
+    use koda_db::titles::NewTitle;
+
+    async fn serve(app: Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn newznab_release_goes_through_sabnzbd_into_the_library() {
+        let root = std::env::temp_dir().join(format!("koda-usenet-{}-{}", std::process::id(), now()));
+        let done = root.join("complete/Usenet.Film.2021.1080p.WEB-DL.H264-GRP");
+        std::fs::create_dir_all(&done).unwrap();
+        std::fs::write(done.join("Usenet.Film.2021.1080p.WEB-DL.H264-GRP.mkv"), vec![1u8; 2048]).unwrap();
+
+        // serves the .nzb the feed links to
+        let nzb_host = serve(Router::new().route("/api", get(|| async { "<nzb>fake</nzb>" }))).await;
+        // the feed links to the .nzb host
+        let indexer_for_link = nzb_host.clone();
+        let indexer = serve(Router::new().route("/api", get(move |Query(q): Query<HashMap<String, String>>| {
+            let base = indexer_for_link.clone();
+            async move {
+                match q.get("t").map(String::as_str) {
+                    Some("caps") => r#"<caps><searching><movie-search available="yes" supportedParams="q"/></searching></caps>"#.to_owned(),
+                    _ => format!(r#"<rss><channel><item><title>Usenet.Film.2021.1080p.WEB-DL.H264-GRP</title>
+                        <link>{base}/api?t=get&amp;id=1</link><size>3221225472</size></item></channel></rss>"#),
+                }
+            }
+        })))
+        .await;
+
+        let storage = done.to_string_lossy().into_owned();
+        let sab = serve(
+            Router::new().route(
+                "/api",
+                get({
+                    let storage = storage.clone();
+                    move |Query(q): Query<HashMap<String, String>>| {
+                        let storage = storage.clone();
+                        async move {
+                            axum::Json(match q["mode"].as_str() {
+                                "queue" => serde_json::json!({ "queue": { "slots": [] } }),
+                                "history" => serde_json::json!({ "history": { "slots": [
+                                { "nzo_id": "SABnzbd_nzo_7", "name": "Usenet.Film", "status": "Completed",
+                                  "storage": storage, "bytes": 2048, "category": "koda" } ] } }),
+                                _ => serde_json::json!({ "status": true }),
+                            })
+                        }
+                    }
+                })
+                .post(|| async {
+                    axum::Json(serde_json::json!({ "status": true, "nzo_ids": ["SABnzbd_nzo_7"] }))
+                }),
+            ),
+        )
+        .await;
+
+        let db = koda_db::memory().await;
+        let config = crate::config::Config {
+            config_dir: root.clone(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: String::new(),
+        };
+        let state = AppState::new(db.clone(), config, Default::default());
+        koda_db::connectors::create_indexer(
+            &db,
+            &koda_db::connectors::IndexerInput {
+                name: "nz".into(),
+                kind: "newznab".into(),
+                base_url: indexer,
+                api_path: "/api".into(),
+                api_key: None,
+                categories: vec![2000],
+                priority: 25,
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        koda_db::connectors::create_download_client(
+            &db,
+            &koda_db::connectors::DownloadClientInput {
+                name: "sab".into(),
+                kind: "sabnzbd".into(),
+                base_url: sab,
+                username: None,
+                password: Some("key".into()),
+                category: "koda".into(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        let lib = LibrarySettings { movies_path: root.join("movies").to_string_lossy().into_owned() };
+        koda_db::settings::set(&db, LibrarySettings::KEY, &lib).await.unwrap();
+        let t = koda_db::titles::upsert_movie(
+            &db,
+            &NewTitle {
+                tmdb_id: 7,
+                title: "Usenet Film".into(),
+                year: Some(2021),
+                runtime_minutes: Some(100),
+                ..Default::default()
+            },
+            TitleState::Wanted,
+        )
+        .await
+        .unwrap();
+
+        tick(&state).await.unwrap();
+        let after_grab = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(after_grab.state(), TitleState::Grabbed, "{:?}", after_grab.state_reason);
+        let g = koda_db::grabs::latest_for_title(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(g.info_hash.as_deref(), Some("SABnzbd_nzo_7"), "tracked by the SABnzbd job id");
+
+        tick(&state).await.unwrap(); // completed -> importing
+        tick(&state).await.unwrap(); // importing -> available
+        let t = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(t.state(), TitleState::Available, "{:?}", t.state_reason);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

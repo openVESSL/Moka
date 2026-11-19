@@ -568,7 +568,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Adds every film-capable torrent indexer from Prowlarr, searched through\nProwlarr's own Torznab endpoints. Running it again updates them instead\nof adding duplicates.",
+        "summary": "Adds every film-capable indexer from Prowlarr (torrent and Usenet), searched through\nProwlarr's own Torznab endpoints. Running it again updates them instead\nof adding duplicates.",
         "operationId": "import_prowlarr",
         "requestBody": {
           "content": {
@@ -1974,7 +1974,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "qbittorrent"
+            "description": "qbittorrent | transmission | sabnzbd"
           },
           "name": {
             "type": "string"
@@ -2012,6 +2012,13 @@
               "null"
             ]
           },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "qbittorrent (default), transmission or sabnzbd"
+          },
           "name": {
             "type": "string"
           },
@@ -2020,7 +2027,7 @@
               "string",
               "null"
             ],
-            "description": "Omit when editing to keep the stored password."
+            "description": "Omit when editing to keep the stored password. For SABnzbd: the API key."
           },
           "username": {
             "type": [

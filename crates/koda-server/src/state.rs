@@ -21,7 +21,7 @@ pub struct AppState {
     /// Wakes the background loop early (new request, manual action).
     pub wake: Arc<tokio::sync::Notify>,
     /// Download client connections by id, kept so login sessions are reused.
-    pub download_clients: Arc<Mutex<HashMap<i64, Arc<koda_download::Qbittorrent>>>>,
+    pub download_clients: Arc<Mutex<HashMap<i64, Arc<koda_download::Client>>>>,
     /// Failed logins per account name: count and time of the last failure.
     pub login_failures: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
     /// Progress of the running or last library scan.

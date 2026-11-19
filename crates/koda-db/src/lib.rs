@@ -9,6 +9,7 @@ pub mod connectors;
 pub mod grabs;
 pub mod library;
 pub mod requests;
+pub mod secret;
 pub mod settings;
 pub mod titles;
 pub mod users;
@@ -34,6 +35,7 @@ pub async fn connect(url: &str) -> Result<Pool, Error> {
 
 /// Fresh in-memory database with the schema applied. For tests.
 pub async fn memory() -> Pool {
+    secret::init([1; 32]);
     let options = SqliteConnectOptions::from_str("sqlite::memory:").expect("valid url").foreign_keys(true);
     // one connection: every connection to :memory: is a separate database
     let pool = SqlitePoolOptions::new()

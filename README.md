@@ -58,6 +58,9 @@ Configuration is read from environment variables:
 | `KODA_PORT` | `8484` | |
 | `KODA_HOST` | `0.0.0.0` | |
 | `KODA_DATABASE_URL` | SQLite in the config dir | |
+| `KODA_SECRET_KEY` | `secret.key` in the config dir | base64, 32 bytes; encrypts stored passwords and API keys |
+
+Back up `secret.key` together with the database: without it, stored indexer keys and passwords cannot be read and must be entered again.
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit together, and
 [docker-compose.example.yml](docker-compose.example.yml) for a container setup.

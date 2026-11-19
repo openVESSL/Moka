@@ -23,6 +23,7 @@ pub fn router() -> Router<AppState> {
 pub struct Webhook {
     pub id: i64,
     pub name: String,
+    /// Scheme and host only; the full address may contain a token.
     pub url: String,
     pub events: Vec<String>,
     pub enabled: bool,
@@ -34,7 +35,7 @@ impl From<koda_db::webhooks::Webhook> for Webhook {
             id: w.id,
             events: serde_json::from_str(&w.events).unwrap_or_default(),
             name: w.name,
-            url: w.url,
+            url: mask(&w.url),
             enabled: w.enabled,
         }
     }
@@ -105,4 +106,20 @@ pub async fn test(
         Ok(()) => TestResult { ok: true, message: "Delivered.".into() },
         Err(e) => TestResult { ok: false, message: e },
     }))
+}
+
+/// `https://discord.com/api/webhooks/123/token` → `https://discord.com/…`
+fn mask(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(u) => format!("{}://{}/…", u.scheme(), u.host_str().unwrap_or("?")),
+        Err(_) => "…".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn addresses_are_masked() {
+        assert_eq!(super::mask("https://discord.com/api/webhooks/1/SECRET"), "https://discord.com/…");
+    }
 }

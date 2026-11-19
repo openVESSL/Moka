@@ -22,22 +22,34 @@ impl Webhook {
     }
 }
 
+// Webhook addresses often embed a token (Discord), so they are stored sealed.
+fn open(mut w: Webhook) -> Webhook {
+    w.url = crate::secret::open(&w.url);
+    w
+}
+
 pub async fn list(pool: &Pool) -> Result<Vec<Webhook>, Error> {
-    sqlx::query_as("SELECT id, name, url, events, enabled FROM webhooks ORDER BY id").fetch_all(pool).await
+    let rows: Vec<Webhook> =
+        sqlx::query_as("SELECT id, name, url, events, enabled FROM webhooks ORDER BY id")
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(open).collect())
 }
 
 pub async fn get(pool: &Pool, id: i64) -> Result<Option<Webhook>, Error> {
-    sqlx::query_as("SELECT id, name, url, events, enabled FROM webhooks WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    let row: Option<Webhook> =
+        sqlx::query_as("SELECT id, name, url, events, enabled FROM webhooks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(open))
 }
 
 pub async fn create(pool: &Pool, name: &str, url: &str, events: &[String]) -> Result<i64, Error> {
     let events = serde_json::to_string(events).map_err(|e| Error::Encode(Box::new(e)))?;
     sqlx::query_scalar("INSERT INTO webhooks (name, url, events) VALUES (?, ?, ?) RETURNING id")
         .bind(name)
-        .bind(url)
+        .bind(crate::secret::seal(url))
         .bind(events)
         .fetch_one(pool)
         .await

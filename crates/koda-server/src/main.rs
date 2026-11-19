@@ -38,8 +38,15 @@ async fn main() -> anyhow::Result<()> {
     let _ = std::fs::remove_dir_all(config.transcode_dir());
     std::fs::create_dir_all(config.transcode_dir())?;
 
+    koda_db::secret::init(config::secret_key(&config.config_dir)?);
     let db = koda_db::connect(&config.database_url).await?;
-    let catalog = koda_db::settings::get(&db, state::CatalogSettings::KEY).await?.unwrap_or_default();
+    let sealed = koda_db::secret::seal_legacy(&db).await?;
+    if sealed > 0 {
+        tracing::info!(count = sealed, "encrypted secrets stored by an older version");
+    }
+    let catalog = state::CatalogSettings::load(&db).await?;
+    // re-save so a key stored in plain text by an older version gets encrypted
+    catalog.save(&db).await?;
     let listen = config.listen;
     let state = AppState::new(db, config, catalog);
     tokio::spawn(pipeline::run(state.clone()));

@@ -49,6 +49,19 @@ fn default_language() -> String {
 impl CatalogSettings {
     pub const KEY: &'static str = "catalog";
 
+    /// Reads the settings, decrypting the stored key.
+    pub async fn load(db: &koda_db::Pool) -> Result<Self, koda_db::Error> {
+        let mut s: Self = koda_db::settings::get(db, Self::KEY).await?.unwrap_or_default();
+        s.tmdb_key = koda_db::secret::open(&s.tmdb_key);
+        Ok(s)
+    }
+
+    /// Saves the settings with the key encrypted.
+    pub async fn save(&self, db: &koda_db::Pool) -> Result<(), koda_db::Error> {
+        let sealed = Self { tmdb_key: koda_db::secret::seal(&self.tmdb_key), ..self.clone() };
+        koda_db::settings::set(db, Self::KEY, &sealed).await
+    }
+
     pub fn client(&self) -> Tmdb {
         Tmdb::new(self.tmdb_key.clone(), self.language.clone(), self.region.clone())
     }

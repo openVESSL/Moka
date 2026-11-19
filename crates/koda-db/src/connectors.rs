@@ -49,11 +49,21 @@ macro_rules! select_indexers {
 }
 
 pub async fn indexers(pool: &Pool) -> Result<Vec<Indexer>, Error> {
-    sqlx::query_as(select_indexers!("ORDER BY i.priority, i.name")).fetch_all(pool).await
+    let mut rows: Vec<Indexer> =
+        sqlx::query_as(select_indexers!("ORDER BY i.priority, i.name")).fetch_all(pool).await?;
+    for r in &mut rows {
+        r.api_key = crate::secret::open_opt(r.api_key.take());
+    }
+    Ok(rows)
 }
 
 pub async fn indexer(pool: &Pool, id: i64) -> Result<Option<Indexer>, Error> {
-    sqlx::query_as(select_indexers!("WHERE i.id = ?")).bind(id).fetch_optional(pool).await
+    let row: Option<Indexer> =
+        sqlx::query_as(select_indexers!("WHERE i.id = ?")).bind(id).fetch_optional(pool).await?;
+    Ok(row.map(|mut r| {
+        r.api_key = crate::secret::open_opt(r.api_key.take());
+        r
+    }))
 }
 
 pub async fn create_indexer(pool: &Pool, i: &IndexerInput) -> Result<i64, Error> {
@@ -66,7 +76,7 @@ pub async fn create_indexer(pool: &Pool, i: &IndexerInput) -> Result<i64, Error>
     .bind(&i.kind)
     .bind(&i.base_url)
     .bind(&i.api_path)
-    .bind(&i.api_key)
+    .bind(crate::secret::seal_opt(i.api_key.as_deref()))
     .bind(cats)
     .bind(i.priority)
     .bind(i.enabled)
@@ -84,7 +94,7 @@ pub async fn update_indexer(pool: &Pool, id: i64, i: &IndexerInput) -> Result<()
     .bind(&i.kind)
     .bind(&i.base_url)
     .bind(&i.api_path)
-    .bind(&i.api_key)
+    .bind(crate::secret::seal_opt(i.api_key.as_deref()))
     .bind(cats)
     .bind(i.priority)
     .bind(i.enabled)
@@ -168,6 +178,12 @@ pub async fn download_clients(pool: &Pool) -> Result<Vec<DownloadClient>, Error>
     )
     .fetch_all(pool)
     .await
+    .map(|rows: Vec<DownloadClient>| rows.into_iter().map(open_client).collect())
+}
+
+fn open_client(mut c: DownloadClient) -> DownloadClient {
+    c.password = crate::secret::open_opt(c.password.take());
+    c
 }
 
 pub async fn download_client(pool: &Pool, id: i64) -> Result<Option<DownloadClient>, Error> {
@@ -177,6 +193,7 @@ pub async fn download_client(pool: &Pool, id: i64) -> Result<Option<DownloadClie
     .bind(id)
     .fetch_optional(pool)
     .await
+    .map(|row: Option<DownloadClient>| row.map(open_client))
 }
 
 pub async fn create_download_client(pool: &Pool, c: &DownloadClientInput) -> Result<i64, Error> {
@@ -188,7 +205,7 @@ pub async fn create_download_client(pool: &Pool, c: &DownloadClientInput) -> Res
     .bind(&c.kind)
     .bind(&c.base_url)
     .bind(&c.username)
-    .bind(&c.password)
+    .bind(crate::secret::seal_opt(c.password.as_deref()))
     .bind(&c.category)
     .bind(c.enabled)
     .fetch_one(pool)
@@ -204,7 +221,7 @@ pub async fn update_download_client(pool: &Pool, id: i64, c: &DownloadClientInpu
     .bind(&c.kind)
     .bind(&c.base_url)
     .bind(&c.username)
-    .bind(&c.password)
+    .bind(crate::secret::seal_opt(c.password.as_deref()))
     .bind(&c.category)
     .bind(c.enabled)
     .bind(id)
@@ -245,6 +262,12 @@ mod tests {
         let i = indexer(&pool, id).await.unwrap().unwrap();
         assert_eq!(i.name, "Renamed");
         assert_eq!(i.api_key.as_deref(), Some("k1"));
+        let raw: String = sqlx::query_scalar("SELECT api_key FROM indexers WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(raw.starts_with("enc1:") && !raw.contains("k1"), "stored sealed: {raw}");
         assert_eq!(i.categories, "[2000,2040]");
 
         assert_eq!(indexer_failed(&pool, id, "timeout", Some(60)).await.unwrap(), 1);

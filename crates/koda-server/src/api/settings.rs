@@ -36,7 +36,7 @@ pub struct CatalogSettingsUpdate {
 }
 
 async fn load(state: &AppState) -> ApiResult<CatalogSettings> {
-    Ok(koda_db::settings::get(&state.db, CatalogSettings::KEY).await?.unwrap_or_default())
+    Ok(CatalogSettings::load(&state.db).await?)
 }
 
 #[utoipa::path(get, path = "/api/v1/settings/catalog", tag = "settings",
@@ -86,7 +86,7 @@ pub async fn put_catalog(
         _ => current.tmdb_key,
     };
     let next = CatalogSettings { tmdb_key: key, language: language.to_owned(), region };
-    koda_db::settings::set(&state.db, CatalogSettings::KEY, &next).await?;
+    next.save(&state.db).await?;
     state.set_tmdb(next.client());
     Ok(Json(CatalogSettingsView {
         tmdb_key_set: !next.tmdb_key.is_empty(),

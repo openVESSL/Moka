@@ -1,0 +1,12 @@
+/target
+/config
+*.db
+*.db-shm
+*.db-wal
+
+/web/node_modules
+/web/dist
+/web/*.local
+
+.env
+.DS_Store

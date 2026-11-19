@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/settings/catalog", get(get_catalog).put(put_catalog))
         .route("/settings/requests", get(get_requests).put(put_requests))
         .route("/settings/library", get(get_library).put(put_library))
+        .route("/settings/jellyfin", get(get_jellyfin).put(put_jellyfin))
 }
 
 /// Catalog settings as the UI sees them. The key itself is never returned.
@@ -179,4 +180,88 @@ pub async fn put_library(
     koda_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
     state.wake.notify_one();
     Ok(Json(LibrarySettingsBody { movies_path: path }))
+}
+
+/// Jellyfin connection as the UI sees it. The key is never returned.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct JellyfinView {
+    pub enabled: bool,
+    pub url: String,
+    pub api_key_set: bool,
+    pub path_from: String,
+    pub path_to: String,
+    pub sync_watched: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct JellyfinUpdate {
+    pub enabled: bool,
+    pub url: String,
+    /// Omit to keep the stored key.
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub path_from: String,
+    #[serde(default)]
+    pub path_to: String,
+    #[serde(default = "default_true")]
+    pub sync_watched: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn jellyfin_view(s: crate::jellyfin::JellyfinSettings) -> JellyfinView {
+    JellyfinView {
+        enabled: s.enabled,
+        api_key_set: !s.api_key.is_empty(),
+        url: s.url,
+        path_from: s.path_from,
+        path_to: s.path_to,
+        sync_watched: s.sync_watched,
+    }
+}
+
+#[utoipa::path(get, path = "/api/v1/settings/jellyfin", tag = "settings",
+    responses((status = 200, body = JellyfinView)))]
+pub async fn get_jellyfin(user: CurrentUser, State(state): State<AppState>) -> ApiResult<Json<JellyfinView>> {
+    user.require(Permissions::ADMIN)?;
+    Ok(Json(jellyfin_view(crate::jellyfin::JellyfinSettings::load(&state.db).await?)))
+}
+
+/// Saves the Jellyfin connection after checking it answers with the given key.
+#[utoipa::path(put, path = "/api/v1/settings/jellyfin", tag = "settings", request_body = JellyfinUpdate,
+    responses((status = 200, body = JellyfinView), (status = 400, description = "cannot connect")))]
+pub async fn put_jellyfin(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(b): Json<JellyfinUpdate>,
+) -> ApiResult<Json<JellyfinView>> {
+    user.require(Permissions::ADMIN)?;
+    let current = crate::jellyfin::JellyfinSettings::load(&state.db).await?;
+    let url = b.url.trim().trim_end_matches('/').to_owned();
+    if !url.is_empty() {
+        match reqwest::Url::parse(&url) {
+            Ok(u) if matches!(u.scheme(), "http" | "https") => {
+                koda_net::check_url(&u).map_err(|e| ApiError::BadRequest(e.to_string()))?
+            }
+            _ => return Err(ApiError::BadRequest("address must start with http:// or https://".into())),
+        }
+    }
+    let next = crate::jellyfin::JellyfinSettings {
+        enabled: b.enabled,
+        url,
+        api_key: b.api_key.map(|k| k.trim().to_owned()).filter(|k| !k.is_empty()).unwrap_or(current.api_key),
+        path_from: b.path_from.trim().to_owned(),
+        path_to: b.path_to.trim().to_owned(),
+        sync_watched: b.sync_watched,
+    };
+    if next.enabled {
+        crate::jellyfin::Client::new(&state.http, &next)
+            .info()
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("could not connect to Jellyfin: {e}")))?;
+    }
+    next.save(&state.db).await?;
+    Ok(Json(jellyfin_view(next)))
 }

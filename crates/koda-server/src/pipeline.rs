@@ -526,6 +526,7 @@ async fn import(state: &AppState, t: &Title, g: &koda_db::grabs::Grab) -> Result
         None,
     );
     tracing::info!(title = %t.title, path = %dest.display(), "imported");
+    crate::jellyfin::announce_import(state, dest.to_string_lossy().into_owned());
     Ok(())
 }
 

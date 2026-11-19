@@ -84,6 +84,8 @@ pub mod webhooks;
         webhooks::test,
         settings::get_library,
         settings::put_library,
+        settings::get_jellyfin,
+        settings::put_jellyfin,
     ),
     components(schemas(Health, crate::error::ErrorBody))
 )]

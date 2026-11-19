@@ -1025,6 +1025,56 @@
         }
       }
     },
+    "/api/v1/settings/jellyfin": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_jellyfin",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Saves the Jellyfin connection after checking it answers with the given key.",
+        "operationId": "put_jellyfin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cannot connect"
+          }
+        }
+      }
+    },
     "/api/v1/settings/library": {
       "get": {
         "tags": [
@@ -2111,6 +2161,69 @@
           }
         }
       },
+      "JellyfinUpdate": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "url"
+        ],
+        "properties": {
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omit to keep the stored key."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "path_from": {
+            "type": "string"
+          },
+          "path_to": {
+            "type": "string"
+          },
+          "sync_watched": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "JellyfinView": {
+        "type": "object",
+        "description": "Jellyfin connection as the UI sees it. The key is never returned.",
+        "required": [
+          "enabled",
+          "url",
+          "api_key_set",
+          "path_from",
+          "path_to",
+          "sync_watched"
+        ],
+        "properties": {
+          "api_key_set": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "path_from": {
+            "type": "string"
+          },
+          "path_to": {
+            "type": "string"
+          },
+          "sync_watched": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "LibrarySettingsBody": {
         "type": "object",
         "required": [
@@ -2921,7 +3034,8 @@
             "type": "string"
           },
           "url": {
-            "type": "string"
+            "type": "string",
+            "description": "Scheme and host only; the full address may contain a token."
           }
         }
       }

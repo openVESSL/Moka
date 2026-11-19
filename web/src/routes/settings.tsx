@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
-import { DownloadClientSection, IndexersSection, LibrarySection, ScanPanel } from "./connectors";
+import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, ScanPanel } from "./connectors";
 import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
 import { WebhooksSection } from "./webhooks";
@@ -36,6 +36,12 @@ export function SettingsPage() {
         intro="Torznab or Newznab search addresses, from your indexer or from an indexer manager. Films are searched on all of them at once."
       >
         <IndexersSection />
+      </Section>
+      <Section
+        title="Jellyfin"
+        intro="Keep watching in Jellyfin if you like. Koda tells it about new films right after import and brings back what people watched there."
+      >
+        <JellyfinSection />
       </Section>
       <Section title="People" intro="Everyone who can sign in, and what each person may do.">
         <UsersSection />

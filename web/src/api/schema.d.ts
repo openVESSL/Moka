@@ -432,6 +432,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/jellyfin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_jellyfin"];
+        /** Saves the Jellyfin connection after checking it answers with the given key. */
+        put: operations["put_jellyfin"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/library": {
         parameters: {
             query?: never;
@@ -796,6 +813,24 @@ export interface components {
             /** Format: int64 */
             priority?: number | null;
         };
+        JellyfinUpdate: {
+            /** @description Omit to keep the stored key. */
+            api_key?: string | null;
+            enabled: boolean;
+            path_from?: string;
+            path_to?: string;
+            sync_watched?: boolean;
+            url: string;
+        };
+        /** @description Jellyfin connection as the UI sees it. The key is never returned. */
+        JellyfinView: {
+            api_key_set: boolean;
+            enabled: boolean;
+            path_from: string;
+            path_to: string;
+            sync_watched: boolean;
+            url: string;
+        };
         LibrarySettingsBody: {
             /** @description Folder films are imported into, as the server sees it. */
             movies_path: string;
@@ -1038,6 +1073,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            /** @description Scheme and host only; the full address may contain a token. */
             url: string;
         };
     };
@@ -1866,6 +1902,55 @@ export interface operations {
                 };
             };
             /** @description key rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_jellyfin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JellyfinView"];
+                };
+            };
+        };
+    };
+    put_jellyfin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JellyfinUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JellyfinView"];
+                };
+            };
+            /** @description cannot connect */
             400: {
                 headers: {
                     [name: string]: unknown;

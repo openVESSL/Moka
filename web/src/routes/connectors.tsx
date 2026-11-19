@@ -312,3 +312,82 @@ export function ScanPanel() {
     </div>
   );
 }
+
+/** Optional Jellyfin connection: refresh after import, watched status back. */
+export function JellyfinSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["settings", "jellyfin"],
+    queryFn: () => unwrap(api.GET("/api/v1/settings/jellyfin")),
+  });
+  const [f, setF] = useState({ enabled: false, url: "", api_key: "", path_from: "", path_to: "", sync_watched: true });
+  useEffect(() => {
+    if (data) setF({ ...data, api_key: "" });
+  }, [data]);
+  const save = useMutation({
+    mutationFn: () =>
+      unwrap(api.PUT("/api/v1/settings/jellyfin", { body: { ...f, api_key: f.api_key || null } })),
+    onSuccess: (v) => {
+      setF((x) => ({ ...x, api_key: "" }));
+      qc.setQueryData(["settings", "jellyfin"], v);
+    },
+  });
+  const text = (k: "url" | "api_key" | "path_from" | "path_to") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setF((x) => ({ ...x, [k]: e.target.value }));
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+      className="mt-6 grid gap-6 sm:grid-cols-2"
+    >
+      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+        <input
+          type="checkbox"
+          className="accent-grease"
+          checked={f.enabled}
+          onChange={(e) => setF((x) => ({ ...x, enabled: e.target.checked }))}
+        />
+        Use Jellyfin alongside Koda
+      </label>
+      <Field label="Jellyfin address">
+        <input className="chalk-input data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:8096" />
+      </Field>
+      <Field label="API key">
+        <input
+          className="chalk-input data text-base"
+          type="password"
+          value={f.api_key}
+          onChange={text("api_key")}
+          placeholder={data?.api_key_set ? "Saved. Paste a new one to replace it" : "Dashboard → API Keys"}
+          autoComplete="off"
+        />
+      </Field>
+      <Field label="Library path in Koda">
+        <input className="chalk-input data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/data/movies (only if different)" />
+      </Field>
+      <Field label="Same folder in Jellyfin">
+        <input className="chalk-input data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/media/movies" />
+      </Field>
+      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+        <input
+          type="checkbox"
+          className="accent-grease"
+          checked={f.sync_watched}
+          onChange={(e) => setF((x) => ({ ...x, sync_watched: e.target.checked }))}
+        />
+        Mark films watched in Jellyfin as watched here (people are matched by user name)
+      </label>
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <button type="submit" className="btn-grease" disabled={save.isPending}>
+          {save.isPending ? "Checking…" : "Save"}
+        </button>
+        <p role="status" className={`text-sm ${save.error ? "text-grease-hot" : "text-tape-available"}`}>
+          {save.error?.message ?? (save.isSuccess ? "Saved. New films will show up in Jellyfin right after import." : "")}
+        </p>
+      </div>
+    </form>
+  );
+}

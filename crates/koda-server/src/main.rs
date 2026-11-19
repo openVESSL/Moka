@@ -6,6 +6,7 @@ mod api;
 mod auth;
 mod config;
 mod error;
+mod jellyfin;
 mod notify;
 mod pipeline;
 mod scan;
@@ -51,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(db, config, catalog);
     tokio::spawn(pipeline::run(state.clone()));
     tokio::spawn(state.streams.clone().reap());
+    tokio::spawn(jellyfin::run(state.clone()));
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");

@@ -21,6 +21,7 @@ pub mod images;
 pub mod requests;
 pub mod settings;
 pub mod titles;
+pub mod users;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -61,6 +62,11 @@ pub mod titles;
         settings::put_catalog,
         settings::get_requests,
         settings::put_requests,
+        users::list,
+        users::create,
+        users::update,
+        users::remove,
+        users::change_own_password,
         settings::get_library,
         settings::put_library,
     ),
@@ -78,6 +84,7 @@ pub fn router() -> Router<AppState> {
         .merge(requests::router())
         .merge(titles::router())
         .merge(connectors::router())
+        .merge(users::router())
         .merge(settings::router())
         .merge(images::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });

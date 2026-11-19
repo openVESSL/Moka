@@ -234,6 +234,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_manages_users_but_keeps_one_admin() {
+        let db = koda_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        let admin = koda_db::users::create(&db, "admin", &pw, koda_core::Permissions::ADMIN).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: String::new(),
+        };
+        let app = app(AppState::new(db, config, Default::default()));
+        let c = login(&app, "admin", "password1").await;
+
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/users", &c, r#"{"username":"bob","password":"bob-password"}"#))
+            .await
+            .unwrap();
+        let bob = body_json(res).await;
+        assert_eq!(bob["permissions"], 36, "request + play by default");
+        login(&app, "bob", "bob-password").await;
+
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/users", &c, r#"{"username":"BOB","password":"another-one"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        let demote = format!("/api/v1/users/{}", admin.id);
+        let res = app.clone().oneshot(authed("PUT", &demote, &c, r#"{"permissions":32}"#)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT, "last admin cannot be demoted");
+
+        let res = app.clone().oneshot(authed("DELETE", &demote, &c, "")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT, "cannot delete yourself");
+    }
+
+    #[tokio::test]
     async fn repeated_bad_logins_are_throttled() {
         let db = koda_db::memory().await;
         let pw = auth::hash_password("password1").unwrap();

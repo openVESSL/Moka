@@ -116,6 +116,40 @@ pub async fn by_api_key(pool: &Pool, token_hash: &str) -> Result<Option<User>, E
     Ok(user)
 }
 
+pub async fn list(pool: &Pool) -> Result<Vec<User>, Error> {
+    sqlx::query_as("SELECT * FROM users ORDER BY username").fetch_all(pool).await
+}
+
+pub async fn set_permissions(pool: &Pool, id: i64, permissions: Permissions) -> Result<(), Error> {
+    sqlx::query("UPDATE users SET permissions = ? WHERE id = ?")
+        .bind(i64::from(permissions.0))
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Changes a password and signs the user out everywhere else.
+pub async fn set_password(pool: &Pool, id: i64, password_hash: &str) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(password_hash)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(id).execute(&mut *tx).await?;
+    tx.commit().await
+}
+
+pub async fn delete(pool: &Pool, id: i64) -> Result<(), Error> {
+    sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn admin_count(pool: &Pool) -> Result<i64, Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE permissions & 1 = 1").fetch_one(pool).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

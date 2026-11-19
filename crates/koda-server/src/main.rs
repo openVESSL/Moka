@@ -58,9 +58,23 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Same-origin only. `blob:` is needed for HLS playback, wasm for the subtitle renderer.
+const CSP: &str = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; \
+    script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; \
+    connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+
 pub fn app(state: AppState) -> axum::Router {
+    use axum::http::{HeaderName, HeaderValue, header};
+    use tower_http::set_header::SetResponseHeaderLayer;
+    let set = |name: HeaderName, value: &'static str| {
+        SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value))
+    };
     api::router()
         .fallback(web::serve)
+        .layer(set(header::CONTENT_SECURITY_POLICY, CSP))
+        .layer(set(header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
+        .layer(set(header::X_FRAME_OPTIONS, "DENY"))
+        .layer(set(header::REFERRER_POLICY, "same-origin"))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -374,6 +388,15 @@ mod tests {
             assert!(!text.contains("SUPER-SECRET"), "{uri} leaked a secret: {text}");
             assert!(text.contains("_set\":true"), "{uri} should say a secret is stored");
         }
+    }
+
+    #[tokio::test]
+    async fn responses_carry_security_headers() {
+        let res = test_app().await.oneshot(json("GET", "/api/v1/health", "")).await.unwrap();
+        let h = res.headers();
+        assert_eq!(h["x-frame-options"], "DENY");
+        assert_eq!(h["x-content-type-options"], "nosniff");
+        assert!(h["content-security-policy"].to_str().unwrap().contains("frame-ancestors 'none'"));
     }
 
     #[tokio::test]

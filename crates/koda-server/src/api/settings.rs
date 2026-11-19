@@ -16,6 +16,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/settings/catalog", get(get_catalog).put(put_catalog))
         .route("/settings/requests", get(get_requests).put(put_requests))
+        .route("/settings/library", get(get_library).put(put_library))
 }
 
 /// Catalog settings as the UI sees them. The key itself is never returned.
@@ -133,4 +134,49 @@ mod tests {
         assert!(!super::valid_language("EN-us"));
         assert!(!super::valid_language("english"));
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LibrarySettingsBody {
+    /// Folder films are imported into, as the server sees it.
+    pub movies_path: String,
+}
+
+#[utoipa::path(get, path = "/api/v1/settings/library", tag = "settings",
+    responses((status = 200, body = LibrarySettingsBody)))]
+pub async fn get_library(
+    user: CurrentUser,
+    State(state): State<AppState>,
+) -> ApiResult<Json<LibrarySettingsBody>> {
+    user.require(Permissions::ADMIN)?;
+    let lib: crate::pipeline::LibrarySettings =
+        koda_db::settings::get(&state.db, crate::pipeline::LibrarySettings::KEY).await?.unwrap_or_default();
+    Ok(Json(LibrarySettingsBody { movies_path: lib.movies_path }))
+}
+
+/// Saves the library folder after checking the server can write to it.
+#[utoipa::path(put, path = "/api/v1/settings/library", tag = "settings", request_body = LibrarySettingsBody,
+    responses((status = 200, body = LibrarySettingsBody), (status = 400, description = "folder not usable")))]
+pub async fn put_library(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(body): Json<LibrarySettingsBody>,
+) -> ApiResult<Json<LibrarySettingsBody>> {
+    user.require(Permissions::ADMIN)?;
+    let path = body.movies_path.trim().to_owned();
+    let dir = std::path::PathBuf::from(&path);
+    if path.is_empty() || !dir.is_absolute() {
+        return Err(ApiError::BadRequest("use a full folder path, like /data/movies".into()));
+    }
+    let probe = dir.join(".koda-write-test");
+    let writable = tokio::fs::create_dir_all(&dir).await.is_ok()
+        && tokio::fs::write(&probe, b"ok").await.is_ok()
+        && tokio::fs::remove_file(&probe).await.is_ok();
+    if !writable {
+        return Err(ApiError::BadRequest(format!("the server cannot write to {path}")));
+    }
+    let lib = crate::pipeline::LibrarySettings { movies_path: path.clone() };
+    koda_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
+    state.wake.notify_one();
+    Ok(Json(LibrarySettingsBody { movies_path: path }))
 }

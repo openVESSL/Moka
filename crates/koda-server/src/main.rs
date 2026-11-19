@@ -6,6 +6,7 @@ mod api;
 mod auth;
 mod config;
 mod error;
+mod pipeline;
 mod state;
 mod web;
 
@@ -35,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let catalog = koda_db::settings::get(&db, state::CatalogSettings::KEY).await?.unwrap_or_default();
     let listen = config.listen;
     let state = AppState::new(db, config, catalog);
+    tokio::spawn(pipeline::run(state.clone()));
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");

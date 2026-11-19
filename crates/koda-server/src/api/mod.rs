@@ -16,6 +16,7 @@ use crate::state::AppState;
 
 pub mod auth;
 pub mod catalog;
+pub mod connectors;
 pub mod images;
 pub mod requests;
 pub mod settings;
@@ -40,10 +41,26 @@ pub mod titles;
         requests::decline,
         titles::list,
         titles::one,
+        titles::search_now,
+        titles::releases,
+        titles::grab,
+        titles::files,
+        connectors::list_indexers,
+        connectors::create_indexer,
+        connectors::update_indexer,
+        connectors::delete_indexer,
+        connectors::test_indexer,
+        connectors::list_clients,
+        connectors::create_client,
+        connectors::update_client,
+        connectors::delete_client,
+        connectors::test_client,
         settings::get_catalog,
         settings::put_catalog,
         settings::get_requests,
         settings::put_requests,
+        settings::get_library,
+        settings::put_library,
     ),
     components(schemas(Health, crate::error::ErrorBody))
 )]
@@ -58,6 +75,7 @@ pub fn router() -> Router<AppState> {
         .merge(catalog::router())
         .merge(requests::router())
         .merge(titles::router())
+        .merge(connectors::router())
         .merge(settings::router())
         .merge(images::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });

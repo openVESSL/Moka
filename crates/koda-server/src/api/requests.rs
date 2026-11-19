@@ -167,6 +167,7 @@ pub async fn create(
     let status = if auto { RequestStatus::Approved } else { RequestStatus::Pending };
     let row = koda_db::requests::create(db, title.id, user.0.id, status).await?;
     state.publish(LiveEvent::RequestCreated { request_id: row.id, title_id: title.id });
+    state.wake.notify_one();
     if auto {
         state.publish(LiveEvent::TitleState { title_id: title.id, state: title.state(), reason: None });
     }
@@ -196,6 +197,7 @@ pub async fn approve(
         state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: None });
     }
     state.publish(LiveEvent::RequestDecided { request_id: id, title_id: req.title_id, approved: true });
+    state.wake.notify_one();
     let row = koda_db::requests::by_id(db, id).await?.ok_or(ApiError::NotFound("request"))?;
     Ok(Json(row.into()))
 }

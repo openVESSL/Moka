@@ -15,6 +15,13 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub events: broadcast::Sender<LiveEvent>,
     pub http: reqwest::Client,
+    pub indexers: Arc<koda_indexers::Client>,
+    /// Last search per title, kept so the UI can list releases and grab one by hand.
+    pub searches: Arc<Mutex<HashMap<i64, crate::pipeline::SearchResult>>>,
+    /// Wakes the background loop early (new request, manual action).
+    pub wake: Arc<tokio::sync::Notify>,
+    /// Download client connections by id, kept so login sessions are reused.
+    pub download_clients: Arc<Mutex<HashMap<i64, Arc<koda_download::Qbittorrent>>>>,
     tmdb: Arc<RwLock<Tmdb>>,
     cache: Arc<Mutex<HashMap<String, (Instant, serde_json::Value)>>>,
 }
@@ -55,6 +62,10 @@ impl AppState {
             config: Arc::new(config),
             events,
             http,
+            indexers: Arc::new(koda_indexers::Client::new()),
+            searches: Arc::default(),
+            wake: Arc::default(),
+            download_clients: Arc::default(),
             tmdb: Arc::new(RwLock::new(catalog.client())),
             cache: Arc::default(),
         }

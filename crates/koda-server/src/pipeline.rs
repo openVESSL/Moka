@@ -1,0 +1,776 @@
+//! Background work that moves a film from "wanted" to "available":
+//! search indexers, pick a release, hand it to the download client, follow
+//! the download, and import the finished file into the library.
+//!
+//! Every step reads its input from the database and writes its result back,
+//! so a restart at any point just resumes.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{Context, anyhow, bail};
+use koda_core::{Quality, TitleState};
+use koda_db::titles::Title;
+use koda_decision::{Candidate, Evaluated, Profile, SizeLimit, Target, Term};
+use koda_download::{QbitConfig, Qbittorrent, Status};
+use koda_indexers::{Capabilities, IndexerConfig, IndexerKind, MovieQuery, torrent::Payload};
+use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
+
+use crate::state::{AppState, LiveEvent};
+
+/// Library settings stored under the `library` key.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LibrarySettings {
+    /// Folder films are imported into.
+    #[serde(default)]
+    pub movies_path: String,
+}
+
+impl LibrarySettings {
+    pub const KEY: &'static str = "library";
+}
+
+/// Result of the last search for a title.
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub at: i64,
+    pub candidates: Vec<Candidate>,
+    pub evaluated: Vec<Evaluated>,
+    /// Indexer name and what went wrong with it.
+    pub indexer_errors: Vec<(String, String)>,
+}
+
+const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "webm", "mpg"];
+const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Runs forever: a pass every few seconds while something is moving, every
+/// minute when idle, and right away when woken.
+pub async fn run(state: AppState) {
+    loop {
+        let busy = match tick(&state).await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(error = ?e, "background pass failed");
+                false
+            }
+        };
+        let wait = if busy { Duration::from_secs(5) } else { Duration::from_secs(60) };
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = state.wake.notified() => {}
+        }
+    }
+}
+
+async fn tick(state: &AppState) -> anyhow::Result<bool> {
+    let tracking = track_downloads(state).await?;
+    let importing = import_pending(state).await?;
+    for title in koda_db::titles::due_for_search(&state.db, 3).await? {
+        if let Err(e) = search_and_grab(state, &title).await {
+            tracing::warn!(title = %title.title, error = ?e, "search failed");
+        }
+    }
+    Ok(tracking || importing)
+}
+
+fn publish_state(state: &AppState, t: &Title) {
+    state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: t.state_reason.clone() });
+}
+
+async fn move_to(state: &AppState, id: i64, to: TitleState, reason: Option<&str>) -> anyhow::Result<()> {
+    let t = koda_db::titles::transition(&state.db, id, to, reason).await?;
+    publish_state(state, &t);
+    Ok(())
+}
+
+/// Wait before searching again after `attempts` fruitless searches.
+fn retry_delay(attempts: i64) -> i64 {
+    const STEPS: [i64; 6] = [15 * 60, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600];
+    STEPS[(attempts.max(0) as usize).min(STEPS.len() - 1)]
+}
+
+pub async fn load_profile(state: &AppState, id: Option<i64>) -> anyhow::Result<Profile> {
+    let p = koda_db::library::profile(&state.db, id).await?.ok_or_else(|| anyhow!("no quality profile"))?;
+    let keys: Vec<String> = serde_json::from_str(&p.qualities)?;
+    Ok(Profile {
+        qualities: keys.iter().filter_map(|k| Quality::from_key(k)).collect(),
+        cutoff: Quality::from_key(&p.cutoff).unwrap_or_default(),
+        upgrades_allowed: p.upgrades_allowed,
+        min_seeders: p.min_seeders.max(0) as u32,
+        size_limits: serde_json::from_str::<HashMap<String, SizeLimit>>(&p.size_limits).unwrap_or_default(),
+        preferred_terms: serde_json::from_str::<Vec<Term>>(&p.preferred_terms).unwrap_or_default(),
+    })
+}
+
+fn indexer_config(i: &koda_db::connectors::Indexer) -> IndexerConfig {
+    IndexerConfig {
+        kind: if i.kind == "newznab" { IndexerKind::Newznab } else { IndexerKind::Torznab },
+        base_url: i.base_url.clone(),
+        api_path: i.api_path.clone(),
+        api_key: i.api_key.clone(),
+        categories: serde_json::from_str(&i.categories).unwrap_or_default(),
+    }
+}
+
+/// Asks every usable indexer for a film and evaluates what comes back.
+pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchResult> {
+    let profile = load_profile(state, title.quality_profile_id).await?;
+    let all = koda_db::connectors::indexers(&state.db).await?;
+    let usable: Vec<_> = all
+        .into_iter()
+        .filter(|i| i.enabled && i.disabled_until.is_none_or(|until| until <= now()))
+        .collect();
+    if usable.is_empty() {
+        bail!("No indexer is available. Add one in Settings, or wait for paused ones to come back.");
+    }
+
+    let query = MovieQuery {
+        title: title.title.clone(),
+        year: title.year.and_then(|y| u16::try_from(y).ok()),
+        imdb_id: title.imdb_id.clone(),
+        tmdb_id: title.tmdb_id,
+    };
+    let mut jobs = JoinSet::new();
+    for idx in usable {
+        let client = state.indexers.clone();
+        let db = state.db.clone();
+        let query = query.clone();
+        jobs.spawn(async move {
+            let result = async {
+                let cfg = indexer_config(&idx);
+                let caps = match idx
+                    .capabilities
+                    .as_deref()
+                    .and_then(|c| serde_json::from_str::<Capabilities>(c).ok())
+                {
+                    Some(c) => c,
+                    None => {
+                        let c = client.capabilities(&cfg).await?;
+                        if let Ok(json) = serde_json::to_string(&c) {
+                            let _ = koda_db::connectors::set_capabilities(&db, idx.id, &json).await;
+                        }
+                        c
+                    }
+                };
+                client.search_movie(&cfg, &caps, &query).await
+            }
+            .await;
+            (idx, result)
+        });
+    }
+
+    let blocked = koda_db::grabs::blocklisted(&state.db, title.id).await?;
+    let mut candidates = Vec::new();
+    let mut indexer_errors = Vec::new();
+    while let Some(joined) = jobs.join_next().await {
+        let Ok((idx, result)) = joined else { continue };
+        match result {
+            Ok(releases) => {
+                koda_db::connectors::indexer_ok(&state.db, idx.id).await?;
+                for r in releases {
+                    let blocklisted = blocked.iter().any(|(t, h)| {
+                        *t == r.title || (h.is_some() && h.as_deref() == r.info_hash.as_deref())
+                    });
+                    candidates.push(Candidate {
+                        release: r,
+                        indexer_id: idx.id,
+                        indexer_name: idx.name.clone(),
+                        indexer_priority: idx.priority as i32,
+                        blocklisted,
+                    });
+                }
+            }
+            Err(e) => {
+                indexer_failed(state, &idx, &e).await?;
+                indexer_errors.push((idx.name.clone(), e.to_string()));
+            }
+        }
+    }
+
+    let target = Target {
+        title: title.title.clone(),
+        original_title: None,
+        year: query.year,
+        imdb_id: title.imdb_id.clone(),
+        tmdb_id: title.tmdb_id,
+        runtime_minutes: title.runtime_minutes.and_then(|m| u32::try_from(m).ok()),
+        existing: existing_quality(state, title.id).await?,
+    };
+    let evaluated = koda_decision::evaluate(&target, &profile, &candidates);
+    let result = SearchResult { at: now(), candidates, evaluated, indexer_errors };
+    state.searches.lock().expect("searches lock").insert(title.id, result.clone());
+    Ok(result)
+}
+
+/// Pauses a failing indexer: growing waits for passing trouble, until fixed
+/// for a bad key or address, exactly what the server asks for on rate limits.
+pub async fn indexer_failed(
+    state: &AppState,
+    idx: &koda_db::connectors::Indexer,
+    e: &koda_indexers::Error,
+) -> anyhow::Result<()> {
+    tracing::warn!(indexer = %idx.name, error = %e, "indexer failed");
+    let pause = match e {
+        _ if e.is_config_problem() => None,
+        koda_indexers::Error::RateLimited { retry_after: Some(d) } => Some(d.as_secs() as i64),
+        _ => Some(koda_indexers::backoff(idx.failure_level as u32 + 1).as_secs() as i64),
+    };
+    koda_db::connectors::indexer_failed(&state.db, idx.id, &e.to_string(), pause).await?;
+    Ok(())
+}
+
+async fn existing_quality(state: &AppState, title_id: i64) -> anyhow::Result<Option<Quality>> {
+    let files = koda_db::library::files_for_title(&state.db, title_id).await?;
+    Ok(files.first().and_then(|f| f.quality.as_deref()).and_then(Quality::from_key))
+}
+
+/// Automatic search: grabs the best acceptable release, or schedules a retry.
+pub async fn search_and_grab(state: &AppState, title: &Title) -> anyhow::Result<()> {
+    move_to(state, title.id, TitleState::Searching, None).await?;
+    let attempts = koda_db::titles::search_attempts(&state.db, title.id).await.unwrap_or(0);
+    let outcome = async {
+        let res = search(state, title).await?;
+        let best = res.evaluated.iter().find(|e| e.accepted()).cloned();
+        match best {
+            Some(e) => {
+                let cand = res.candidates[e.candidate_index].clone();
+                grab(state, title.id, &cand, e.quality).await.map(|_| None)
+            }
+            None => {
+                let found = res.candidates.len();
+                let msg = if found == 0 {
+                    "No releases found yet".to_owned()
+                } else {
+                    format!("{found} releases found, none fits the quality profile")
+                };
+                Ok(Some(msg))
+            }
+        }
+    }
+    .await;
+
+    let reason = match outcome {
+        Ok(None) => return Ok(()),
+        Ok(Some(msg)) => msg,
+        Err(e) => e.to_string(),
+    };
+    move_to(state, title.id, TitleState::Wanted, Some(&reason)).await?;
+    koda_db::titles::schedule_search(&state.db, title.id, now() + retry_delay(attempts), Some(&reason))
+        .await?;
+    Ok(())
+}
+
+pub fn download_client(state: &AppState, c: &koda_db::connectors::DownloadClient) -> Arc<Qbittorrent> {
+    let mut clients = state.download_clients.lock().expect("clients lock");
+    clients
+        .entry(c.id)
+        .or_insert_with(|| {
+            Arc::new(Qbittorrent::new(QbitConfig {
+                base_url: c.base_url.clone(),
+                username: c.username.clone(),
+                password: c.password.clone(),
+                category: c.category.clone(),
+            }))
+        })
+        .clone()
+}
+
+/// Sends a release to the download client and records the grab.
+pub async fn grab(
+    state: &AppState,
+    title_id: i64,
+    cand: &Candidate,
+    quality: Option<Quality>,
+) -> anyhow::Result<()> {
+    let clients = koda_db::connectors::download_clients(&state.db).await?;
+    let client_row = clients
+        .into_iter()
+        .find(|c| c.enabled)
+        .ok_or_else(|| anyhow!("No download client is connected. Add qBittorrent in Settings."))?;
+    let r = &cand.release;
+    let payload = match (&r.magnet_url, &r.download_url) {
+        (Some(m), _) => Payload::Magnet(m.clone()),
+        (None, Some(url)) => {
+            state.indexers.fetch(url).await.context("could not download the .torrent file")?
+        }
+        (None, None) => bail!("The release has no download link"),
+    };
+    let hash = payload
+        .info_hash()
+        .or_else(|| r.info_hash.clone())
+        .ok_or_else(|| anyhow!("Could not work out the torrent's hash, so it could not be tracked"))?;
+
+    let qbit = download_client(state, &client_row);
+    match &payload {
+        Payload::Magnet(m) => qbit.add_magnet(m).await?,
+        Payload::File(bytes) => qbit.add_torrent_file(bytes, &r.title).await?,
+    }
+    koda_db::grabs::create(
+        &state.db,
+        &koda_db::grabs::NewGrab {
+            title_id,
+            indexer_id: Some(cand.indexer_id),
+            download_client_id: client_row.id,
+            release_title: r.title.clone(),
+            size_bytes: r.size_bytes.and_then(|s| i64::try_from(s).ok()),
+            quality: quality.map(|q| q.key()),
+            info_hash: hash,
+        },
+    )
+    .await?;
+    move_to(state, title_id, TitleState::Grabbed, Some(&format!("Sent {} to {}", r.title, client_row.name)))
+        .await?;
+    state.wake.notify_one();
+    Ok(())
+}
+
+/// Polls download clients for every grab in flight. Returns true if any.
+async fn track_downloads(state: &AppState) -> anyhow::Result<bool> {
+    let active = koda_db::grabs::active(&state.db).await?;
+    if active.is_empty() {
+        return Ok(false);
+    }
+    let mut by_client: HashMap<i64, Vec<koda_db::grabs::Grab>> = HashMap::new();
+    for g in active {
+        by_client.entry(g.download_client_id.unwrap_or(0)).or_default().push(g);
+    }
+    for (client_id, grabs) in by_client {
+        let Some(row) = koda_db::connectors::download_client(&state.db, client_id).await? else {
+            for g in grabs {
+                fail_grab(state, &g, "The download client was removed").await?;
+            }
+            continue;
+        };
+        let list = match download_client(state, &row).list().await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!(client = %row.name, error = %e, "could not poll download client");
+                continue;
+            }
+        };
+        for g in grabs {
+            let hash = g.info_hash.clone().unwrap_or_default();
+            match list.iter().find(|d| d.hash == hash) {
+                Some(d) if d.status == Status::Completed => {
+                    if g.status != "completed" {
+                        koda_db::grabs::set_status(
+                            &state.db,
+                            g.id,
+                            "completed",
+                            None,
+                            d.content_path.as_deref(),
+                        )
+                        .await?;
+                        move_to(state, g.title_id, TitleState::Importing, None).await?;
+                    }
+                }
+                Some(d) => {
+                    if g.status == "sent" {
+                        koda_db::grabs::set_status(&state.db, g.id, "downloading", None, None).await?;
+                        move_to(state, g.title_id, TitleState::Downloading, None).await?;
+                    }
+                    koda_db::titles::set_reason(&state.db, g.title_id, d.message.as_deref()).await?;
+                    state.publish(LiveEvent::DownloadProgress {
+                        title_id: g.title_id,
+                        progress: d.progress,
+                        eta_seconds: d.eta_seconds,
+                    });
+                }
+                // qBittorrent can take a moment to list a new magnet
+                None if g.status == "sent" && now() - g.created_at < 15 * 60 => {}
+                None => fail_grab(state, &g, "The download is no longer in the download client").await?,
+            }
+        }
+    }
+    Ok(true)
+}
+
+async fn fail_grab(state: &AppState, g: &koda_db::grabs::Grab, reason: &str) -> anyhow::Result<()> {
+    koda_db::grabs::set_status(&state.db, g.id, "failed", Some(reason), None).await?;
+    koda_db::grabs::blocklist(&state.db, g.title_id, &g.release_title, g.info_hash.as_deref(), reason)
+        .await?;
+    if let Ok(t) = koda_db::titles::transition(&state.db, g.title_id, TitleState::Wanted, Some(reason)).await
+    {
+        koda_db::titles::schedule_search(&state.db, t.id, now(), Some(reason)).await?;
+        publish_state(state, &t);
+    }
+    Ok(())
+}
+
+async fn import_pending(state: &AppState) -> anyhow::Result<bool> {
+    let titles = koda_db::titles::in_state(&state.db, TitleState::Importing).await?;
+    let busy = !titles.is_empty();
+    for t in titles {
+        let Some(g) = koda_db::grabs::latest_for_title(&state.db, t.id).await? else { continue };
+        if g.status != "completed" {
+            continue;
+        }
+        match import(state, &t, &g).await {
+            Ok(()) => {}
+            Err(ImportError::Wait(reason)) => {
+                koda_db::titles::set_reason(&state.db, t.id, Some(&reason)).await?
+            }
+            Err(ImportError::Failed(reason)) => fail_grab(state, &g, &reason).await?,
+        }
+    }
+    Ok(busy)
+}
+
+enum ImportError {
+    /// Fixable by the user; try again later.
+    Wait(String),
+    /// This download is unusable.
+    Failed(String),
+}
+
+impl From<anyhow::Error> for ImportError {
+    fn from(e: anyhow::Error) -> Self {
+        ImportError::Wait(e.to_string())
+    }
+}
+
+async fn import(state: &AppState, t: &Title, g: &koda_db::grabs::Grab) -> Result<(), ImportError> {
+    let lib: LibrarySettings = koda_db::settings::get(&state.db, LibrarySettings::KEY)
+        .await
+        .map_err(anyhow::Error::from)?
+        .unwrap_or_default();
+    if lib.movies_path.trim().is_empty() {
+        return Err(ImportError::Wait("Choose a library folder in Settings to finish importing".into()));
+    }
+    let source = g.output_path.as_deref().map(PathBuf::from).ok_or_else(|| {
+        ImportError::Failed("The download client did not report where the files are".into())
+    })?;
+    if !source.exists() {
+        return Err(ImportError::Wait(format!(
+            "Cannot see {} from the server. The download folder must be reachable at the same path.",
+            source.display()
+        )));
+    }
+
+    let src = source.clone();
+    let video = tokio::task::spawn_blocking(move || main_video(&src))
+        .await
+        .map_err(|e| ImportError::Wait(e.to_string()))?
+        .ok_or_else(|| ImportError::Failed("No video file in the download".into()))?;
+
+    let quality = g.quality.as_deref().and_then(Quality::from_key);
+    let parsed = koda_parser::parse_movie(&g.release_title);
+    let folder = library_folder_name(t);
+    let ext = video.extension().and_then(|e| e.to_str()).unwrap_or("mkv").to_ascii_lowercase();
+    let file_stem = match quality {
+        Some(q) => format!("{folder} - {q}"),
+        None => folder.clone(),
+    };
+    let dest_dir = Path::new(lib.movies_path.trim()).join(&folder);
+    let dest = dest_dir.join(format!("{}.{ext}", sanitize(&file_stem)));
+
+    let (v, d, dd) = (video.clone(), dest.clone(), dest_dir.clone());
+    let size = tokio::task::spawn_blocking(move || -> std::io::Result<u64> {
+        std::fs::create_dir_all(&dd)?;
+        place(&v, &d)?;
+        if let Some(parent) = v.parent() {
+            copy_subtitles(parent, &v, &d);
+        }
+        Ok(std::fs::metadata(&d)?.len())
+    })
+    .await
+    .map_err(|e| ImportError::Wait(e.to_string()))?
+    .map_err(|e| ImportError::Wait(format!("Could not write to the library folder: {e}")))?;
+
+    koda_db::library::add_file(
+        &state.db,
+        t.id,
+        &dest.to_string_lossy(),
+        size as i64,
+        g.quality.as_deref(),
+        parsed.as_ref().and_then(|p| p.group.as_deref()),
+    )
+    .await
+    .map_err(anyhow::Error::from)?;
+    koda_db::grabs::set_status(&state.db, g.id, "imported", None, None).await.map_err(anyhow::Error::from)?;
+    move_to(state, t.id, TitleState::Available, None).await?;
+    tracing::info!(title = %t.title, path = %dest.display(), "imported");
+    Ok(())
+}
+
+/// `Title (Year) {tmdb-ID}`: the id makes later rescans unambiguous.
+pub fn library_folder_name(t: &Title) -> String {
+    let mut name = t.title.clone();
+    if let Some(y) = t.year {
+        name.push_str(&format!(" ({y})"));
+    }
+    if let Some(id) = t.tmdb_id {
+        name.push_str(&format!(" {{tmdb-{id}}}"));
+    }
+    sanitize(&name)
+}
+
+/// Removes characters that are invalid in file names on common systems.
+pub fn sanitize(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| match c {
+            ':' => '-',
+            '<' | '>' | '"' | '/' | '\\' | '|' | '?' | '*' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(['.', ' ']).to_owned()
+}
+
+/// The biggest video file in a download, skipping samples.
+fn main_video(path: &Path) -> Option<PathBuf> {
+    let is_video = |p: &Path| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| VIDEO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+    };
+    if path.is_file() {
+        return is_video(path).then(|| path.to_path_buf());
+    }
+    let mut found = Vec::new();
+    let mut stack = vec![(path.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() && depth < 3 {
+                stack.push((p, depth + 1));
+            } else if is_video(&p) {
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+                if name.contains("sample") || name.contains("trailer") {
+                    continue;
+                }
+                let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+                found.push((size, p));
+            }
+        }
+    }
+    found.into_iter().max_by_key(|(s, _)| *s).map(|(_, p)| p)
+}
+
+/// Hardlink when possible (no extra space, the torrent keeps seeding), copy otherwise.
+// shortcut: never moves, even when seeding is done; moving needs the client's "can move" flag carried here.
+fn place(from: &Path, to: &Path) -> std::io::Result<()> {
+    if to.exists() {
+        std::fs::remove_file(to)?;
+    }
+    if std::fs::hard_link(from, to).is_ok() {
+        return Ok(());
+    }
+    let tmp = to.with_extension("partial");
+    std::fs::copy(from, &tmp)?;
+    std::fs::rename(&tmp, to)
+}
+
+/// Copies subtitle files next to the video, keeping a language suffix like `.en`.
+fn copy_subtitles(dir: &Path, video: &Path, dest: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let dest_stem = dest.with_extension("");
+    let video_stem = video.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
+    for e in entries.flatten() {
+        let p = e.path();
+        let Some(ext) = p.extension().and_then(|x| x.to_str()).map(str::to_ascii_lowercase) else { continue };
+        if !SUBTITLE_EXTENSIONS.contains(&ext.as_str()) {
+            continue;
+        }
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        // "Film.en.forced.srt" -> ".en.forced"
+        let middle =
+            name.strip_prefix(video_stem.as_str()).unwrap_or("").trim_end_matches(&format!(".{ext}"));
+        let middle = if middle.is_empty() || middle.len() > 20 { String::new() } else { middle.to_owned() };
+        let target = PathBuf::from(format!("{}{middle}.{ext}", dest_stem.display()));
+        if !target.exists() {
+            let _ = place(&p, &target);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_are_safe() {
+        assert_eq!(sanitize("Mission: Impossible / Fallout?"), "Mission- Impossible Fallout");
+        assert_eq!(sanitize("Film..."), "Film");
+    }
+
+    #[test]
+    fn retry_backs_off() {
+        assert_eq!(retry_delay(0), 900);
+        assert_eq!(retry_delay(2), 3 * 3600);
+        assert_eq!(retry_delay(50), 24 * 3600);
+    }
+
+    #[test]
+    fn picks_biggest_video_and_brings_subtitles() {
+        let root = std::env::temp_dir().join(format!("koda-import-{}", now()));
+        let dl = root.join("download/Film.2020.1080p");
+        std::fs::create_dir_all(dl.join("Sample")).unwrap();
+        std::fs::write(dl.join("Film.2020.1080p.mkv"), vec![0u8; 2048]).unwrap();
+        std::fs::write(dl.join("Sample/sample.mkv"), vec![0u8; 4096]).unwrap();
+        std::fs::write(dl.join("Film.2020.1080p.en.srt"), "1\n").unwrap();
+        std::fs::write(dl.join("notes.nfo"), "x").unwrap();
+
+        let video = main_video(&dl).unwrap();
+        assert!(video.ends_with("Film.2020.1080p.mkv"), "samples are skipped even when bigger");
+
+        let lib = root.join("library/Film (2020)");
+        std::fs::create_dir_all(&lib).unwrap();
+        let dest = lib.join("Film (2020) - WEB-DL 1080p.mkv");
+        place(&video, &dest).unwrap();
+        copy_subtitles(&dl, &video, &dest);
+        assert_eq!(std::fs::metadata(&dest).unwrap().len(), 2048);
+        assert!(lib.join("Film (2020) - WEB-DL 1080p.en.srt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod flow {
+    use super::*;
+    use axum::{Router, extract::Query, routing::get, routing::post};
+    use koda_db::titles::NewTitle;
+
+    const HASH: &str = "c12fe1c06bba254a9dc9f519b335aa7c1367a88a";
+
+    async fn serve(app: Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}")
+    }
+
+    /// Request to library with a fake indexer and a fake qBittorrent.
+    #[tokio::test]
+    async fn wanted_film_ends_up_in_the_library() {
+        let root = std::env::temp_dir().join(format!("koda-flow-{}-{}", std::process::id(), now()));
+        let download = root.join("downloads/Test.Film.2020.1080p.WEB-DL.H264-GRP");
+        std::fs::create_dir_all(&download).unwrap();
+        std::fs::write(download.join("Test.Film.2020.1080p.WEB-DL.H264-GRP.mkv"), vec![7u8; 4096]).unwrap();
+        let library = root.join("movies");
+
+        let indexer = serve(Router::new().route(
+            "/api",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                match q.get("t").map(String::as_str) {
+                    Some("caps") => r#"<caps><searching><movie-search available="yes" supportedParams="q,tmdbid"/></searching></caps>"#.to_owned(),
+                    _ => format!(r#"<rss><channel>
+                        <item><title>Test.Film.2020.1080p.WEB-DL.H264-GRP</title>
+                          <link>magnet:?xt=urn:btih:{HASH}</link><size>3221225472</size>
+                          <attr name="seeders" value="10"/></item>
+                        <item><title>Test.Film.2020.CAM-BAD</title>
+                          <link>magnet:?xt=urn:btih:ffffffffffffffffffffffffffffffffffffffff</link><size>900000000</size>
+                          <attr name="seeders" value="900"/></item>
+                      </channel></rss>"#),
+                }
+            }),
+        ))
+        .await;
+
+        let content = download.to_string_lossy().into_owned();
+        let qbit = serve(
+            Router::new()
+                .route("/api/v2/auth/login", post(|| async { "Ok." }))
+                .route("/api/v2/torrents/createCategory", post(|| async { "" }))
+                .route("/api/v2/torrents/add", post(|| async { "Ok." }))
+                .route(
+                    "/api/v2/torrents/info",
+                    get(move || {
+                        let content = content.clone();
+                        async move {
+                            axum::Json(serde_json::json!([{ "hash": HASH.to_uppercase(), "name": "Test.Film",
+                                "state": "stalledUP", "progress": 1.0, "size": 4096,
+                                "save_path": "/elsewhere", "content_path": content }]))
+                        }
+                    }),
+                ),
+        )
+        .await;
+
+        let db = koda_db::memory().await;
+        let config = crate::config::Config {
+            config_dir: root.clone(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: String::new(),
+        };
+        let state = AppState::new(db.clone(), config, Default::default());
+        koda_db::connectors::create_indexer(
+            &db,
+            &koda_db::connectors::IndexerInput {
+                name: "fake".into(),
+                kind: "torznab".into(),
+                base_url: indexer,
+                api_path: "/api".into(),
+                api_key: None,
+                categories: vec![2000],
+                priority: 25,
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        koda_db::connectors::create_download_client(
+            &db,
+            &koda_db::connectors::DownloadClientInput {
+                name: "qbit".into(),
+                kind: "qbittorrent".into(),
+                base_url: qbit,
+                username: None,
+                password: None,
+                category: "koda".into(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        let film = NewTitle {
+            tmdb_id: 42,
+            title: "Test Film".into(),
+            year: Some(2020),
+            runtime_minutes: Some(100),
+            ..Default::default()
+        };
+        let t = koda_db::titles::upsert_movie(&db, &film, TitleState::Wanted).await.unwrap();
+
+        // pass 1: search and grab the WEB-DL (the CAM is not in the profile)
+        tick(&state).await.unwrap();
+        let t = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(t.state(), TitleState::Grabbed, "{:?}", t.state_reason);
+
+        // pass 2: client reports it complete; the library folder is not set yet
+        tick(&state).await.unwrap();
+        let t = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(t.state(), TitleState::Importing);
+        assert!(t.state_reason.unwrap().contains("library folder"));
+
+        // pass 3: with a library folder the file is placed and the film is available
+        let lib = LibrarySettings { movies_path: library.to_string_lossy().into_owned() };
+        koda_db::settings::set(&db, LibrarySettings::KEY, &lib).await.unwrap();
+        tick(&state).await.unwrap();
+        let t = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
+        assert_eq!(t.state(), TitleState::Available);
+
+        let files = koda_db::library::files_for_title(&db, t.id).await.unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(
+            files[0].path.ends_with("Test Film (2020) {tmdb-42} - WEB-DL 1080p.mkv"),
+            "{}",
+            files[0].path
+        );
+        assert_eq!(std::fs::metadata(&files[0].path).unwrap().len(), 4096);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

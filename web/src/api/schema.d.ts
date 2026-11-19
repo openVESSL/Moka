@@ -117,6 +117,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/download-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_clients"];
+        put?: never;
+        post: operations["create_client"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/download-clients/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logs in to the client with these settings. Does not save. */
+        post: operations["test_client"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/download-clients/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_client"];
+        post?: never;
+        delete: operations["delete_client"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -128,6 +177,55 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/indexers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_indexers"];
+        put?: never;
+        post: operations["create_indexer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/indexers/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Checks an indexer's settings by asking for its capabilities. Does not save. */
+        post: operations["test_indexer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/indexers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_indexer"];
+        post?: never;
+        delete: operations["delete_indexer"];
         options?: never;
         head?: never;
         patch?: never;
@@ -218,6 +316,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_library"];
+        /** Saves the library folder after checking the server can write to it. */
+        put: operations["put_library"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/requests": {
         parameters: {
             query?: never;
@@ -260,6 +375,75 @@ export interface paths {
         get: operations["one"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{id}/grab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sends one release from the last search to the download client, even if it was rejected. */
+        post: operations["grab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["releases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Searches indexers for this film now and returns every release with its verdict.
+         *     Nothing is grabbed; use `grab` to pick one, or let the background search pick.
+         */
+        post: operations["search_now"];
         delete?: never;
         options?: never;
         head?: never;
@@ -337,13 +521,74 @@ export interface components {
         Decision: {
             note?: string | null;
         };
+        DownloadClient: {
+            base_url: string;
+            category: string;
+            enabled: boolean;
+            /** Format: int64 */
+            id: number;
+            /** @description qbittorrent */
+            kind: string;
+            name: string;
+            password_set: boolean;
+            username?: string | null;
+        };
+        DownloadClientBody: {
+            base_url: string;
+            category?: string | null;
+            enabled?: boolean | null;
+            name: string;
+            /** @description Omit when editing to keep the stored password. */
+            password?: string | null;
+            username?: string | null;
+        };
         ErrorBody: {
             error: string;
             message: string;
         };
+        GrabBody: {
+            /** @description `index` from the release list. */
+            index: number;
+        };
         Health: {
             status: string;
             version: string;
+        };
+        Indexer: {
+            api_key_set: boolean;
+            api_path: string;
+            base_url: string;
+            categories: number[];
+            enabled: boolean;
+            /** Format: int64 */
+            id: number;
+            /** @description torznab | newznab */
+            kind: string;
+            last_error?: string | null;
+            name: string;
+            /**
+             * Format: int64
+             * @description Unix time until which the indexer is paused after errors.
+             */
+            paused_until?: number | null;
+            /** Format: int64 */
+            priority: number;
+        };
+        IndexerBody: {
+            /** @description Omit when editing to keep the stored key. */
+            api_key?: string | null;
+            api_path?: string | null;
+            base_url: string;
+            categories?: number[] | null;
+            enabled?: boolean | null;
+            kind: string;
+            name: string;
+            /** Format: int64 */
+            priority?: number | null;
+        };
+        LibrarySettingsBody: {
+            /** @description Folder films are imported into, as the server sees it. */
+            movies_path: string;
         };
         /** @description Where a catalog film stands locally, if it is known at all. */
         LocalState: {
@@ -358,6 +603,18 @@ export interface components {
             /** Format: int32 */
             permissions: number;
             username: string;
+        };
+        MediaFile: {
+            /** Format: int64 */
+            added_at: number;
+            /** Format: int64 */
+            id: number;
+            path: string;
+            quality?: string | null;
+            quality_label?: string | null;
+            release_group?: string | null;
+            /** Format: int64 */
+            size_bytes: number;
         };
         NewRequest: {
             /** Format: int64 */
@@ -379,6 +636,36 @@ export interface components {
              * @description Maximum films per period. Missing or zero means unlimited.
              */
             limit?: number | null;
+        };
+        /** @description One release from the last search, with the verdict on it. */
+        ReleaseView: {
+            accepted: boolean;
+            /** @description Why it ranks above the next acceptable release. */
+            beats_next_by?: string | null;
+            /** @description Position in the last search; pass it to `grab`. */
+            index: number;
+            indexer: string;
+            info_url?: string | null;
+            /** Format: int64 */
+            published_at?: number | null;
+            /** @description Quality key, e.g. `webdl-1080p`. */
+            quality?: string | null;
+            quality_label?: string | null;
+            rejections: string[];
+            /** Format: int32 */
+            seeders?: number | null;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            title: string;
+        };
+        ReleasesView: {
+            indexer_errors: string[];
+            releases: components["schemas"]["ReleaseView"][];
+            /**
+             * Format: int64
+             * @description Unix time of the search; null if never searched since start.
+             */
+            searched_at?: number | null;
         };
         Request: {
             backdrop_path?: string | null;
@@ -402,6 +689,10 @@ export interface components {
             tmdb_id?: number | null;
             /** Format: int64 */
             year?: number | null;
+        };
+        TestResult: {
+            message: string;
+            ok: boolean;
         };
         Title: {
             backdrop_path?: string | null;
@@ -616,6 +907,115 @@ export interface operations {
             };
         };
     };
+    list_clients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"][];
+                };
+            };
+        };
+    };
+    create_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadClientBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"];
+                };
+            };
+        };
+    };
+    test_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadClientBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+        };
+    };
+    update_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadClientBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"];
+                };
+            };
+        };
+    };
+    delete_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     health: {
         parameters: {
             query?: never;
@@ -632,6 +1032,115 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Health"];
                 };
+            };
+        };
+    };
+    list_indexers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Indexer"][];
+                };
+            };
+        };
+    };
+    create_indexer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndexerBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Indexer"];
+                };
+            };
+        };
+    };
+    test_indexer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndexerBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+        };
+    };
+    update_indexer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndexerBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Indexer"];
+                };
+            };
+        };
+    };
+    delete_indexer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -819,6 +1328,55 @@ export interface operations {
             };
         };
     };
+    get_library: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibrarySettingsBody"];
+                };
+            };
+        };
+    };
+    put_library: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibrarySettingsBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibrarySettingsBody"];
+                };
+            };
+            /** @description folder not usable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_requests: {
         parameters: {
             query?: never;
@@ -906,6 +1464,94 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaFile"][];
+                };
+            };
+        };
+    };
+    grab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrabBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Title"];
+                };
+            };
+        };
+    };
+    releases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasesView"];
+                };
+            };
+        };
+    };
+    search_now: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasesView"];
+                };
             };
         };
     };

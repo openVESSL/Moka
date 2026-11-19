@@ -8,6 +8,7 @@ import { MoviePage } from "./routes/movie";
 import { RequestsPage } from "./routes/requests";
 import { SettingsPage } from "./routes/settings";
 import { Shell } from "./routes/Shell";
+import { WatchPage } from "./routes/watch";
 
 type Ctx = { queryClient: QueryClient };
 
@@ -89,9 +90,17 @@ const requests = createRoute({
 });
 
 const library = createRoute({ getParentRoute: () => app, path: "/library", component: LibraryPage });
+const watch = createRoute({
+  getParentRoute: () => app,
+  path: "/watch/$fileId",
+  component: function Watch() {
+    const { fileId } = watch.useParams();
+    return <WatchPage fileId={Number(fileId)} />;
+  },
+});
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: SettingsPage });
 
-const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, requests, library, settings])]);
+const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, requests, library, settings, watch])]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({

@@ -2,19 +2,32 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
+import { DownloadClientSection, IndexersSection, LibrarySection } from "./connectors";
 
 export function SettingsPage() {
   return (
     <main className="mx-auto max-w-[56rem] px-4 pt-12 sm:px-8">
       <h1 className="font-slate text-5xl leading-none font-extrabold uppercase">Settings</h1>
       <CatalogSection />
-      <QuotaSection />
       <Section
-        title="Download client and indexers"
-        intro="Connecting qBittorrent and your Torznab or Newznab indexers comes next in this build."
+        title="Library"
+        intro="Where finished films are placed. Keep it on the same disk as your downloads so imports are instant and take no extra space."
       >
-        {null}
+        <LibrarySection />
       </Section>
+      <Section
+        title="Download client"
+        intro="qBittorrent with its Web UI turned on. Downloads are added under their own category so you can tell them apart."
+      >
+        <DownloadClientSection />
+      </Section>
+      <Section
+        title="Indexers"
+        intro="Torznab or Newznab search addresses, from your indexer or from an indexer manager. Films are searched on all of them at once."
+      >
+        <IndexersSection />
+      </Section>
+      <QuotaSection />
     </main>
   );
 }

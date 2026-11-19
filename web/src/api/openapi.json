@@ -224,6 +224,145 @@
         }
       }
     },
+    "/api/v1/download-clients": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "list_clients",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DownloadClient"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "create_client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadClientBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadClient"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/download-clients/test": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Logs in to the client with these settings. Does not save.",
+        "operationId": "test_client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadClientBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/download-clients/{id}": {
+      "put": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "update_client",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadClientBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadClient"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "delete_client",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {}
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -240,6 +379,145 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/v1/indexers": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "list_indexers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Indexer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "create_indexer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Indexer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/indexers/test": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Checks an indexer's settings by asking for its capabilities. Does not save.",
+        "operationId": "test_indexer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/indexers/{id}": {
+      "put": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "update_indexer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Indexer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "connectors"
+        ],
+        "operationId": "delete_indexer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {}
         }
       }
     },
@@ -473,6 +751,56 @@
         }
       }
     },
+    "/api/v1/settings/library": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_library",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySettingsBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Saves the library folder after checking the server can write to it.",
+        "operationId": "put_library",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibrarySettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySettingsBody"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "folder not usable"
+          }
+        }
+      }
+    },
     "/api/v1/settings/requests": {
       "get": {
         "tags": [
@@ -582,6 +910,141 @@
             }
           },
           "404": {}
+        }
+      }
+    },
+    "/api/v1/titles/{id}/files": {
+      "get": {
+        "tags": [
+          "titles"
+        ],
+        "operationId": "files",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MediaFile"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{id}/grab": {
+      "post": {
+        "tags": [
+          "titles"
+        ],
+        "summary": "Sends one release from the last search to the download client, even if it was rejected.",
+        "operationId": "grab",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrabBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Title"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{id}/releases": {
+      "get": {
+        "tags": [
+          "titles"
+        ],
+        "operationId": "releases",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasesView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{id}/search": {
+      "post": {
+        "tags": [
+          "titles"
+        ],
+        "summary": "Searches indexers for this film now and returns every release with its verdict.\nNothing is grabbed; use `grab` to pick one, or let the background search pick.",
+        "operationId": "search_now",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasesView"
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -873,6 +1336,89 @@
           }
         }
       },
+      "DownloadClient": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "base_url",
+          "password_set",
+          "category",
+          "enabled"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "description": "qbittorrent"
+          },
+          "name": {
+            "type": "string"
+          },
+          "password_set": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DownloadClientBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omit when editing to keep the stored password."
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -888,6 +1434,19 @@
           }
         }
       },
+      "GrabBody": {
+        "type": "object",
+        "required": [
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "`index` from the release list.",
+            "minimum": 0
+          }
+        }
+      },
       "Health": {
         "type": "object",
         "required": [
@@ -900,6 +1459,139 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "Indexer": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "base_url",
+          "api_path",
+          "api_key_set",
+          "categories",
+          "priority",
+          "enabled"
+        ],
+        "properties": {
+          "api_key_set": {
+            "type": "boolean"
+          },
+          "api_path": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "description": "torznab | newznab"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "paused_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix time until which the indexer is paused after errors."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "IndexerBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "base_url"
+        ],
+        "properties": {
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omit when editing to keep the stored key."
+          },
+          "api_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "categories": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "LibrarySettingsBody": {
+        "type": "object",
+        "required": [
+          "movies_path"
+        ],
+        "properties": {
+          "movies_path": {
+            "type": "string",
+            "description": "Folder films are imported into, as the server sees it."
           }
         }
       },
@@ -940,6 +1632,50 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "MediaFile": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "size_bytes",
+          "added_at"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "path": {
+            "type": "string"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quality_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1001,6 +1737,117 @@
             ],
             "format": "int64",
             "description": "Maximum films per period. Missing or zero means unlimited."
+          }
+        }
+      },
+      "ReleaseView": {
+        "type": "object",
+        "description": "One release from the last search, with the verdict on it.",
+        "required": [
+          "index",
+          "title",
+          "indexer",
+          "accepted",
+          "rejections"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "beats_next_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it ranks above the next acceptable release."
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position in the last search; pass it to `grab`.",
+            "minimum": 0
+          },
+          "indexer": {
+            "type": "string"
+          },
+          "info_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Quality key, e.g. `webdl-1080p`."
+          },
+          "quality_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rejections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "seeders": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ReleasesView": {
+        "type": "object",
+        "required": [
+          "releases",
+          "indexer_errors"
+        ],
+        "properties": {
+          "indexer_errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseView"
+            }
+          },
+          "searched_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix time of the search; null if never searched since start."
           }
         }
       },
@@ -1080,6 +1927,21 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "TestResult": {
+        "type": "object",
+        "required": [
+          "ok",
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
           }
         }
       },

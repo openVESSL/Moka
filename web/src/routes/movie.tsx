@@ -1,15 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react";
 import { img } from "../api/client";
-import { movieQuery } from "../api/queries";
+import { meQuery, movieQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
 import { Roll } from "../components/Roll";
 import { SlateFields } from "../components/SlateFields";
+import { TitlePanel } from "../components/TitlePanel";
 import { runtime } from "../lib/states";
 import { CatalogError } from "./discover";
 
 export function MoviePage({ tmdbId }: { tmdbId: number }) {
   const { data: m, error, isPending } = useQuery(movieQuery(tmdbId));
+  const { data: me } = useQuery(meQuery);
   if (error) return <CatalogError error={error} />;
   if (isPending) return <div className="h-[70vh] animate-pulse bg-slate-raised/50" />;
 
@@ -98,6 +100,8 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
           </section>
         )}
       </div>
+
+      {m.local && <TitlePanel titleId={m.local.title_id} permissions={me?.permissions ?? 0} />}
 
       {m.recommendations.length > 0 && (
         <section aria-labelledby="more" className="mx-auto mt-20 max-w-[110rem] px-4 sm:px-8">

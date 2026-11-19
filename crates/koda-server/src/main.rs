@@ -354,6 +354,16 @@ mod tests {
             "GET /api/v3/indexer/1",
             "PUT /api/v3/indexer/1",
             "DELETE /api/v3/indexer/1",
+            "GET /api/v3/qualityProfile",
+            "GET /api/v3/rootfolder",
+            "GET /api/v3/tag",
+            "GET /api/v3/movie",
+            "POST /api/v3/movie",
+            "GET /api/v3/movie/lookup?term=tmdb:1",
+            "GET /api/v3/movie/1",
+            "PUT /api/v3/movie/1",
+            "POST /api/v3/command",
+            "GET /api/v3/queue",
         ] {
             let (m, p) = extra.split_once(' ').unwrap();
             routes.push((m.into(), p.into()));
@@ -481,5 +491,62 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         let res = app.clone().oneshot(v3("GET", &format!("/api/v3/indexer/{id}"), "")).await.unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn request_apps_add_films_through_v3() {
+        let tmdb = axum::Router::new().route(
+            "/movie/603",
+            axum::routing::get(|| async {
+                axum::Json(
+                    serde_json::json!({ "id": 603, "title": "The Matrix", "release_date": "1999-03-30" }),
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, tmdb).await.unwrap() });
+
+        let db = koda_db::memory().await;
+        let admin = koda_db::users::create(&db, "admin", "x", koda_core::Permissions::ADMIN).await.unwrap();
+        koda_db::users::create_api_key(&db, admin.id, "requests", &auth::token_hash("K")).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_tmdb(koda_metadata::Tmdb::with_base_url(&base, "k", "en-US", None));
+        let app = app(state);
+        let call = |method: &str, uri: &str, body: &str| {
+            let mut r = json(method, uri, body);
+            r.headers_mut().insert("x-api-key", "K".parse().unwrap());
+            app.clone().oneshot(r)
+        };
+
+        let found = body_json(call("GET", "/api/v3/movie/lookup?term=tmdb:603", "").await.unwrap()).await;
+        assert_eq!((found[0]["id"].as_i64(), found[0]["title"].as_str()), (Some(0), Some("The Matrix")));
+
+        let res = call("POST", "/api/v3/movie", r#"{"tmdbId":603,"qualityProfileId":1,"monitored":true}"#)
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let added = body_json(res).await;
+        let id = added["id"].as_i64().unwrap();
+        assert!(id > 0);
+        assert_eq!((added["monitored"].as_bool(), added["hasFile"].as_bool()), (Some(true), Some(false)));
+        assert_eq!(added["titleSlug"], "the-matrix-603");
+
+        let found = body_json(call("GET", "/api/v3/movie/lookup?term=tmdb:603", "").await.unwrap()).await;
+        assert_eq!(found[0]["id"].as_i64(), Some(id), "now in the library");
+        let all = body_json(call("GET", "/api/v3/movie", "").await.unwrap()).await;
+        assert_eq!(all.as_array().unwrap().len(), 1);
+
+        let cmd = format!(r#"{{"name":"MoviesSearch","movieIds":[{id}]}}"#);
+        assert_eq!(call("POST", "/api/v3/command", &cmd).await.unwrap().status(), StatusCode::CREATED);
+        let q = body_json(call("GET", "/api/v3/queue?page=1&pageSize=50", "").await.unwrap()).await;
+        assert_eq!(q["totalRecords"], 0);
+        let p = body_json(call("GET", "/api/v3/qualityProfile", "").await.unwrap()).await;
+        assert_eq!(p[0]["name"], "HD 1080p");
     }
 }

@@ -14,6 +14,10 @@ the steps to migrate.
 - Import of indexers from Prowlarr, torrent and Usenet, searched through Prowlarr.
 - Transmission and SABnzbd download clients; Usenet releases from Newznab
   indexers are sent to SABnzbd and tracked to import.
+- API keys for other apps, sent as `X-Api-Key` or `?apikey=`.
+- A `/api/v3` API compatible with Radarr: indexer managers can sync
+  Torznab/Newznab indexers into Koda, and request apps can add films,
+  follow their status and see the download queue.
 
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.

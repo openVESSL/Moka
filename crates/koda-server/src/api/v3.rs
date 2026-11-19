@@ -7,10 +7,12 @@ use std::collections::HashMap;
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::{Json, Router, middleware, routing::get, routing::post};
-use koda_core::Permissions;
+use koda_core::{Permissions, TitleKind, TitleState};
 use koda_db::connectors::IndexerInput;
+use koda_db::titles::Title;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use time::format_description::well_known::Rfc3339;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::auth::CurrentUser;
@@ -30,6 +32,17 @@ pub fn router() -> Router<AppState> {
         .route("/indexer/schema", get(indexer_schema))
         .route("/indexer/test", post(test_indexer))
         .route("/indexer/{id}", get(one_indexer).put(update_indexer).delete(delete_indexer))
+        // request apps
+        .route("/qualityprofile", get(quality_profiles))
+        .route("/qualityProfile", get(quality_profiles))
+        .route("/rootfolder", get(root_folders))
+        .route("/rootFolder", get(root_folders))
+        .route("/tag", get(tags).post(create_tag))
+        .route("/movie", get(list_movies).post(add_movie).put(update_movie_body))
+        .route("/movie/lookup", get(lookup_movie))
+        .route("/movie/{id}", get(one_movie).put(update_movie))
+        .route("/command", post(command))
+        .route("/queue", get(queue))
         .fallback(|| async { ApiError::NotFound("endpoint") })
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("x-application-version"),
@@ -293,4 +306,312 @@ async fn delete_indexer(user: CurrentUser, State(s): State<AppState>, Path(id): 
     koda_db::connectors::indexer(&s.db, id).await?.ok_or(ApiError::NotFound("indexer"))?;
     koda_db::connectors::delete_indexer(&s.db, id).await?;
     Ok(())
+}
+
+// ---- request apps -------------------------------------------------------
+
+fn date(unix: i64) -> String {
+    time::OffsetDateTime::from_unix_timestamp(unix)
+        .ok()
+        .and_then(|t| t.format(&Rfc3339).ok())
+        .unwrap_or_default()
+}
+
+fn slug(title: &str, tmdb_id: i64) -> String {
+    let words: Vec<String> = title
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    format!("{}-{tmdb_id}", words.join("-"))
+}
+
+/// 2160, 1080, 720, 576, 480 or 0, read from a quality key such as `bluray-1080p`.
+fn resolution(quality: &str) -> u32 {
+    [2160, 1080, 720, 576, 480].into_iter().find(|r| quality.contains(&r.to_string())).unwrap_or(0)
+}
+
+async fn movies_root(s: &AppState) -> ApiResult<String> {
+    let lib: crate::pipeline::LibrarySettings =
+        koda_db::settings::get(&s.db, crate::pipeline::LibrarySettings::KEY).await?.unwrap_or_default();
+    Ok(lib.movies_path)
+}
+
+/// A Koda title as a movie resource.
+async fn movie(s: &AppState, t: &Title, root: &str) -> ApiResult<Value> {
+    let tmdb_id = t.tmdb_id.unwrap_or(0);
+    let file = koda_db::library::files_for_title(&s.db, t.id).await?.into_iter().next();
+    let folder = file
+        .as_ref()
+        .and_then(|f| std::path::Path::new(&f.path).parent().map(|p| p.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| format!("{}/{}", root.trim_end_matches(['/', '\\']), t.title));
+    let movie_file = file.as_ref().map(|f| {
+        let q = f.quality.clone().unwrap_or_default();
+        json!({
+            "id": f.id,
+            "movieId": t.id,
+            "path": f.path,
+            "relativePath": std::path::Path::new(&f.path).file_name().map(|n| n.to_string_lossy().into_owned()),
+            "size": f.size_bytes,
+            "dateAdded": date(f.added_at),
+            "releaseGroup": f.release_group,
+            "quality": { "quality": { "id": 0, "name": q, "resolution": resolution(&q) },
+                         "revision": { "version": 1, "real": 0, "isRepack": false } },
+        })
+    });
+    Ok(json!({
+        "id": t.id,
+        "title": t.title,
+        "originalTitle": t.original_title,
+        "sortTitle": t.title.to_lowercase(),
+        "tmdbId": tmdb_id,
+        "imdbId": t.imdb_id,
+        "year": t.year.unwrap_or(0),
+        "titleSlug": slug(&t.title, tmdb_id),
+        "overview": t.overview,
+        "runtime": t.runtime_minutes.unwrap_or(0),
+        "status": "released",
+        "minimumAvailability": "released",
+        "monitored": t.monitored && t.state() != TitleState::Requested,
+        "isAvailable": true,
+        "hasFile": movie_file.is_some(),
+        "movieFile": movie_file,
+        "sizeOnDisk": file.as_ref().map_or(0, |f| f.size_bytes),
+        "qualityProfileId": t.quality_profile_id.unwrap_or(1),
+        "rootFolderPath": root,
+        "path": folder,
+        "added": date(t.created_at),
+        "tags": [],
+        "images": [],
+    }))
+}
+
+async fn quality_profiles(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    let p = koda_db::library::profile(&s.db, None).await?;
+    Ok(Json(json!(p.map(|p| json!({ "id": p.id, "name": p.name })).into_iter().collect::<Vec<_>>())))
+}
+
+async fn root_folders(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    let root = movies_root(&s).await?;
+    if root.is_empty() {
+        return Ok(Json(json!([])));
+    }
+    // shortcut: free space is not measured, report it once Koda tracks disk usage
+    Ok(Json(json!([{ "id": 1, "path": root, "accessible": true, "freeSpace": 0, "unmappedFolders": [] }])))
+}
+
+// shortcut: Koda has no tags; created tags are acknowledged, not stored
+async fn tags(user: CurrentUser) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    Ok(Json(json!([])))
+}
+
+async fn create_tag(user: CurrentUser, Json(b): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
+    admin(&user)?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": 1, "label": b["label"] }))))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MovieQuery {
+    tmdb_id: Option<i64>,
+}
+
+async fn list_movies(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Query(q): Query<MovieQuery>,
+) -> ApiResult<Json<Vec<Value>>> {
+    admin(&user)?;
+    let root = movies_root(&s).await?;
+    let titles = match q.tmdb_id {
+        Some(id) => koda_db::titles::by_tmdb(&s.db, TitleKind::Movie, id).await?.into_iter().collect(),
+        None => koda_db::titles::list(&s.db, None).await?,
+    };
+    let mut out = Vec::with_capacity(titles.len());
+    for t in titles.iter().filter(|t| t.kind == TitleKind::Movie.as_str()) {
+        out.push(movie(&s, t, &root).await?);
+    }
+    Ok(Json(out))
+}
+
+async fn one_movie(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    let t = koda_db::titles::by_id(&s.db, id).await?.ok_or(ApiError::NotFound("movie"))?;
+    Ok(Json(movie(&s, &t, &movies_root(&s).await?).await?))
+}
+
+#[derive(Deserialize)]
+struct Lookup {
+    term: String,
+}
+
+/// `term=tmdb:603` finds one film, in the library or not (then `id` is 0).
+async fn lookup_movie(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Query(q): Query<Lookup>,
+) -> ApiResult<Json<Vec<Value>>> {
+    admin(&user)?;
+    let Some(tmdb_id) = q.term.trim().strip_prefix("tmdb:").and_then(|id| id.trim().parse::<i64>().ok())
+    else {
+        return Ok(Json(vec![]));
+    };
+    let root = movies_root(&s).await?;
+    if let Some(t) = koda_db::titles::by_tmdb(&s.db, TitleKind::Movie, tmdb_id).await? {
+        return Ok(Json(vec![movie(&s, &t, &root).await?]));
+    }
+    let tmdb = s.tmdb();
+    let d = s
+        .cached(format!("movie:{tmdb_id}"), std::time::Duration::from_secs(6 * 3600), || tmdb.movie(tmdb_id))
+        .await?;
+    Ok(Json(vec![json!({
+        "id": 0,
+        "title": d.title,
+        "originalTitle": d.original_title,
+        "tmdbId": d.id,
+        "imdbId": d.imdb_id,
+        "year": d.year().unwrap_or(0),
+        "titleSlug": slug(&d.title, d.id),
+        "overview": d.overview,
+        "runtime": d.runtime.unwrap_or(0),
+        "monitored": false,
+        "hasFile": false,
+        "isAvailable": true,
+        "status": "released",
+        "rootFolderPath": root,
+        "tags": [],
+        "images": [],
+    })]))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NewMovie {
+    tmdb_id: i64,
+}
+
+/// Adding a film is an approved request by the key's owner: Koda searches
+/// for it right away.
+async fn add_movie(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Json(b): Json<NewMovie>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    admin(&user)?;
+    let Json(req) = super::requests::create(
+        CurrentUser(user.0.clone()),
+        State(s.clone()),
+        Json(super::requests::NewRequest { tmdb_id: b.tmdb_id }),
+    )
+    .await?;
+    let t = koda_db::titles::by_id(&s.db, req.title_id).await?.ok_or(ApiError::NotFound("movie"))?;
+    Ok((StatusCode::CREATED, Json(movie(&s, &t, &movies_root(&s).await?).await?)))
+}
+
+#[derive(Deserialize)]
+struct MovieId {
+    id: i64,
+}
+
+/// Edits are not applied (Koda picks folders and quality itself); the
+/// current state is returned so the caller carries on.
+async fn update_movie(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    admin(&user)?;
+    let t = koda_db::titles::by_id(&s.db, id).await?.ok_or(ApiError::NotFound("movie"))?;
+    Ok((StatusCode::ACCEPTED, Json(movie(&s, &t, &movies_root(&s).await?).await?)))
+}
+
+async fn update_movie_body(
+    user: CurrentUser,
+    state: State<AppState>,
+    Json(b): Json<MovieId>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    update_movie(user, state, Path(b.id)).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Command {
+    name: String,
+    #[serde(default)]
+    movie_ids: Vec<i64>,
+}
+
+/// `MoviesSearch` searches now for wanted films; other commands are accepted
+/// and have nothing to do in Koda.
+async fn command(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Json(c): Json<Command>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    admin(&user)?;
+    if c.name.eq_ignore_ascii_case("MoviesSearch") {
+        for id in &c.movie_ids {
+            if let Some(t) = koda_db::titles::by_id(&s.db, *id).await?
+                && t.state() == TitleState::Wanted
+            {
+                koda_db::titles::schedule_search(&s.db, t.id, 0, None).await?;
+            }
+        }
+        s.wake.notify_one();
+    }
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            json!({ "id": 1, "name": c.name, "commandName": c.name, "status": "queued", "queued": date(now) }),
+        ),
+    ))
+}
+
+/// Downloads in progress, read live from the download clients.
+async fn queue(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let mut lists: HashMap<i64, Vec<koda_download::Download>> = HashMap::new();
+    let mut records = Vec::new();
+    for g in koda_db::grabs::active(&s.db).await? {
+        let (Some(client_id), Some(download_id)) = (g.download_client_id, g.info_hash.as_deref()) else {
+            continue;
+        };
+        if let std::collections::hash_map::Entry::Vacant(slot) = lists.entry(client_id) {
+            let list = match koda_db::connectors::download_client(&s.db, client_id).await? {
+                Some(row) => crate::pipeline::download_client(&s, &row).list().await.unwrap_or_default(),
+                None => vec![],
+            };
+            slot.insert(list);
+        }
+        let Some(d) = lists[&client_id].iter().find(|d| d.id == download_id) else { continue };
+        let left = (d.size_bytes as f64 * (1.0 - f64::from(d.progress))) as u64;
+        let eta = d.eta_seconds.unwrap_or(0);
+        let status = format!("{:?}", d.status).to_lowercase();
+        records.push(json!({
+            "id": g.id,
+            "movieId": g.title_id,
+            "title": g.release_title,
+            "size": d.size_bytes,
+            "sizeleft": left,
+            "timeleft": format!("{:02}:{:02}:{:02}", eta / 3600, eta / 60 % 60, eta % 60),
+            "estimatedCompletionTime": date(now + eta),
+            "status": status,
+            "trackedDownloadStatus": if matches!(status.as_str(), "warning" | "failed") { "warning" } else { "ok" },
+            "trackedDownloadState": if status == "completed" { "importPending" } else { "downloading" },
+            "downloadId": download_id,
+            "errorMessage": d.message,
+        }));
+    }
+    Ok(Json(
+        json!({ "page": 1, "pageSize": records.len().max(1), "totalRecords": records.len(), "records": records }),
+    ))
 }

@@ -22,6 +22,7 @@ pub mod requests;
 pub mod settings;
 pub mod titles;
 pub mod users;
+pub mod webhooks;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -67,6 +68,10 @@ pub mod users;
         users::update,
         users::remove,
         users::change_own_password,
+        webhooks::list,
+        webhooks::create,
+        webhooks::remove,
+        webhooks::test,
         settings::get_library,
         settings::put_library,
     ),
@@ -85,6 +90,7 @@ pub fn router() -> Router<AppState> {
         .merge(titles::router())
         .merge(connectors::router())
         .merge(users::router())
+        .merge(webhooks::router())
         .merge(settings::router())
         .merge(images::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });

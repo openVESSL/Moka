@@ -168,6 +168,13 @@ pub async fn create(
     let row = koda_db::requests::create(db, title.id, user.0.id, status).await?;
     state.publish(LiveEvent::RequestCreated { request_id: row.id, title_id: title.id });
     state.wake.notify_one();
+    let event = if auto { crate::notify::Event::Approved } else { crate::notify::Event::Requested };
+    crate::notify::send(
+        &state,
+        event,
+        Some(crate::notify::TitleInfo::from_title(&title, None)),
+        Some(user.0.username.clone()),
+    );
     if auto {
         state.publish(LiveEvent::TitleState { title_id: title.id, state: title.state(), reason: None });
     }
@@ -198,6 +205,10 @@ pub async fn approve(
     }
     state.publish(LiveEvent::RequestDecided { request_id: id, title_id: req.title_id, approved: true });
     state.wake.notify_one();
+    if let Some(t) = koda_db::titles::by_id(db, req.title_id).await? {
+        let info = crate::notify::TitleInfo::from_title(&t, None);
+        crate::notify::send(&state, crate::notify::Event::Approved, Some(info), Some(req.username.clone()));
+    }
     let row = koda_db::requests::by_id(db, id).await?.ok_or(ApiError::NotFound("request"))?;
     Ok(Json(row.into()))
 }
@@ -217,6 +228,10 @@ pub async fn decline(
     let note = body.and_then(|Json(d)| d.note);
     koda_db::requests::decide(db, id, RequestStatus::Declined, user.0.id, note.as_deref()).await?;
     state.publish(LiveEvent::RequestDecided { request_id: id, title_id: req.title_id, approved: false });
+    if let Some(t) = koda_db::titles::by_id(db, req.title_id).await? {
+        let info = crate::notify::TitleInfo::from_title(&t, note.clone());
+        crate::notify::send(&state, crate::notify::Event::Declined, Some(info), Some(req.username.clone()));
+    }
     let row = koda_db::requests::by_id(db, id).await?.ok_or(ApiError::NotFound("request"))?;
 
     // A title nobody wants any more and that never left "requested" is dropped.

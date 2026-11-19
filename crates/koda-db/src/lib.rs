@@ -12,6 +12,7 @@ pub mod requests;
 pub mod settings;
 pub mod titles;
 pub mod users;
+pub mod webhooks;
 
 pub type Pool = sqlx::SqlitePool;
 pub use sqlx::Error;

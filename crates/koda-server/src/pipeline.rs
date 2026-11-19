@@ -330,6 +330,10 @@ pub async fn grab(
     .await?;
     move_to(state, title_id, TitleState::Grabbed, Some(&format!("Sent {} to {}", r.title, client_row.name)))
         .await?;
+    if let Some(t) = koda_db::titles::by_id(&state.db, title_id).await? {
+        let info = crate::notify::TitleInfo::from_title(&t, Some(r.title.clone()));
+        crate::notify::send(state, crate::notify::Event::Grabbed, Some(info), None);
+    }
     state.wake.notify_one();
     Ok(())
 }
@@ -402,6 +406,12 @@ async fn fail_grab(state: &AppState, g: &koda_db::grabs::Grab, reason: &str) -> 
     if let Ok(t) = koda_db::titles::transition(&state.db, g.title_id, TitleState::Wanted, Some(reason)).await
     {
         koda_db::titles::schedule_search(&state.db, t.id, now(), Some(reason)).await?;
+        crate::notify::send(
+            state,
+            crate::notify::Event::Failed,
+            Some(crate::notify::TitleInfo::from_title(&t, Some(reason.to_owned()))),
+            None,
+        );
         publish_state(state, &t);
     }
     Ok(())
@@ -499,6 +509,13 @@ async fn import(state: &AppState, t: &Title, g: &koda_db::grabs::Grab) -> Result
     .map_err(anyhow::Error::from)?;
     koda_db::grabs::set_status(&state.db, g.id, "imported", None, None).await.map_err(anyhow::Error::from)?;
     move_to(state, t.id, TitleState::Available, None).await?;
+    let detail = quality.map(|q| q.to_string());
+    crate::notify::send(
+        state,
+        crate::notify::Event::Available,
+        Some(crate::notify::TitleInfo::from_title(t, detail)),
+        None,
+    );
     tracing::info!(title = %t.title, path = %dest.display(), "imported");
     Ok(())
 }

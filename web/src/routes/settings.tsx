@@ -4,6 +4,7 @@ import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { DownloadClientSection, IndexersSection, LibrarySection } from "./connectors";
 import { UsersSection } from "./users";
+import { WebhooksSection } from "./webhooks";
 
 export function SettingsPage() {
   return (
@@ -30,6 +31,12 @@ export function SettingsPage() {
       </Section>
       <Section title="People" intro="Everyone who can sign in, and what each person may do.">
         <UsersSection />
+      </Section>
+      <Section
+        title="Notifications"
+        intro="Tell other apps when a film is requested, approved, downloading, ready or stuck. Works with Discord webhooks and any service that accepts JSON."
+      >
+        <WebhooksSection />
       </Section>
       <QuotaSection />
     </main>

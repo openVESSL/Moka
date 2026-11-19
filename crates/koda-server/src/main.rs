@@ -6,6 +6,7 @@ mod api;
 mod auth;
 mod config;
 mod error;
+mod notify;
 mod pipeline;
 mod state;
 mod web;

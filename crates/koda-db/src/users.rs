@@ -45,28 +45,20 @@ pub async fn create(
     password_hash: &str,
     permissions: Permissions,
 ) -> Result<User, Error> {
-    sqlx::query_as(
-        "INSERT INTO users (username, password_hash, permissions) VALUES (?, ?, ?) RETURNING *",
-    )
-    .bind(username)
-    .bind(password_hash)
-    .bind(i64::from(permissions.0))
-    .fetch_one(pool)
-    .await
+    sqlx::query_as("INSERT INTO users (username, password_hash, permissions) VALUES (?, ?, ?) RETURNING *")
+        .bind(username)
+        .bind(password_hash)
+        .bind(i64::from(permissions.0))
+        .fetch_one(pool)
+        .await
 }
 
 pub async fn by_username(pool: &Pool, username: &str) -> Result<Option<User>, Error> {
-    sqlx::query_as("SELECT * FROM users WHERE username = ?")
-        .bind(username)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as("SELECT * FROM users WHERE username = ?").bind(username).fetch_optional(pool).await
 }
 
 pub async fn by_id(pool: &Pool, id: i64) -> Result<Option<User>, Error> {
-    sqlx::query_as("SELECT * FROM users WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as("SELECT * FROM users WHERE id = ?").bind(id).fetch_optional(pool).await
 }
 
 pub async fn create_session(
@@ -76,15 +68,13 @@ pub async fn create_session(
     ttl_seconds: i64,
     user_agent: Option<&str>,
 ) -> Result<(), Error> {
-    sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, expires_at, user_agent) VALUES (?, ?, ?, ?)",
-    )
-    .bind(token_hash)
-    .bind(user_id)
-    .bind(now() + ttl_seconds)
-    .bind(user_agent)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO sessions (token_hash, user_id, expires_at, user_agent) VALUES (?, ?, ?, ?)")
+        .bind(token_hash)
+        .bind(user_id)
+        .bind(now() + ttl_seconds)
+        .bind(user_agent)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -101,28 +91,21 @@ pub async fn by_session(pool: &Pool, token_hash: &str) -> Result<Option<User>, E
 }
 
 pub async fn delete_session(pool: &Pool, token_hash: &str) -> Result<(), Error> {
-    sqlx::query("DELETE FROM sessions WHERE token_hash = ?")
-        .bind(token_hash)
-        .execute(pool)
-        .await?;
+    sqlx::query("DELETE FROM sessions WHERE token_hash = ?").bind(token_hash).execute(pool).await?;
     Ok(())
 }
 
 pub async fn delete_expired_sessions(pool: &Pool) -> Result<u64, Error> {
-    let r = sqlx::query("DELETE FROM sessions WHERE expires_at <= ?")
-        .bind(now())
-        .execute(pool)
-        .await?;
+    let r = sqlx::query("DELETE FROM sessions WHERE expires_at <= ?").bind(now()).execute(pool).await?;
     Ok(r.rows_affected())
 }
 
 pub async fn by_api_key(pool: &Pool, token_hash: &str) -> Result<Option<User>, Error> {
-    let user = sqlx::query_as(
-        "SELECT u.* FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.token_hash = ?",
-    )
-    .bind(token_hash)
-    .fetch_optional(pool)
-    .await?;
+    let user =
+        sqlx::query_as("SELECT u.* FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.token_hash = ?")
+            .bind(token_hash)
+            .fetch_optional(pool)
+            .await?;
     if user.is_some() {
         sqlx::query("UPDATE api_keys SET last_used_at = ? WHERE token_hash = ?")
             .bind(now())

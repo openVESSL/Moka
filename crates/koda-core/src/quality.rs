@@ -200,8 +200,14 @@ mod tests {
 
     #[test]
     fn labels() {
-        assert_eq!(Quality::new(Source::Webdl, Resolution::R1080, Modifier::None).to_string(), "WEB-DL 1080p");
-        assert_eq!(Quality::new(Source::Bluray, Resolution::R2160, Modifier::Remux).to_string(), "Blu-ray 2160p Remux");
+        assert_eq!(
+            Quality::new(Source::Webdl, Resolution::R1080, Modifier::None).to_string(),
+            "WEB-DL 1080p"
+        );
+        assert_eq!(
+            Quality::new(Source::Bluray, Resolution::R2160, Modifier::Remux).to_string(),
+            "Blu-ray 2160p Remux"
+        );
         assert_eq!(Quality::new(Source::Cam, Resolution::Unknown, Modifier::None).to_string(), "CAM");
     }
 

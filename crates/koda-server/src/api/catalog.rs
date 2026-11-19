@@ -135,9 +135,7 @@ pub async fn search(
     let page = q.page.unwrap_or(1).min(500);
     let tmdb = state.tmdb();
     let key = format!("search:{}:{page}", query.to_lowercase());
-    let result = state
-        .cached(key, Duration::from_secs(600), || tmdb.search(query, page))
-        .await?;
+    let result = state.cached(key, Duration::from_secs(600), || tmdb.search(query, page)).await?;
     Ok(Json(annotate(&state, result.page, result.total_pages, result.results).await?))
 }
 
@@ -154,9 +152,7 @@ pub async fn movie(
         .cached(format!("movie:{tmdb_id}"), Duration::from_secs(6 * 3600), || tmdb.movie(tmdb_id))
         .await?;
     let recs = state
-        .cached(format!("recs:{tmdb_id}"), Duration::from_secs(6 * 3600), || {
-            tmdb.recommendations(tmdb_id)
-        })
+        .cached(format!("recs:{tmdb_id}"), Duration::from_secs(6 * 3600), || tmdb.recommendations(tmdb_id))
         .await
         .map(|p| p.results)
         .unwrap_or_default();
@@ -195,9 +191,7 @@ async fn local_states(state: &AppState, ids: &[i64]) -> ApiResult<HashMap<i64, L
     let rows = koda_db::titles::states_for_tmdb(&state.db, TitleKind::Movie, ids).await?;
     Ok(rows
         .into_iter()
-        .filter_map(|(tmdb_id, title_id, s)| {
-            Some((tmdb_id, LocalState { title_id, state: s.parse().ok()? }))
-        })
+        .filter_map(|(tmdb_id, title_id, s)| Some((tmdb_id, LocalState { title_id, state: s.parse().ok()? })))
         .collect())
 }
 

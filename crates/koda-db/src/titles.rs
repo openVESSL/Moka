@@ -67,9 +67,8 @@ macro_rules! select_titles {
 
 /// Inserts a movie, or returns the existing one with the same TMDB id.
 pub async fn upsert_movie(pool: &Pool, t: &NewTitle, state: TitleState) -> Result<Title, Error> {
-    let profile: Option<i64> = sqlx::query_scalar("SELECT MIN(id) FROM quality_profiles")
-        .fetch_one(pool)
-        .await?;
+    let profile: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(id) FROM quality_profiles").fetch_one(pool).await?;
     sqlx::query(
         "INSERT INTO titles (kind, tmdb_id, imdb_id, title, original_title, year, overview,
             runtime_minutes, release_date, poster_path, backdrop_path, metadata_json, state,
@@ -94,16 +93,11 @@ pub async fn upsert_movie(pool: &Pool, t: &NewTitle, state: TitleState) -> Resul
     .bind((state == TitleState::Wanted).then(now))
     .execute(pool)
     .await?;
-    by_tmdb(pool, TitleKind::Movie, t.tmdb_id)
-        .await?
-        .ok_or(Error::RowNotFound)
+    by_tmdb(pool, TitleKind::Movie, t.tmdb_id).await?.ok_or(Error::RowNotFound)
 }
 
 pub async fn by_id(pool: &Pool, id: i64) -> Result<Option<Title>, Error> {
-    sqlx::query_as(select_titles!("WHERE id = ?"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as(select_titles!("WHERE id = ?")).bind(id).fetch_optional(pool).await
 }
 
 pub async fn by_tmdb(pool: &Pool, kind: TitleKind, tmdb_id: i64) -> Result<Option<Title>, Error> {
@@ -115,9 +109,7 @@ pub async fn by_tmdb(pool: &Pool, kind: TitleKind, tmdb_id: i64) -> Result<Optio
 }
 
 pub async fn list(pool: &Pool, state: Option<TitleState>) -> Result<Vec<Title>, Error> {
-    sqlx::query_as(select_titles!(
-        "WHERE (?1 IS NULL OR state = ?1) ORDER BY updated_at DESC"
-    ))
+    sqlx::query_as(select_titles!("WHERE (?1 IS NULL OR state = ?1) ORDER BY updated_at DESC"))
         .bind(state.map(TitleState::as_str))
         .fetch_all(pool)
         .await
@@ -196,7 +188,7 @@ pub async fn transition(
     if updated.rows_affected() == 0 {
         return Err(TransitionError::Conflict);
     }
-    Ok(by_id(pool, id).await?.ok_or(TransitionError::NotFound)?)
+    by_id(pool, id).await?.ok_or(TransitionError::NotFound)
 }
 
 /// Records a finished search and when to try again.

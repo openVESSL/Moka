@@ -19,10 +19,7 @@ pub async fn serve(uri: Uri) -> Response {
         return StatusCode::NOT_FOUND.into_response();
     }
     file("index.html").unwrap_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            "web app not built: run `pnpm --dir web build`, then rebuild the server",
-        )
+        (StatusCode::NOT_FOUND, "web app not built: run `pnpm --dir web build`, then rebuild the server")
             .into_response()
     })
 }
@@ -32,16 +29,8 @@ fn file(path: &str) -> Option<Response> {
     let asset = Assets::get(path)?;
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     // hashed build assets never change; index.html must always be revalidated
-    let cache = if path.starts_with("assets/") {
-        "public, max-age=31536000, immutable"
-    } else {
-        "no-cache"
-    };
+    let cache = if path.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
     Some(
-        (
-            [(header::CONTENT_TYPE, mime.as_ref()), (header::CACHE_CONTROL, cache)],
-            asset.data,
-        )
-            .into_response(),
+        ([(header::CONTENT_TYPE, mime.as_ref()), (header::CACHE_CONTROL, cache)], asset.data).into_response(),
     )
 }

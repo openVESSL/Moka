@@ -64,10 +64,7 @@ impl TitleState {
     pub fn is_in_progress(self) -> bool {
         matches!(
             self,
-            TitleState::Searching
-                | TitleState::Grabbed
-                | TitleState::Downloading
-                | TitleState::Importing
+            TitleState::Searching | TitleState::Grabbed | TitleState::Downloading | TitleState::Importing
         )
     }
 }

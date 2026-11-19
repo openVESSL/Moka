@@ -87,8 +87,5 @@ pub async fn one(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Title>> {
-    koda_db::titles::by_id(&state.db, id)
-        .await?
-        .map(|t| Json(t.into()))
-        .ok_or(ApiError::NotFound("title"))
+    koda_db::titles::by_id(&state.db, id).await?.map(|t| Json(t.into())).ok_or(ApiError::NotFound("title"))
 }

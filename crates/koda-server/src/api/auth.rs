@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::auth::{
-    CurrentUser, SESSION_COOKIE, SESSION_TTL_SECONDS, hash_password, new_token, token_hash,
-    verify_password,
+    CurrentUser, SESSION_COOKIE, SESSION_TTL_SECONDS, hash_password, new_token, token_hash, verify_password,
 };
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -127,7 +126,8 @@ async fn start_session(
 ) -> ApiResult<(CookieJar, Json<Me>)> {
     let token = new_token()?;
     let agent = headers.get(USER_AGENT).and_then(|v| v.to_str().ok());
-    koda_db::users::create_session(&state.db, &token_hash(&token), user.id, SESSION_TTL_SECONDS, agent).await?;
+    koda_db::users::create_session(&state.db, &token_hash(&token), user.id, SESSION_TTL_SECONDS, agent)
+        .await?;
     // Not `Secure`: most installs are reached over plain http on the LAN.
     // A TLS reverse proxy can add the flag.
     let cookie = Cookie::build((SESSION_COOKIE, token))

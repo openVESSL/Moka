@@ -40,10 +40,17 @@ async fn load(state: &AppState) -> ApiResult<CatalogSettings> {
 
 #[utoipa::path(get, path = "/api/v1/settings/catalog", tag = "settings",
     responses((status = 200, body = CatalogSettingsView)))]
-pub async fn get_catalog(user: CurrentUser, State(state): State<AppState>) -> ApiResult<Json<CatalogSettingsView>> {
+pub async fn get_catalog(
+    user: CurrentUser,
+    State(state): State<AppState>,
+) -> ApiResult<Json<CatalogSettingsView>> {
     user.require(Permissions::ADMIN)?;
     let s = load(&state).await?;
-    Ok(Json(CatalogSettingsView { tmdb_key_set: !s.tmdb_key.is_empty(), language: s.language, region: s.region }))
+    Ok(Json(CatalogSettingsView {
+        tmdb_key_set: !s.tmdb_key.is_empty(),
+        language: s.language,
+        region: s.region,
+    }))
 }
 
 /// Saves catalog settings. A new key is checked against TMDB before it is stored.
@@ -97,7 +104,9 @@ fn valid_language(s: &str) -> bool {
 #[utoipa::path(get, path = "/api/v1/settings/requests", tag = "settings", responses((status = 200, body = Quota)))]
 pub async fn get_requests(user: CurrentUser, State(state): State<AppState>) -> ApiResult<Json<Quota>> {
     user.require(Permissions::ADMIN)?;
-    Ok(Json(koda_db::settings::get(&state.db, "requests.quota").await?.unwrap_or(Quota { limit: None, days: 7 })))
+    Ok(Json(
+        koda_db::settings::get(&state.db, "requests.quota").await?.unwrap_or(Quota { limit: None, days: 7 }),
+    ))
 }
 
 #[utoipa::path(put, path = "/api/v1/settings/requests", tag = "settings", request_body = Quota,

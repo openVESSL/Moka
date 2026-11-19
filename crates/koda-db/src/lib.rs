@@ -30,9 +30,7 @@ pub async fn connect(url: &str) -> Result<Pool, Error> {
 
 /// Fresh in-memory database with the schema applied. For tests.
 pub async fn memory() -> Pool {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("valid url")
-        .foreign_keys(true);
+    let options = SqliteConnectOptions::from_str("sqlite::memory:").expect("valid url").foreign_keys(true);
     // one connection: every connection to :memory: is a separate database
     let pool = SqlitePoolOptions::new()
         .max_connections(1)

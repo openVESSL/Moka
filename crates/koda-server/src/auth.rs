@@ -49,11 +49,7 @@ pub struct CurrentUser(pub User);
 
 impl CurrentUser {
     pub fn require(&self, permission: Permissions) -> Result<(), ApiError> {
-        if self.0.permissions().has(permission) {
-            Ok(())
-        } else {
-            Err(ApiError::Forbidden)
-        }
+        if self.0.permissions().has(permission) { Ok(()) } else { Err(ApiError::Forbidden) }
     }
 }
 

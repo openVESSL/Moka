@@ -38,9 +38,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");
-    axum::serve(listener, app(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(listener, app(state)).with_graceful_shutdown(shutdown_signal()).await?;
     Ok(())
 }
 
@@ -188,7 +186,11 @@ mod tests {
         let guest = login(&app, "guest", "password1").await;
         let admin = login(&app, "admin", "password1").await;
 
-        let res = app.clone().oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"tmdb_id":603}"#)).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"tmdb_id":603}"#))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let req = body_json(res).await;
         assert_eq!(req["status"], "pending");
@@ -196,10 +198,18 @@ mod tests {
         let id = req["id"].as_i64().unwrap();
 
         // guests cannot approve
-        let res = app.clone().oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &guest, "{}")).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &guest, "{}"))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-        let res = app.clone().oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &admin, "{}")).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &admin, "{}"))
+            .await
+            .unwrap();
         let req = body_json(res).await;
         assert_eq!(req["status"], "approved");
         assert_eq!(req["title_state"], "wanted");
@@ -209,10 +219,15 @@ mod tests {
         assert_eq!(body_json(res).await.as_array().unwrap().len(), 1);
 
         // the admin asking for the same film joins it instead of failing
-        let res = app.clone().oneshot(authed("POST", "/api/v1/requests", &admin, r#"{"tmdb_id":603}"#)).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/requests", &admin, r#"{"tmdb_id":603}"#))
+            .await
+            .unwrap();
         let req = body_json(res).await;
         assert_eq!(req["status"], "approved");
-        let res = app.clone().oneshot(authed("GET", "/api/v1/titles?state=wanted", &admin, "")).await.unwrap();
+        let res =
+            app.clone().oneshot(authed("GET", "/api/v1/titles?state=wanted", &admin, "")).await.unwrap();
         assert_eq!(body_json(res).await.as_array().unwrap().len(), 1);
     }
 

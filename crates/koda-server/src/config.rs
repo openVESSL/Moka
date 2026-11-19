@@ -16,9 +16,8 @@ impl Config {
         let port: u16 = env_or("KODA_PORT", "8484").parse()?;
         let host = env_or("KODA_HOST", "0.0.0.0");
         let listen = format!("{host}:{port}").parse()?;
-        let database_url = std::env::var("KODA_DATABASE_URL").unwrap_or_else(|_| {
-            format!("sqlite://{}", config_dir.join("koda.db").display())
-        });
+        let database_url = std::env::var("KODA_DATABASE_URL")
+            .unwrap_or_else(|_| format!("sqlite://{}", config_dir.join("koda.db").display()));
         Ok(Self { config_dir, listen, database_url })
     }
 

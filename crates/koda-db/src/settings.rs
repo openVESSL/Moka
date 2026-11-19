@@ -5,10 +5,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{Error, Pool};
 
 pub async fn get<T: DeserializeOwned>(pool: &Pool, key: &str) -> Result<Option<T>, Error> {
-    let raw: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?;
+    let raw: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = ?").bind(key).fetch_optional(pool).await?;
     Ok(raw.and_then(|v| serde_json::from_str(&v).ok()))
 }
 
@@ -33,9 +31,6 @@ mod tests {
         assert_eq!(super::get::<String>(&pool, "tmdb.language").await.unwrap(), None);
         super::set(&pool, "tmdb.language", &"ro-RO").await.unwrap();
         super::set(&pool, "tmdb.language", &"en-US").await.unwrap();
-        assert_eq!(
-            super::get::<String>(&pool, "tmdb.language").await.unwrap().as_deref(),
-            Some("en-US")
-        );
+        assert_eq!(super::get::<String>(&pool, "tmdb.language").await.unwrap().as_deref(), Some("en-US"));
     }
 }

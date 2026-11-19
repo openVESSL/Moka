@@ -83,10 +83,7 @@ pub async fn create(
 }
 
 pub async fn by_id(pool: &Pool, id: i64) -> Result<Option<RequestRow>, Error> {
-    sqlx::query_as(select_requests!("WHERE r.id = ?"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as(select_requests!("WHERE r.id = ?")).bind(id).fetch_optional(pool).await
 }
 
 /// Newest first. `user_id` limits to one requester.

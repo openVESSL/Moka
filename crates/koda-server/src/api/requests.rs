@@ -137,9 +137,7 @@ pub async fn create(
 
     let tmdb = state.tmdb();
     let d = state
-        .cached(format!("movie:{}", body.tmdb_id), Duration::from_secs(6 * 3600), || {
-            tmdb.movie(body.tmdb_id)
-        })
+        .cached(format!("movie:{}", body.tmdb_id), Duration::from_secs(6 * 3600), || tmdb.movie(body.tmdb_id))
         .await?;
     let auto = perms.has(Permissions::AUTO_APPROVE);
     let initial = if auto { TitleState::Wanted } else { TitleState::Requested };

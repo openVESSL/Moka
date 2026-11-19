@@ -246,11 +246,7 @@ impl Tmdb {
 
     pub async fn search(&self, query: &str, page: u32) -> Result<Page<MovieSummary>, Error> {
         let page = page.max(1).to_string();
-        self.get(
-            "/search/movie",
-            &[("query", query), ("page", &page), ("include_adult", "false")],
-        )
-        .await
+        self.get("/search/movie", &[("query", query), ("page", &page), ("include_adult", "false")]).await
     }
 
     pub async fn movie(&self, id: i64) -> Result<MovieDetails, Error> {

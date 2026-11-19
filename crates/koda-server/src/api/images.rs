@@ -31,12 +31,7 @@ pub async fn image(
         Ok(b) => b,
         Err(_) => {
             let url = format!("{IMAGE_BASE_URL}/{size}/{name}");
-            let res = state
-                .http
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| ApiError::Upstream(e.to_string()))?;
+            let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
             if res.status().as_u16() == 404 {
                 return Err(ApiError::NotFound("image"));
             }

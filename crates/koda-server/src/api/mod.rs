@@ -45,6 +45,8 @@ pub mod titles;
         titles::releases,
         titles::grab,
         titles::files,
+        titles::get_progress,
+        titles::put_progress,
         connectors::list_indexers,
         connectors::create_indexer,
         connectors::update_indexer,

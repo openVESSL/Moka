@@ -83,8 +83,63 @@ pub async fn file(pool: &Pool, id: i64) -> Result<Option<MediaFile>, Error> {
     .await
 }
 
+/// Playback position for one user, in seconds.
+pub async fn progress(pool: &Pool, user_id: i64, title_id: i64) -> Result<(f64, bool), Error> {
+    let row: Option<(f64, bool)> = sqlx::query_as(
+        "SELECT position_seconds, played FROM user_title_data WHERE user_id = ? AND title_id = ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.unwrap_or((0.0, false)))
+}
+
+/// Saves where a user is in a film. Marking it played counts one more play.
+pub async fn set_progress(
+    pool: &Pool,
+    user_id: i64,
+    title_id: i64,
+    position: f64,
+    played: bool,
+) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO user_title_data (user_id, title_id, position_seconds, played, play_count, last_played_at)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5)
+         ON CONFLICT(user_id, title_id) DO UPDATE SET position_seconds = ?3,
+            play_count = play_count + (CASE WHEN ?4 AND NOT played THEN 1 ELSE 0 END),
+            played = ?4, last_played_at = ?5",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(position.max(0.0))
+    .bind(played)
+    .bind(crate::now())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn progress_round_trip() {
+        use koda_core::{Permissions, TitleState};
+        let pool = crate::memory().await;
+        let u = crate::users::create(&pool, "a", "h", Permissions::ADMIN).await.unwrap();
+        let t = crate::titles::upsert_movie(
+            &pool,
+            &crate::titles::NewTitle { tmdb_id: 1, title: "X".into(), ..Default::default() },
+            TitleState::Available,
+        )
+        .await
+        .unwrap();
+        assert_eq!(super::progress(&pool, u.id, t.id).await.unwrap(), (0.0, false));
+        super::set_progress(&pool, u.id, t.id, 120.5, false).await.unwrap();
+        super::set_progress(&pool, u.id, t.id, 5000.0, true).await.unwrap();
+        assert_eq!(super::progress(&pool, u.id, t.id).await.unwrap(), (5000.0, true));
+    }
+
     #[tokio::test]
     async fn default_profile_exists() {
         let pool = crate::memory().await;

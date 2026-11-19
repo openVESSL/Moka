@@ -363,6 +363,75 @@
         }
       }
     },
+    "/api/v1/files/{id}/progress": {
+      "get": {
+        "tags": [
+          "titles"
+        ],
+        "operationId": "get_progress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Progress"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "titles"
+        ],
+        "summary": "Saves the signed-in user's position in the film this file belongs to.",
+        "operationId": "put_progress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Progress"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Progress"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -1716,6 +1785,22 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "Progress": {
+        "type": "object",
+        "required": [
+          "position_seconds",
+          "played"
+        ],
+        "properties": {
+          "played": {
+            "type": "boolean"
+          },
+          "position_seconds": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

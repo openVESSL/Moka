@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/titles/{id}/grab", axum::routing::post(grab))
         .route("/titles/{id}/files", get(files))
         .route("/files/{id}/stream", get(stream))
+        .route("/files/{id}/progress", get(get_progress).put(put_progress))
 }
 
 /// One release from the last search, with the verdict on it.
@@ -261,4 +262,39 @@ pub async fn one(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Title>> {
     koda_db::titles::by_id(&state.db, id).await?.map(|t| Json(t.into())).ok_or(ApiError::NotFound("title"))
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct Progress {
+    pub position_seconds: f64,
+    pub played: bool,
+}
+
+#[utoipa::path(get, path = "/api/v1/files/{id}/progress", tag = "titles", params(("id" = i64, Path)),
+    responses((status = 200, body = Progress)))]
+pub async fn get_progress(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Progress>> {
+    let f = koda_db::library::file(&state.db, id).await?.ok_or(ApiError::NotFound("file"))?;
+    let (position_seconds, played) = koda_db::library::progress(&state.db, user.0.id, f.title_id).await?;
+    Ok(Json(Progress { position_seconds, played }))
+}
+
+/// Saves the signed-in user's position in the film this file belongs to.
+#[utoipa::path(put, path = "/api/v1/files/{id}/progress", tag = "titles", params(("id" = i64, Path)),
+    request_body = Progress, responses((status = 200, body = Progress)))]
+pub async fn put_progress(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(p): Json<Progress>,
+) -> ApiResult<Json<Progress>> {
+    if !p.position_seconds.is_finite() {
+        return Err(ApiError::BadRequest("position must be a number of seconds".into()));
+    }
+    let f = koda_db::library::file(&state.db, id).await?.ok_or(ApiError::NotFound("file"))?;
+    koda_db::library::set_progress(&state.db, user.0.id, f.title_id, p.position_seconds, p.played).await?;
+    Ok(Json(p))
 }

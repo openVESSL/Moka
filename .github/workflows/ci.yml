@@ -55,6 +55,14 @@ jobs:
           cargo run -q -p koda-server -- openapi > /tmp/openapi.json
           diff -u web/src/api/openapi.json /tmp/openapi.json
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   docker:
     runs-on: ubuntu-latest
     needs: rust

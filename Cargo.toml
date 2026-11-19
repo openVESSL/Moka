@@ -12,6 +12,9 @@ koda-core = { path = "crates/koda-core" }
 koda-db = { path = "crates/koda-db" }
 koda-parser = { path = "crates/koda-parser" }
 
+koda-metadata = { path = "crates/koda-metadata" }
+
+reqwest = { version = "0.13", features = ["json", "gzip", "query", "multipart", "cookies", "stream"] }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

@@ -19,6 +19,49 @@ Koda ships with no content sources. You connect your own download clients and in
 
 Rust (Axum, Tokio, SQLx) backend, React frontend, SQLite by default. Ships as a single binary and a Docker image.
 
+## Development
+
+Requirements: Rust (stable), Node.js 22+ with pnpm.
+
+```sh
+# web app (rebuild before building the server, it is embedded in the binary)
+pnpm --dir web install
+pnpm --dir web build
+
+# server on http://localhost:8484
+cargo run -p koda-server
+
+# web dev server with hot reload on http://localhost:5173 (proxies /api to :8484)
+pnpm --dir web dev
+```
+
+Checks:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+pnpm --dir web build
+```
+
+After changing the HTTP API, regenerate the web client types:
+
+```sh
+pnpm --dir web gen:api
+```
+
+Configuration is read from environment variables:
+
+| Variable | Default | |
+|---|---|---|
+| `KODA_CONFIG_DIR` | `./config` | database, caches, logs |
+| `KODA_PORT` | `8484` | |
+| `KODA_HOST` | `0.0.0.0` | |
+| `KODA_DATABASE_URL` | SQLite in the config dir | |
+
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit together, and
+[docker-compose.example.yml](docker-compose.example.yml) for a container setup.
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).

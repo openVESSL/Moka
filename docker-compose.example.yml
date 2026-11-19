@@ -1,0 +1,22 @@
+# Example setup. Copy to docker-compose.yml and adjust paths.
+#
+# Keep downloads and the library on the same volume (/data here) so imports
+# can hardlink instead of copying: no extra disk space while torrents seed.
+#
+#   /srv/media/
+#     downloads/   <- your download client saves here
+#     movies/      <- library folder you choose in Settings
+
+services:
+  koda:
+    image: ghcr.io/openvessl/koda:latest
+    # or build it yourself:
+    # build: .
+    container_name: koda
+    user: "1000:1000"
+    ports:
+      - "8484:8484"
+    volumes:
+      - ./config:/config
+      - /srv/media:/data
+    restart: unless-stopped

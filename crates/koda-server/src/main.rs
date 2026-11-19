@@ -234,6 +234,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn repeated_bad_logins_are_throttled() {
+        let db = koda_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        koda_db::users::create(&db, "ana", &pw, koda_core::Permissions::ADMIN).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: String::new(),
+        };
+        let app = app(AppState::new(db, config, Default::default()));
+        let bad = r#"{"username":"ana","password":"wrong-one"}"#;
+        for _ in 0..5 {
+            let res = app.clone().oneshot(json("POST", "/api/v1/auth/login", bad)).await.unwrap();
+            assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        }
+        let good = r#"{"username":"ANA","password":"password1"}"#;
+        let res = app.clone().oneshot(json("POST", "/api/v1/auth/login", good)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS, "locked even with the right password");
+    }
+
+    #[tokio::test]
     async fn unknown_api_route_is_json_404() {
         let res = test_app().await.oneshot(json("GET", "/api/v1/nope", "")).await.unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);

@@ -83,14 +83,41 @@ pub async fn login(
     headers: HeaderMap,
     Json(body): Json<Credentials>,
 ) -> ApiResult<(CookieJar, Json<Me>)> {
-    // shortcut: no lockout after repeated failures; argon2 cost slows guessing. Add per-IP throttling before exposing to the internet.
+    let key = body.username.trim().to_lowercase();
+    if let Some(wait) = login_lockout(&state, &key) {
+        return Err(ApiError::TooManyRequests(format!(
+            "too many failed attempts, try again in {} seconds",
+            wait.as_secs().max(1)
+        )));
+    }
     let user = koda_db::users::by_username(&state.db, body.username.trim()).await?;
     match user {
         Some(u) if verify_password(&body.password, &u.password_hash) => {
+            state.login_failures.lock().expect("login lock").remove(&key);
             start_session(&state, jar, &headers, &u).await
         }
-        _ => Err(ApiError::Unauthorized),
+        _ => {
+            let mut f = state.login_failures.lock().expect("login lock");
+            let entry = f.entry(key).or_insert((0, std::time::Instant::now()));
+            entry.0 += 1;
+            entry.1 = std::time::Instant::now();
+            Err(ApiError::Unauthorized)
+        }
     }
+}
+
+/// After 5 failures an account name waits 1 minute, doubling per extra
+/// failure up to 30 minutes. Keyed by name, so it also slows guessing from
+/// many addresses.
+// shortcut: in memory, so a restart clears it; an attacker can briefly lock a known name out.
+fn login_lockout(state: &AppState, key: &str) -> Option<std::time::Duration> {
+    let f = state.login_failures.lock().expect("login lock");
+    let &(count, at) = f.get(key)?;
+    if count < 5 {
+        return None;
+    }
+    let wait = std::time::Duration::from_secs((60u64 << (count - 5).min(5)).min(1800));
+    wait.checked_sub(at.elapsed())
 }
 
 #[utoipa::path(post, path = "/api/v1/auth/logout", tag = "auth", responses((status = 200)))]

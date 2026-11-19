@@ -5,6 +5,9 @@ use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
+pub mod connectors;
+pub mod grabs;
+pub mod library;
 pub mod requests;
 pub mod settings;
 pub mod titles;

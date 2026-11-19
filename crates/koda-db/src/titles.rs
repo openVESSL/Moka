@@ -212,6 +212,29 @@ pub async fn schedule_search(
     Ok(())
 }
 
+/// Updates the explanation shown for the current state without moving it.
+pub async fn set_reason(pool: &Pool, id: i64, reason: Option<&str>) -> Result<(), Error> {
+    sqlx::query("UPDATE titles SET state_reason = ?, updated_at = ? WHERE id = ?")
+        .bind(reason)
+        .bind(now())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Titles in one state, oldest change first.
+pub async fn in_state(pool: &Pool, state: TitleState) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE state = ? ORDER BY updated_at"))
+        .bind(state.as_str())
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn search_attempts(pool: &Pool, id: i64) -> Result<i64, Error> {
+    sqlx::query_scalar("SELECT search_attempts FROM titles WHERE id = ?").bind(id).fetch_one(pool).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

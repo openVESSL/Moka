@@ -50,7 +50,7 @@ impl TitleState {
         matches!(
             (self, next),
             (Requested, Wanted)
-                | (Wanted, Searching)
+                | (Wanted, Searching | Grabbed)
                 | (Searching, Grabbed | Wanted)
                 | (Grabbed, Downloading | Importing | Wanted)
                 | (Downloading, Importing | Wanted)

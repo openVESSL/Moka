@@ -1,0 +1,190 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { api, unwrap } from "../api/client";
+import { catalogSettingsQuery, quotaQuery } from "../api/queries";
+
+export function SettingsPage() {
+  return (
+    <main className="mx-auto max-w-[56rem] px-4 pt-12 sm:px-8">
+      <h1 className="font-slate text-5xl leading-none font-extrabold uppercase">Settings</h1>
+      <CatalogSection />
+      <QuotaSection />
+      <Section
+        title="Download client and indexers"
+        intro="Connecting qBittorrent and your Torznab or Newznab indexers comes next in this build."
+      >
+        {null}
+      </Section>
+    </main>
+  );
+}
+
+function Section({ title, intro, children }: { title: string; intro: ReactNode; children: ReactNode }) {
+  return (
+    <section className="mt-14 border-t border-slate-line pt-8">
+      <h2 className="font-slate text-2xl font-extrabold uppercase">{title}</h2>
+      <p className="mt-2 max-w-[60ch] text-chalk-dim">{intro}</p>
+      {children}
+    </section>
+  );
+}
+
+function SaveRow({ busy, error, saved, label = "Save" }: { busy: boolean; error?: string; saved: boolean; label?: string }) {
+  return (
+    <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2">
+      <button type="submit" className="btn-grease" disabled={busy}>
+        {busy ? "Saving…" : label}
+      </button>
+      <p role="status" aria-live="polite" className={`text-sm ${error ? "text-grease-hot" : "text-tape-available"}`}>
+        {error ?? (saved ? "Saved." : "")}
+      </p>
+    </div>
+  );
+}
+
+function CatalogSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery(catalogSettingsQuery);
+  const [key, setKey] = useState("");
+  const [language, setLanguage] = useState("en-US");
+  const [region, setRegion] = useState("");
+
+  useEffect(() => {
+    if (!data) return;
+    setLanguage(data.language);
+    setRegion(data.region ?? "");
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.PUT("/api/v1/settings/catalog", {
+          body: { tmdb_key: key || null, language, region: region || null },
+        }),
+      ),
+    onSuccess: (v) => {
+      setKey("");
+      qc.setQueryData(catalogSettingsQuery.queryKey, v);
+      qc.invalidateQueries({ queryKey: ["catalog"] });
+    },
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    save.mutate();
+  }
+
+  return (
+    <Section
+      title="Catalog"
+      intro={
+        <>
+          Film listings, posters and details come from TMDB. Create a free API key in your TMDB account settings
+          and paste either the API key or the read access token here.
+        </>
+      }
+    >
+      <form onSubmit={submit} className="mt-6 grid gap-6 sm:grid-cols-[2fr_1fr_1fr]">
+        <label className="block">
+          <span className="slate-label">TMDB key</span>
+          <input
+            className="chalk-input data text-base"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={data?.tmdb_key_set ? "Saved. Paste a new one to replace it" : "Paste key or token"}
+          />
+        </label>
+        <label className="block">
+          <span className="slate-label">Language</span>
+          <input
+            className="chalk-input data text-base"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            placeholder="en-US"
+            pattern="[a-z]{2}(-[A-Z]{2})?"
+            title="Like en-US or ro-RO"
+          />
+        </label>
+        <label className="block">
+          <span className="slate-label">Region</span>
+          <input
+            className="chalk-input data text-base uppercase"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            placeholder="Any"
+            maxLength={2}
+            title="Two-letter country code, used for release dates and what is in cinemas"
+          />
+        </label>
+        <div className="sm:col-span-3">
+          <SaveRow busy={save.isPending} error={save.error?.message} saved={save.isSuccess} />
+        </div>
+      </form>
+    </Section>
+  );
+}
+
+function QuotaSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery(quotaQuery);
+  const [limit, setLimit] = useState("");
+  const [days, setDays] = useState("7");
+
+  useEffect(() => {
+    if (!data) return;
+    setLimit(data.limit ? String(data.limit) : "");
+    setDays(String(data.days));
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.PUT("/api/v1/settings/requests", {
+          body: { limit: limit ? Number(limit) : null, days: Number(days) || 7 },
+        }),
+      ),
+    onSuccess: (v) => qc.setQueryData(quotaQuery.queryKey, v),
+  });
+
+  return (
+    <Section
+      title="Request limit"
+      intro="How many films each person can request in a period. Admins and request managers are never limited."
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate();
+        }}
+        className="mt-6 flex flex-wrap items-end gap-x-4 gap-y-4"
+      >
+        <label className="block w-28">
+          <span className="slate-label">Films</span>
+          <input
+            className="chalk-input data"
+            inputMode="numeric"
+            value={limit}
+            onChange={(e) => setLimit(e.target.value.replace(/\D/g, ""))}
+            placeholder="No limit"
+          />
+        </label>
+        <span className="pb-3 text-chalk-dim">every</span>
+        <label className="block w-24">
+          <span className="slate-label">Days</span>
+          <input
+            className="chalk-input data"
+            inputMode="numeric"
+            value={days}
+            onChange={(e) => setDays(e.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <div className="w-full">
+          <SaveRow busy={save.isPending} error={save.error?.message} saved={save.isSuccess} />
+        </div>
+      </form>
+    </Section>
+  );
+}

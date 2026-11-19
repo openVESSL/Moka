@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
-import { DownloadClientSection, IndexersSection, LibrarySection } from "./connectors";
+import { DownloadClientSection, IndexersSection, LibrarySection, ScanPanel } from "./connectors";
 import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
 import { WebhooksSection } from "./webhooks";
@@ -23,6 +23,7 @@ export function SettingsPage() {
         intro="Where finished films are placed. Keep it on the same disk as your downloads so imports are instant and take no extra space."
       >
         <LibrarySection />
+        <ScanPanel />
       </Section>
       <Section
         title="Download client"

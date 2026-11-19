@@ -8,6 +8,7 @@ mod config;
 mod error;
 mod notify;
 mod pipeline;
+mod scan;
 mod state;
 mod web;
 

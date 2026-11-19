@@ -235,6 +235,17 @@ pub async fn search_attempts(pool: &Pool, id: i64) -> Result<i64, Error> {
     sqlx::query_scalar("SELECT search_attempts FROM titles WHERE id = ?").bind(id).fetch_one(pool).await
 }
 
+/// Marks a title available because a file for it was found on disk,
+/// whatever state it was in (a library scan is ground truth).
+pub async fn mark_available(pool: &Pool, id: i64) -> Result<(), Error> {
+    sqlx::query("UPDATE titles SET state = 'available', state_reason = NULL, updated_at = ? WHERE id = ?")
+        .bind(now())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

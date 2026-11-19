@@ -248,6 +248,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["scan_status"];
+        put?: never;
+        /** Starts scanning in the background; poll the GET for progress. */
+        post: operations["start_scan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -876,6 +893,21 @@ export interface components {
             /** Format: int64 */
             year?: number | null;
         };
+        ScanRequest: {
+            /** @description Folder to scan. Defaults to the library's films folder. */
+            path?: string | null;
+        };
+        ScanStatus: {
+            added: number;
+            already_known: number;
+            done: number;
+            error?: string | null;
+            folder?: string | null;
+            running: boolean;
+            total: number;
+            /** @description Names that could not be matched to a film, for the user to fix. */
+            unmatched: string[];
+        };
         TestResult: {
             message: string;
             ok: boolean;
@@ -1395,6 +1427,55 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    scan_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatus"];
+                };
+            };
+        };
+    };
+    start_scan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatus"];
+                };
+            };
+            /** @description already running */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -264,3 +264,51 @@ export function IndexersSection() {
     </div>
   );
 }
+
+/** Adds films already in the films folder. Shows progress while it runs. */
+export function ScanPanel() {
+  const qc = useQueryClient();
+  const { data: s } = useQuery({
+    queryKey: ["library", "scan"],
+    queryFn: () => unwrap(api.GET("/api/v1/library/scan")),
+    refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
+  });
+  const start = useMutation({
+    mutationFn: () => unwrap(api.POST("/api/v1/library/scan", { body: {} })),
+    onSuccess: (v) => qc.setQueryData(["library", "scan"], v),
+  });
+  useEffect(() => {
+    if (s && !s.running && s.done > 0) qc.invalidateQueries({ queryKey: ["titles"] });
+  }, [s, qc]);
+
+  return (
+    <div className="mt-6 border-t border-slate-line pt-5">
+      <div className="flex flex-wrap items-center gap-4">
+        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate()}>
+          {s?.running ? "Scanning…" : "Find films already in this folder"}
+        </button>
+        {s && (s.running || s.done > 0) && (
+          <span className="data text-sm text-chalk-dim">
+            {s.done}/{s.total} checked · {s.added} added · {s.already_known} known · {s.unmatched.length} not recognized
+          </span>
+        )}
+      </div>
+      {start.error && <p className="mt-2 text-sm text-grease-hot">{start.error.message}</p>}
+      {s?.error && <p className="mt-2 text-sm text-grease-hot">{s.error}</p>}
+      {s && !s.running && s.unmatched.length > 0 && (
+        <details className="mt-3 text-sm text-chalk-dim">
+          <summary className="cursor-pointer">Not recognized ({s.unmatched.length})</summary>
+          <p className="mt-2 max-w-[65ch]">
+            Rename these folders to <span className="data">Title (Year)</span>, or add{" "}
+            <span className="data">{"{tmdb-ID}"}</span>, then scan again.
+          </p>
+          <ul className="mt-2 data text-xs">
+            {s.unmatched.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}

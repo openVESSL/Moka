@@ -24,6 +24,8 @@ pub struct AppState {
     pub download_clients: Arc<Mutex<HashMap<i64, Arc<koda_download::Qbittorrent>>>>,
     /// Failed logins per account name: count and time of the last failure.
     pub login_failures: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
+    /// Progress of the running or last library scan.
+    pub scan: Arc<Mutex<crate::scan::ScanStatus>>,
     tmdb: Arc<RwLock<Tmdb>>,
     cache: Arc<Mutex<HashMap<String, (Instant, serde_json::Value)>>>,
 }
@@ -69,6 +71,7 @@ impl AppState {
             wake: Arc::default(),
             download_clients: Arc::default(),
             login_failures: Arc::default(),
+            scan: Arc::default(),
             tmdb: Arc::new(RwLock::new(catalog.client())),
             cache: Arc::default(),
         }

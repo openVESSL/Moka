@@ -590,6 +590,56 @@
         }
       }
     },
+    "/api/v1/library/scan": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "operationId": "scan_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "library"
+        ],
+        "summary": "Starts scanning in the background; poll the GET for progress.",
+        "operationId": "start_scan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatus"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "already running"
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -2441,6 +2491,69 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "ScanRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Folder to scan. Defaults to the library's films folder."
+          }
+        }
+      },
+      "ScanStatus": {
+        "type": "object",
+        "required": [
+          "running",
+          "total",
+          "done",
+          "added",
+          "already_known",
+          "unmatched"
+        ],
+        "properties": {
+          "added": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "already_known": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "folder": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unmatched": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names that could not be matched to a film, for the user to fix."
           }
         }
       },

@@ -43,7 +43,8 @@ pub struct SearchResult {
     pub indexer_errors: Vec<(String, String)>,
 }
 
-const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "webm", "mpg"];
+pub const VIDEO_EXTENSIONS: &[&str] =
+    &["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "webm", "mpg"];
 const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
 
 fn now() -> i64 {
@@ -547,7 +548,7 @@ pub fn sanitize(s: &str) -> String {
 }
 
 /// The biggest video file in a download, skipping samples.
-fn main_video(path: &Path) -> Option<PathBuf> {
+pub fn main_video(path: &Path) -> Option<PathBuf> {
     let is_video = |p: &Path| {
         p.extension()
             .and_then(|e| e.to_str())

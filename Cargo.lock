@@ -1227,6 +1227,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "koda-decision"
+version = "0.1.0"
+dependencies = [
+ "koda-core",
+ "koda-indexers",
+ "koda-parser",
+ "serde",
+]
+
+[[package]]
 name = "koda-download"
 version = "0.1.0"
 dependencies = [

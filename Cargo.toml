@@ -10,6 +10,7 @@ license = "GPL-3.0-only"
 [workspace.dependencies]
 koda-core = { path = "crates/koda-core" }
 koda-db = { path = "crates/koda-db" }
+koda-decision = { path = "crates/koda-decision" }
 koda-download = { path = "crates/koda-download" }
 koda-indexers = { path = "crates/koda-indexers" }
 koda-metadata = { path = "crates/koda-metadata" }

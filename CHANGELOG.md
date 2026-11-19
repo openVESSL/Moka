@@ -8,6 +8,16 @@ the steps to migrate.
 
 ## [Unreleased]
 
+### Added
+- Jellyfin alongside Koda: targeted library refresh after each import (with
+  optional path mapping) and watched status synced back for matching user names.
+- Import of indexers from Prowlarr, torrent and Usenet, searched through Prowlarr.
+- Transmission and SABnzbd download clients; Usenet releases from Newznab
+  indexers are sent to SABnzbd and tracked to import.
+
+### Fixed
+- CI reads the pnpm version from `web/package.json`.
+
 ## [0.1.0] - 2026-11-20
 
 First tagged version. Films only. Not ready for production: keep your

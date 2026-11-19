@@ -15,16 +15,26 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 pub mod auth;
+pub mod catalog;
+pub mod images;
+pub mod requests;
+pub mod settings;
+pub mod titles;
 
 #[derive(OpenApi)]
 #[openapi(
     info(title = "Koda API", version = "1"),
-    paths(health, auth::status, auth::setup, auth::login, auth::logout, auth::me),
-    components(schemas(Health, ApiErrorBody, auth::AuthStatus, auth::Credentials, auth::Me))
+    paths(
+        health,
+        auth::status, auth::setup, auth::login, auth::logout, auth::me,
+        catalog::discover, catalog::search, catalog::movie,
+        requests::list, requests::create, requests::approve, requests::decline,
+        titles::list, titles::one,
+        settings::get_catalog, settings::put_catalog, settings::get_requests, settings::put_requests,
+    ),
+    components(schemas(Health, crate::error::ErrorBody))
 )]
 pub struct ApiDoc;
-
-type ApiErrorBody = crate::error::ErrorBody;
 
 pub fn router() -> Router<AppState> {
     let api = Router::new()
@@ -32,6 +42,11 @@ pub fn router() -> Router<AppState> {
         .route("/events", get(events))
         .route("/openapi.json", get(|| async { Json(ApiDoc::openapi()) }))
         .merge(auth::router())
+        .merge(catalog::router())
+        .merge(requests::router())
+        .merge(titles::router())
+        .merge(settings::router())
+        .merge(images::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });
     Router::new().nest("/api/v1", api)
 }

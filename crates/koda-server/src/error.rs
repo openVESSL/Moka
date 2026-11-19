@@ -16,6 +16,10 @@ pub enum ApiError {
     NotFound(&'static str),
     #[error("{0}")]
     Conflict(String),
+    #[error("{0}")]
+    NotConfigured(&'static str),
+    #[error("{0}")]
+    TooManyRequests(String),
     #[error("upstream service failed: {0}")]
     Upstream(String),
     #[error(transparent)]
@@ -36,6 +40,8 @@ impl ApiError {
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+            ApiError::NotConfigured(_) => (StatusCode::CONFLICT, "not_configured"),
+            ApiError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "quota"),
             ApiError::Upstream(_) => (StatusCode::BAD_GATEWAY, "upstream"),
             ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
@@ -59,6 +65,17 @@ impl IntoResponse for ApiError {
 impl From<koda_db::Error> for ApiError {
     fn from(e: koda_db::Error) -> Self {
         ApiError::Internal(e.into())
+    }
+}
+
+impl From<koda_metadata::Error> for ApiError {
+    fn from(e: koda_metadata::Error) -> Self {
+        use koda_metadata::Error as E;
+        match e {
+            E::MissingKey => ApiError::NotConfigured("add a TMDB API key in Settings to browse the catalog"),
+            E::NotFound => ApiError::NotFound("film"),
+            other => ApiError::Upstream(other.to_string()),
+        }
     }
 }
 

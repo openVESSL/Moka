@@ -14,6 +14,13 @@ use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // `koda openapi` prints the API document (used to generate the web client).
+    if std::env::args().nth(1).as_deref() == Some("openapi") {
+        use utoipa::OpenApi;
+        println!("{}", api::ApiDoc::openapi().to_pretty_json()?);
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
@@ -25,8 +32,9 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(config.cache_dir())?;
 
     let db = koda_db::connect(&config.database_url).await?;
+    let catalog = koda_db::settings::get(&db, state::CatalogSettings::KEY).await?.unwrap_or_default();
     let listen = config.listen;
-    let state = AppState::new(db, config);
+    let state = AppState::new(db, config, catalog);
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");
@@ -64,7 +72,7 @@ mod tests {
             listen: "127.0.0.1:0".parse().unwrap(),
             database_url: "sqlite::memory:".into(),
         };
-        app(AppState::new(koda_db::memory().await, config))
+        app(AppState::new(koda_db::memory().await, config, Default::default()))
     }
 
     fn json(method: &str, uri: &str, body: &str) -> Request<Body> {
@@ -127,6 +135,85 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(app.oneshot(me).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Logs a user in through the API and returns the session cookie.
+    async fn login(app: &axum::Router, user: &str, pass: &str) -> String {
+        let body = format!(r#"{{"username":"{user}","password":"{pass}"}}"#);
+        let res = app.clone().oneshot(json("POST", "/api/v1/auth/login", &body)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "login {user}");
+        let c = res.headers()[header::SET_COOKIE].to_str().unwrap();
+        c.split(';').next().unwrap().to_owned()
+    }
+
+    fn authed(method: &str, uri: &str, cookie: &str, body: &str) -> Request<Body> {
+        let mut r = json(method, uri, body);
+        r.headers_mut().insert(header::COOKIE, cookie.parse().unwrap());
+        r
+    }
+
+    async fn body_json(res: axum::response::Response) -> serde_json::Value {
+        let b = res.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&b).unwrap()
+    }
+
+    #[tokio::test]
+    async fn request_needs_approval_then_becomes_wanted() {
+        // fake TMDB serving one film
+        let tmdb = axum::Router::new().route(
+            "/movie/603",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({
+                    "id": 603, "title": "The Matrix", "release_date": "1999-03-30", "runtime": 136
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, tmdb).await.unwrap() });
+
+        let db = koda_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        koda_db::users::create(&db, "admin", &pw, koda_core::Permissions::ADMIN).await.unwrap();
+        koda_db::users::create(&db, "guest", &pw, koda_core::Permissions::DEFAULT_USER).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_tmdb(koda_metadata::Tmdb::with_base_url(&base, "k", "en-US", None));
+        let app = app(state);
+
+        let guest = login(&app, "guest", "password1").await;
+        let admin = login(&app, "admin", "password1").await;
+
+        let res = app.clone().oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"tmdb_id":603}"#)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let req = body_json(res).await;
+        assert_eq!(req["status"], "pending");
+        assert_eq!(req["title_state"], "requested");
+        let id = req["id"].as_i64().unwrap();
+
+        // guests cannot approve
+        let res = app.clone().oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &guest, "{}")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        let res = app.clone().oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &admin, "{}")).await.unwrap();
+        let req = body_json(res).await;
+        assert_eq!(req["status"], "approved");
+        assert_eq!(req["title_state"], "wanted");
+
+        // the guest only sees their own requests; the admin sees all
+        let res = app.clone().oneshot(authed("GET", "/api/v1/requests", &guest, "")).await.unwrap();
+        assert_eq!(body_json(res).await.as_array().unwrap().len(), 1);
+
+        // the admin asking for the same film joins it instead of failing
+        let res = app.clone().oneshot(authed("POST", "/api/v1/requests", &admin, r#"{"tmdb_id":603}"#)).await.unwrap();
+        let req = body_json(res).await;
+        assert_eq!(req["status"], "approved");
+        let res = app.clone().oneshot(authed("GET", "/api/v1/titles?state=wanted", &admin, "")).await.unwrap();
+        assert_eq!(body_json(res).await.as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]

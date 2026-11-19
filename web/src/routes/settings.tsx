@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { DownloadClientSection, IndexersSection, LibrarySection } from "./connectors";
+import { UsersSection } from "./users";
 
 export function SettingsPage() {
   return (
@@ -26,6 +27,9 @@ export function SettingsPage() {
         intro="Torznab or Newznab search addresses, from your indexer or from an indexer manager. Films are searched on all of them at once."
       >
         <IndexersSection />
+      </Section>
+      <Section title="People" intro="Everyone who can sign in, and what each person may do.">
+        <UsersSection />
       </Section>
       <QuotaSection />
     </main>

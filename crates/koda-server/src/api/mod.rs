@@ -114,3 +114,24 @@ pub async fn events(
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(20)))
 }
+
+#[cfg(test)]
+mod tests {
+    use utoipa::OpenApi;
+
+    /// Generated clients key methods by operation id; duplicates silently mix up types.
+    #[test]
+    fn operation_ids_are_unique() {
+        let doc = serde_json::to_value(super::ApiDoc::openapi()).unwrap();
+        let mut ids: Vec<String> = Vec::new();
+        for (_, item) in doc["paths"].as_object().unwrap() {
+            for (_, op) in item.as_object().unwrap() {
+                if let Some(id) = op.get("operationId").and_then(|v| v.as_str()) {
+                    assert!(!ids.contains(&id.to_owned()), "duplicate operationId {id}");
+                    ids.push(id.to_owned());
+                }
+            }
+        }
+        assert!(ids.len() > 20);
+    }
+}

@@ -67,13 +67,13 @@ fn check_password(p: &str) -> ApiResult<()> {
     Ok(())
 }
 
-#[utoipa::path(get, path = "/api/v1/users", tag = "users", responses((status = 200, body = [UserView])))]
+#[utoipa::path(get, path = "/api/v1/users", operation_id = "list_users", tag = "users", responses((status = 200, body = [UserView])))]
 pub async fn list(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<Vec<UserView>>> {
     user.require(Permissions::ADMIN)?;
     Ok(Json(koda_db::users::list(&s.db).await?.into_iter().map(UserView::from).collect()))
 }
 
-#[utoipa::path(post, path = "/api/v1/users", tag = "users", request_body = NewUser,
+#[utoipa::path(post, path = "/api/v1/users", operation_id = "create_user", tag = "users", request_body = NewUser,
     responses((status = 200, body = UserView), (status = 409, description = "name taken")))]
 pub async fn create(
     user: CurrentUser,
@@ -94,7 +94,7 @@ pub async fn create(
     Ok(Json(u.into()))
 }
 
-#[utoipa::path(put, path = "/api/v1/users/{id}", tag = "users", params(("id" = i64, Path)), request_body = UserUpdate,
+#[utoipa::path(put, path = "/api/v1/users/{id}", operation_id = "update_user", tag = "users", params(("id" = i64, Path)), request_body = UserUpdate,
     responses((status = 200, body = UserView)))]
 pub async fn update(
     user: CurrentUser,
@@ -120,7 +120,7 @@ pub async fn update(
     Ok(Json(u.into()))
 }
 
-#[utoipa::path(delete, path = "/api/v1/users/{id}", tag = "users", params(("id" = i64, Path)),
+#[utoipa::path(delete, path = "/api/v1/users/{id}", operation_id = "delete_user", tag = "users", params(("id" = i64, Path)),
     responses((status = 200)))]
 pub async fn remove(user: CurrentUser, State(s): State<AppState>, Path(id): Path<i64>) -> ApiResult<()> {
     user.require(Permissions::ADMIN)?;

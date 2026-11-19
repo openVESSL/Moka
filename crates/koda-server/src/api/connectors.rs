@@ -97,7 +97,10 @@ impl IndexerBody {
 fn check_url(u: &str) -> ApiResult<String> {
     let u = u.trim().trim_end_matches('/');
     match reqwest::Url::parse(u) {
-        Ok(url) if matches!(url.scheme(), "http" | "https") => Ok(u.to_owned()),
+        Ok(url) if matches!(url.scheme(), "http" | "https") => {
+            koda_net::check_url(&url).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+            Ok(u.to_owned())
+        }
         _ => Err(ApiError::BadRequest("address must start with http:// or https://".into())),
     }
 }

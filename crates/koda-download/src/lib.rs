@@ -88,7 +88,7 @@ struct Torrent {
 
 impl Qbittorrent {
     pub fn new(cfg: QbitConfig) -> Self {
-        let http = reqwest::Client::builder()
+        let http = koda_net::client_builder()
             .cookie_store(true)
             .timeout(Duration::from_secs(20))
             .build()

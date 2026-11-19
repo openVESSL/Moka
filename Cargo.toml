@@ -14,6 +14,7 @@ koda-decision = { path = "crates/koda-decision" }
 koda-download = { path = "crates/koda-download" }
 koda-indexers = { path = "crates/koda-indexers" }
 koda-metadata = { path = "crates/koda-metadata" }
+koda-net = { path = "crates/koda-net" }
 koda-parser = { path = "crates/koda-parser" }
 
 reqwest = { version = "0.13", features = ["json", "gzip", "query", "form", "multipart", "cookies", "stream"] }

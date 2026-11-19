@@ -362,6 +362,9 @@ mod tests {
             r#"{"name":"x","kind":"torznab","base_url":"http://idx.local","api_key":"SUPER-SECRET-KEY"}"#;
         let res = app.clone().oneshot(authed("POST", "/api/v1/indexers", &c, body)).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+        let meta = r#"{"name":"m","kind":"torznab","base_url":"http://169.254.169.254/latest"}"#;
+        let res = app.clone().oneshot(authed("POST", "/api/v1/indexers", &c, meta)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "cloud metadata address refused");
         let body = r#"{"name":"q","base_url":"http://q.local","username":"u","password":"SUPER-SECRET-PW"}"#;
         app.clone().oneshot(authed("POST", "/api/v1/download-clients", &c, body)).await.unwrap();
         for uri in ["/api/v1/indexers", "/api/v1/download-clients"] {

@@ -70,7 +70,7 @@ impl CatalogSettings {
 impl AppState {
     pub fn new(db: koda_db::Pool, config: Config, catalog: CatalogSettings) -> Self {
         let (events, _) = broadcast::channel(256);
-        let http = reqwest::Client::builder()
+        let http = koda_net::client_builder()
             .timeout(Duration::from_secs(20))
             .user_agent(concat!("koda/", env!("CARGO_PKG_VERSION")))
             .build()

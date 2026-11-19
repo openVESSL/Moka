@@ -104,6 +104,8 @@ pub enum Error {
     NotAFeed,
     #[error("indexer returned HTTP {0}")]
     Status(u16),
+    #[error("{0}")]
+    Blocked(String),
     #[error("could not reach the indexer: {0}")]
     Http(#[from] reqwest::Error),
 }
@@ -127,7 +129,7 @@ impl Default for Client {
 
 impl Client {
     pub fn new() -> Self {
-        let http = reqwest::Client::builder()
+        let http = koda_net::client_builder()
             .timeout(Duration::from_secs(25))
             .user_agent(concat!("koda/", env!("CARGO_PKG_VERSION")))
             // redirects are followed by hand so a redirect to magnet: can be caught
@@ -140,6 +142,7 @@ impl Client {
     fn url(&self, cfg: &IndexerConfig, params: &[(&str, String)]) -> Result<reqwest::Url, Error> {
         let base = format!("{}{}", cfg.base_url.trim_end_matches('/'), normalize_path(&cfg.api_path));
         let mut url = reqwest::Url::parse(&base).map_err(|_| Error::Status(400))?;
+        koda_net::check_url(&url).map_err(|e| Error::Blocked(e.to_string()))?;
         {
             let mut q = url.query_pairs_mut();
             for (k, v) in params {
@@ -229,6 +232,9 @@ impl Client {
         for _ in 0..6 {
             if url.starts_with("magnet:") {
                 return Ok(torrent::Payload::Magnet(url));
+            }
+            if let Ok(parsed) = reqwest::Url::parse(&url) {
+                koda_net::check_url(&parsed).map_err(|e| Error::Blocked(e.to_string()))?;
             }
             let res = self.http.get(&url).send().await?;
             if res.status().is_redirection() {

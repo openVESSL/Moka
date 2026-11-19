@@ -112,6 +112,7 @@ pub fn send(state: &AppState, event: Event, title: Option<TitleInfo>, user: Opti
 
 /// Sends one payload; one retry after a short wait on network or server errors.
 pub async fn deliver(http: &reqwest::Client, url: &str, payload: &Payload) -> Result<(), String> {
+    koda_net::check_str(url).map_err(|e| e.to_string())?;
     let body =
         if is_discord(url) { discord(payload) } else { serde_json::to_value(payload).unwrap_or_default() };
     let mut last = String::new();

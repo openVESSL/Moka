@@ -65,6 +65,7 @@ pub async fn create(
 ) -> ApiResult<Json<Webhook>> {
     user.require(Permissions::ADMIN)?;
     let url = b.url.trim();
+    koda_net::check_str(url).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if !matches!(reqwest::Url::parse(url).map(|u| u.scheme().to_owned()).as_deref(), Ok("http" | "https")) {
         return Err(ApiError::BadRequest("address must start with http:// or https://".into()));
     }

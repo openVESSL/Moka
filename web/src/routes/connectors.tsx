@@ -188,6 +188,7 @@ export function IndexersSection() {
 
   return (
     <div className="mt-6">
+      <ProwlarrImport />
       {indexers && indexers.length > 0 && (
         <ul className="mb-8 border-t border-slate-line">
           {indexers.map((i) => (
@@ -389,5 +390,61 @@ export function JellyfinSection() {
         </p>
       </div>
     </form>
+  );
+}
+
+/** Brings in every film indexer already set up in Prowlarr. */
+export function ProwlarrImport() {
+  const qc = useQueryClient();
+  const [f, setF] = useState({ url: "", api_key: "" });
+  const run = useMutation({
+    mutationFn: () => unwrap(api.POST("/api/v1/indexers/import/prowlarr", { body: f })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+  });
+  const r = run.data;
+  return (
+    <details className="mb-8 border-y border-slate-line py-4">
+      <summary className="cursor-pointer font-slate font-bold tracking-[0.06em] uppercase">Import from Prowlarr</summary>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run.mutate();
+        }}
+        className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-4"
+      >
+        <Field label="Prowlarr address" className="min-w-0 flex-1 basis-64">
+          <input
+            className="chalk-input data text-base"
+            value={f.url}
+            onChange={(e) => setF((x) => ({ ...x, url: e.target.value }))}
+            placeholder="http://192.168.1.10:9696"
+            required
+          />
+        </Field>
+        <Field label="API key" className="w-64">
+          <input
+            className="chalk-input data text-base"
+            type="password"
+            value={f.api_key}
+            onChange={(e) => setF((x) => ({ ...x, api_key: e.target.value }))}
+            autoComplete="off"
+            required
+          />
+        </Field>
+        <button type="submit" className="btn-grease" disabled={run.isPending}>
+          {run.isPending ? "Importing…" : "Import"}
+        </button>
+      </form>
+      {run.error && <p className="mt-3 text-sm text-grease-hot">{run.error.message}</p>}
+      {r && (
+        <p className="mt-3 text-sm text-chalk-dim">
+          {r.added.length} added, {r.updated.length} updated
+          {r.skipped.length > 0 && <> · skipped: {r.skipped.join("; ")}</>}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-chalk-faint">
+        Searches go through Prowlarr, so it must stay reachable. Run it again after changing indexers there.
+      </p>
+    </details>
   );
 }

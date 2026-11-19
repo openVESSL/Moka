@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/indexers", get(list_indexers).post(create_indexer))
         .route("/indexers/test", post(test_indexer))
+        .route("/indexers/import/prowlarr", post(import_prowlarr))
         .route("/indexers/{id}", axum::routing::put(update_indexer).delete(delete_indexer))
         .route("/download-clients", get(list_clients).post(create_client))
         .route("/download-clients/test", post(test_client))
@@ -328,4 +329,77 @@ async fn one_client(s: &AppState, id: i64) -> ApiResult<Json<DownloadClient>> {
         .await?
         .ok_or(ApiError::NotFound("download client"))?;
     Ok(Json(c.into()))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ProwlarrImport {
+    /// Prowlarr address, e.g. http://192.168.1.10:9696
+    pub url: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ProwlarrImportResult {
+    pub added: Vec<String>,
+    pub updated: Vec<String>,
+    /// Indexer name and why it was left out.
+    pub skipped: Vec<String>,
+}
+
+/// Adds every film-capable torrent indexer from Prowlarr, searched through
+/// Prowlarr's own Torznab endpoints. Running it again updates them instead
+/// of adding duplicates.
+#[utoipa::path(post, path = "/api/v1/indexers/import/prowlarr", tag = "connectors", request_body = ProwlarrImport,
+    responses((status = 200, body = ProwlarrImportResult), (status = 400, description = "cannot read Prowlarr")))]
+pub async fn import_prowlarr(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Json(b): Json<ProwlarrImport>,
+) -> ApiResult<Json<ProwlarrImportResult>> {
+    user.require(Permissions::ADMIN)?;
+    let base = check_url(&b.url)?;
+    let key = b.api_key.trim();
+    if key.is_empty() {
+        return Err(ApiError::BadRequest("enter the Prowlarr API key (Settings → General)".into()));
+    }
+    let list = s
+        .indexers
+        .prowlarr_indexers(&base, key)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("could not read Prowlarr: {e}")))?;
+    let existing = koda_db::connectors::indexers(&s.db).await?;
+    let mut out = ProwlarrImportResult { added: vec![], updated: vec![], skipped: vec![] };
+    for p in list {
+        if p.protocol != koda_indexers::Protocol::Torrent {
+            out.skipped.push(format!("{}: Usenet needs a Usenet download client, not supported yet", p.name));
+            continue;
+        }
+        if p.movie_categories.is_empty() {
+            out.skipped.push(format!("{}: offers no film categories", p.name));
+            continue;
+        }
+        let input = IndexerInput {
+            name: format!("{} (Prowlarr)", p.name),
+            kind: "torznab".into(),
+            base_url: format!("{base}/{}", p.id),
+            api_path: "/api".into(),
+            api_key: Some(key.to_owned()),
+            categories: p.movie_categories,
+            priority: 25,
+            enabled: p.enabled,
+        };
+        match existing.iter().find(|i| i.base_url == input.base_url) {
+            Some(i) => {
+                let keep = IndexerInput { priority: i.priority, ..input };
+                koda_db::connectors::update_indexer(&s.db, i.id, &keep).await?;
+                koda_db::connectors::set_capabilities(&s.db, i.id, "").await?;
+                out.updated.push(p.name);
+            }
+            None => {
+                koda_db::connectors::create_indexer(&s.db, &input).await?;
+                out.added.push(p.name);
+            }
+        }
+    }
+    Ok(Json(out))
 }

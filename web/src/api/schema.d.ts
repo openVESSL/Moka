@@ -249,6 +249,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/indexers/import/prowlarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adds every film-capable torrent indexer from Prowlarr, searched through
+         *     Prowlarr's own Torznab endpoints. Running it again updates them instead
+         *     of adding duplicates.
+         */
+        post: operations["import_prowlarr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/indexers/test": {
         parameters: {
             query?: never;
@@ -922,6 +943,17 @@ export interface components {
             /** Format: double */
             position_seconds: number;
         };
+        ProwlarrImport: {
+            api_key: string;
+            /** @description Prowlarr address, e.g. http://192.168.1.10:9696 */
+            url: string;
+        };
+        ProwlarrImportResult: {
+            added: string[];
+            /** @description Indexer name and why it was left out. */
+            skipped: string[];
+            updated: string[];
+        };
         QualityOption: {
             key: string;
             label: string;
@@ -1518,6 +1550,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Indexer"];
                 };
+            };
+        };
+    };
+    import_prowlarr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProwlarrImport"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProwlarrImportResult"];
+                };
+            };
+            /** @description cannot read Prowlarr */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

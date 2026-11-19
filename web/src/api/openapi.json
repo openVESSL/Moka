@@ -563,6 +563,39 @@
         }
       }
     },
+    "/api/v1/indexers/import/prowlarr": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Adds every film-capable torrent indexer from Prowlarr, searched through\nProwlarr's own Torznab endpoints. Running it again updates them instead\nof adding duplicates.",
+        "operationId": "import_prowlarr",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProwlarrImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProwlarrImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cannot read Prowlarr"
+          }
+        }
+      }
+    },
     "/api/v1/indexers/test": {
       "post": {
         "tags": [
@@ -2506,6 +2539,51 @@
           "position_seconds": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "ProwlarrImport": {
+        "type": "object",
+        "required": [
+          "url",
+          "api_key"
+        ],
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Prowlarr address, e.g. http://192.168.1.10:9696"
+          }
+        }
+      },
+      "ProwlarrImportResult": {
+        "type": "object",
+        "required": [
+          "added",
+          "updated",
+          "skipped"
+        ],
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Indexer name and why it was left out."
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

@@ -162,3 +162,33 @@ fn backoff_grows_and_caps() {
     assert_eq!(backoff(3).as_secs(), 900);
     assert_eq!(backoff(99).as_secs(), 86_400);
 }
+
+#[tokio::test]
+async fn reads_prowlarr_indexers() {
+    use axum::http::HeaderMap;
+    let app = Router::new().route(
+        "/api/v1/indexer",
+        get(|h: HeaderMap| async move {
+            if h.get("x-api-key").and_then(|v| v.to_str().ok()) != Some("pk") {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+            Ok(axum::Json(serde_json::json!([
+                { "id": 1, "name": "Tracker A", "enable": true, "protocol": "torrent",
+                  "capabilities": { "categories": [ { "id": 2000, "subCategories": [ { "id": 2040 }, { "id": 2045 } ] }, { "id": 5000 } ] } },
+                { "id": 2, "name": "Usenet B", "enable": false, "protocol": "usenet" },
+                { "id": 3, "name": "Odd", "enable": true, "protocol": "other" }
+            ])))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let c = Client::new();
+    let list = c.prowlarr_indexers(&base, "pk").await.unwrap();
+    assert_eq!(list.len(), 2, "unknown protocols are skipped");
+    assert_eq!(list[0].movie_categories, vec![2000, 2040, 2045]);
+    assert_eq!(list[1].protocol, Protocol::Usenet);
+    assert!(!list[1].enabled);
+    assert!(matches!(c.prowlarr_indexers(&base, "bad").await, Err(Error::Auth)));
+}

@@ -57,6 +57,7 @@ pub mod webhooks;
         connectors::update_indexer,
         connectors::delete_indexer,
         connectors::test_indexer,
+        connectors::import_prowlarr,
         connectors::list_clients,
         connectors::create_client,
         connectors::update_client,

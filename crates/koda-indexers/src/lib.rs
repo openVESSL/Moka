@@ -457,6 +457,83 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// One indexer configured in Prowlarr.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ProwlarrIndexer {
+    pub id: i64,
+    pub name: String,
+    pub protocol: Protocol,
+    pub enabled: bool,
+    /// Film categories (2000-2999) it offers.
+    pub movie_categories: Vec<u32>,
+}
+
+impl Client {
+    /// Lists the indexers of a Prowlarr instance (`GET /api/v1/indexer`).
+    pub async fn prowlarr_indexers(
+        &self,
+        base_url: &str,
+        api_key: &str,
+    ) -> Result<Vec<ProwlarrIndexer>, Error> {
+        #[derive(Deserialize)]
+        struct Cat {
+            id: u32,
+            #[serde(default, rename = "subCategories")]
+            sub: Vec<Cat>,
+        }
+        #[derive(Deserialize, Default)]
+        struct Caps {
+            #[serde(default)]
+            categories: Vec<Cat>,
+        }
+        #[derive(Deserialize)]
+        struct Raw {
+            id: i64,
+            name: String,
+            #[serde(default)]
+            enable: bool,
+            protocol: String,
+            #[serde(default)]
+            capabilities: Option<Caps>,
+        }
+        let url = reqwest::Url::parse(&format!("{}/api/v1/indexer", base_url.trim_end_matches('/')))
+            .map_err(|_| Error::Status(400))?;
+        koda_net::check_url(&url).map_err(|e| Error::Blocked(e.to_string()))?;
+        let res = self.http.get(url).header("X-Api-Key", api_key).send().await?;
+        match res.status().as_u16() {
+            200..=299 => {}
+            401 | 403 => return Err(Error::Auth),
+            s => return Err(Error::Status(s)),
+        }
+        let raw: Vec<Raw> = res.json().await?;
+        Ok(raw
+            .into_iter()
+            .filter_map(|r| {
+                let protocol = match r.protocol.as_str() {
+                    "torrent" => Protocol::Torrent,
+                    "usenet" => Protocol::Usenet,
+                    _ => return None,
+                };
+                let mut cats: Vec<u32> = Vec::new();
+                for c in r.capabilities.unwrap_or_default().categories {
+                    for id in std::iter::once(c.id).chain(c.sub.iter().map(|s| s.id)) {
+                        if (2000..3000).contains(&id) && !cats.contains(&id) {
+                            cats.push(id);
+                        }
+                    }
+                }
+                Some(ProwlarrIndexer {
+                    id: r.id,
+                    name: r.name,
+                    protocol,
+                    enabled: r.enable,
+                    movie_categories: cats,
+                })
+            })
+            .collect())
+    }
+}
+
 /// Wait time before trying an indexer again after `failures` failures in a row.
 pub fn backoff(failures: u32) -> Duration {
     const STEPS: [u64; 9] = [60, 300, 900, 1800, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600];

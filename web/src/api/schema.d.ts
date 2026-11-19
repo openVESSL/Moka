@@ -166,6 +166,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/play": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decides how this browser plays the file and, if needed, starts converting it. */
+        post: operations["play"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/progress": {
         parameters: {
             query?: never;
@@ -194,6 +211,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hls/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stops a remux/transcode session and deletes its files. */
+        delete: operations["stop_stream"];
         options?: never;
         head?: never;
         patch?: never;
@@ -676,6 +710,20 @@ export interface components {
             region?: string | null;
             tmdb_key_set: boolean;
         };
+        /** @description What the browser said it can decode (from `MediaSource.isTypeSupported`). */
+        ClientCaps: {
+            /** @description e.g. ["aac", "mp3", "opus", "flac", "ac3", "eac3"] */
+            audio_codecs: string[];
+            /** @description Containers the browser plays as a plain file, e.g. ["mp4", "webm"] */
+            containers: string[];
+            /**
+             * Format: int32
+             * @description Highest video height the device wants; larger is scaled down when transcoding.
+             */
+            max_height?: number | null;
+            /** @description e.g. ["h264", "hevc", "av1", "vp9"] */
+            video_codecs: string[];
+        };
         Credentials: {
             password: string;
             username: string;
@@ -778,6 +826,8 @@ export interface components {
             /** Format: int64 */
             size_bytes: number;
         };
+        /** @enum {string} */
+        Method: "direct" | "remux" | "transcode";
         NewRequest: {
             /** Format: int64 */
             tmdb_id: number;
@@ -807,6 +857,30 @@ export interface components {
             name: string;
             profile_path?: string | null;
             role?: string | null;
+        };
+        PlayRequest: {
+            caps: components["schemas"]["ClientCaps"];
+            /**
+             * Format: double
+             * @description Where to start, in seconds from the beginning of the film.
+             */
+            start_seconds?: number | null;
+        };
+        PlayResponse: {
+            /** Format: double */
+            duration_seconds: number;
+            method: components["schemas"]["Method"];
+            /** @description Why the file is not played as is. */
+            reasons: string[];
+            /** @description Session to stop when done (remux/transcode only). */
+            session?: string | null;
+            /**
+             * Format: double
+             * @description The stream begins at this point of the film (0 for direct play).
+             */
+            start_seconds: number;
+            /** @description Plain file for direct play, an HLS playlist otherwise. */
+            url: string;
         };
         Progress: {
             played: boolean;
@@ -1260,6 +1334,31 @@ export interface operations {
             };
         };
     };
+    play: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayResponse"];
+                };
+            };
+        };
+    };
     get_progress: {
         parameters: {
             query?: never;
@@ -1322,6 +1421,25 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Health"];
                 };
+            };
+        };
+    };
+    stop_stream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

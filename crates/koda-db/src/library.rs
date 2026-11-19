@@ -138,6 +138,21 @@ pub async fn update_profile(pool: &Pool, p: &QualityProfile) -> Result<(), Error
     Ok(())
 }
 
+/// Cached technical details of a file (FFprobe output, our JSON shape).
+pub async fn probe_json(pool: &Pool, file_id: i64) -> Result<Option<String>, Error> {
+    sqlx::query_scalar("SELECT probe_json FROM media_files WHERE id = ?").bind(file_id).fetch_one(pool).await
+}
+
+pub async fn set_probe(pool: &Pool, file_id: i64, json: &str, duration: f64) -> Result<(), Error> {
+    sqlx::query("UPDATE media_files SET probe_json = ?, duration_seconds = ? WHERE id = ?")
+        .bind(json)
+        .bind(duration)
+        .bind(file_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[tokio::test]

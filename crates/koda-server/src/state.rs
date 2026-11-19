@@ -26,6 +26,7 @@ pub struct AppState {
     pub login_failures: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
     /// Progress of the running or last library scan.
     pub scan: Arc<Mutex<crate::scan::ScanStatus>>,
+    pub streams: crate::streaming::Sessions,
     tmdb: Arc<RwLock<Tmdb>>,
     cache: Arc<Mutex<HashMap<String, (Instant, serde_json::Value)>>>,
 }
@@ -72,6 +73,7 @@ impl AppState {
             download_clients: Arc::default(),
             login_failures: Arc::default(),
             scan: Arc::default(),
+            streams: Default::default(),
             tmdb: Arc::new(RwLock::new(catalog.client())),
             cache: Arc::default(),
         }

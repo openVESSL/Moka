@@ -363,6 +363,47 @@
         }
       }
     },
+    "/api/v1/files/{id}/play": {
+      "post": {
+        "tags": [
+          "play"
+        ],
+        "summary": "Decides how this browser plays the file and, if needed, starts converting it.",
+        "operationId": "play",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/{id}/progress": {
       "get": {
         "tags": [
@@ -448,6 +489,28 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/v1/hls/{session}": {
+      "delete": {
+        "tags": [
+          "play"
+        ],
+        "summary": "Stops a remux/transcode session and deletes its files.",
+        "operationId": "stop_stream",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {}
         }
       }
     },
@@ -1734,6 +1797,47 @@
           }
         }
       },
+      "ClientCaps": {
+        "type": "object",
+        "description": "What the browser said it can decode (from `MediaSource.isTypeSupported`).",
+        "required": [
+          "video_codecs",
+          "audio_codecs",
+          "containers"
+        ],
+        "properties": {
+          "audio_codecs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e.g. [\"aac\", \"mp3\", \"opus\", \"flac\", \"ac3\", \"eac3\"]"
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Containers the browser plays as a plain file, e.g. [\"mp4\", \"webm\"]"
+          },
+          "max_height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Highest video height the device wants; larger is scaled down when transcoding.",
+            "minimum": 0
+          },
+          "video_codecs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e.g. [\"h264\", \"hevc\", \"av1\", \"vp9\"]"
+          }
+        }
+      },
       "Credentials": {
         "type": "object",
         "required": [
@@ -2103,6 +2207,14 @@
           }
         }
       },
+      "Method": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "remux",
+          "transcode"
+        ]
+      },
       "NewRequest": {
         "type": "object",
         "required": [
@@ -2204,6 +2316,67 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "PlayRequest": {
+        "type": "object",
+        "required": [
+          "caps"
+        ],
+        "properties": {
+          "caps": {
+            "$ref": "#/components/schemas/ClientCaps"
+          },
+          "start_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Where to start, in seconds from the beginning of the film."
+          }
+        }
+      },
+      "PlayResponse": {
+        "type": "object",
+        "required": [
+          "method",
+          "url",
+          "start_seconds",
+          "duration_seconds",
+          "reasons"
+        ],
+        "properties": {
+          "duration_seconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "method": {
+            "$ref": "#/components/schemas/Method"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Why the file is not played as is."
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session to stop when done (remux/transcode only)."
+          },
+          "start_seconds": {
+            "type": "number",
+            "format": "double",
+            "description": "The stream begins at this point of the film (0 for direct play)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Plain file for direct play, an HLS playlist otherwise."
           }
         }
       },

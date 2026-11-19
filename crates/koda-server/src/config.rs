@@ -21,6 +21,10 @@ impl Config {
         Ok(Self { config_dir, listen, database_url })
     }
 
+    pub fn transcode_dir(&self) -> PathBuf {
+        self.config_dir.join("transcodes")
+    }
+
     pub fn cache_dir(&self) -> PathBuf {
         self.config_dir.join("cache")
     }

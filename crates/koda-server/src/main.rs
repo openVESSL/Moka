@@ -10,6 +10,7 @@ mod notify;
 mod pipeline;
 mod scan;
 mod state;
+mod streaming;
 mod web;
 
 use config::Config;
@@ -33,12 +34,16 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     std::fs::create_dir_all(&config.config_dir)?;
     std::fs::create_dir_all(config.cache_dir())?;
+    // leftovers from a previous run are never resumed
+    let _ = std::fs::remove_dir_all(config.transcode_dir());
+    std::fs::create_dir_all(config.transcode_dir())?;
 
     let db = koda_db::connect(&config.database_url).await?;
     let catalog = koda_db::settings::get(&db, state::CatalogSettings::KEY).await?.unwrap_or_default();
     let listen = config.listen;
     let state = AppState::new(db, config, catalog);
     tokio::spawn(pipeline::run(state.clone()));
+    tokio::spawn(state.streams.clone().reap());
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");

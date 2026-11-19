@@ -634,6 +634,74 @@
         }
       }
     },
+    "/api/v1/qualities": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "operationId": "qualities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QualityOption"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quality-profile": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "operationId": "get_profile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualityProfile"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "library"
+        ],
+        "operationId": "put_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QualityProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualityProfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests": {
       "get": {
         "tags": [
@@ -2102,6 +2170,66 @@
           "position_seconds": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "QualityOption": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "QualityProfile": {
+        "type": "object",
+        "required": [
+          "name",
+          "qualities",
+          "cutoff",
+          "upgrades_allowed",
+          "min_seeders",
+          "size_limits",
+          "preferred_terms"
+        ],
+        "properties": {
+          "cutoff": {
+            "type": "string",
+            "description": "Stop upgrading once a file of this quality (or better) exists."
+          },
+          "min_seeders": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preferred_terms": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "qualities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Wanted quality keys, best first."
+          },
+          "size_limits": {
+            "type": "object",
+            "description": "Per quality key, in MB per minute of runtime."
+          },
+          "upgrades_allowed": {
+            "type": "boolean"
           }
         }
       },

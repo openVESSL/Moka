@@ -18,6 +18,7 @@ pub mod auth;
 pub mod catalog;
 pub mod connectors;
 pub mod images;
+pub mod profiles;
 pub mod requests;
 pub mod settings;
 pub mod titles;
@@ -68,6 +69,9 @@ pub mod webhooks;
         users::update,
         users::remove,
         users::change_own_password,
+        profiles::qualities,
+        profiles::get_profile,
+        profiles::put_profile,
         webhooks::list,
         webhooks::create,
         webhooks::remove,
@@ -91,6 +95,7 @@ pub fn router() -> Router<AppState> {
         .merge(connectors::router())
         .merge(users::router())
         .merge(webhooks::router())
+        .merge(profiles::router())
         .merge(settings::router())
         .merge(images::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });

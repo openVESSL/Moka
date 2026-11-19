@@ -280,6 +280,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/qualities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["qualities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_profile"];
+        put: operations["put_profile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/requests": {
         parameters: {
             query?: never;
@@ -763,6 +795,23 @@ export interface components {
             played: boolean;
             /** Format: double */
             position_seconds: number;
+        };
+        QualityOption: {
+            key: string;
+            label: string;
+        };
+        QualityProfile: {
+            /** @description Stop upgrading once a file of this quality (or better) exists. */
+            cutoff: string;
+            /** Format: int64 */
+            min_seeders: number;
+            name: string;
+            preferred_terms: Record<string, never>[];
+            /** @description Wanted quality keys, best first. */
+            qualities: string[];
+            /** @description Per quality key, in MB per minute of runtime. */
+            size_limits: Record<string, never>;
+            upgrades_allowed: boolean;
         };
         /** @description Per-user request limit, stored under the `requests.quota` setting. */
         Quota: {
@@ -1403,6 +1452,67 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    qualities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityOption"][];
+                };
+            };
+        };
+    };
+    get_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityProfile"];
+                };
+            };
+        };
+    };
+    put_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QualityProfile"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityProfile"];
+                };
             };
         };
     };

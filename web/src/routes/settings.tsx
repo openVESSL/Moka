@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { DownloadClientSection, IndexersSection, LibrarySection } from "./connectors";
+import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
 import { WebhooksSection } from "./webhooks";
 
@@ -11,6 +12,12 @@ export function SettingsPage() {
     <main className="mx-auto max-w-[56rem] px-4 pt-12 sm:px-8">
       <h1 className="font-slate text-5xl leading-none font-extrabold uppercase">Settings</h1>
       <CatalogSection />
+      <Section
+        title="Quality"
+        intro="Which releases are acceptable, best first. The first acceptable one found is downloaded; better ones replace it until the stop point."
+      >
+        <ProfileSection />
+      </Section>
       <Section
         title="Library"
         intro="Where finished films are placed. Keep it on the same disk as your downloads so imports are instant and take no extra space."

@@ -120,6 +120,24 @@ pub async fn set_progress(
     Ok(())
 }
 
+pub async fn update_profile(pool: &Pool, p: &QualityProfile) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE quality_profiles SET name = ?, qualities = ?, cutoff = ?, upgrades_allowed = ?, min_seeders = ?,
+         size_limits = ?, preferred_terms = ? WHERE id = ?",
+    )
+    .bind(&p.name)
+    .bind(&p.qualities)
+    .bind(&p.cutoff)
+    .bind(p.upgrades_allowed)
+    .bind(p.min_seeders)
+    .bind(&p.size_limits)
+    .bind(&p.preferred_terms)
+    .bind(p.id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[tokio::test]

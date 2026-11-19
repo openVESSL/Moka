@@ -1,0 +1,20 @@
+[package]
+name = "koda-indexers"
+description = "Torznab and Newznab indexer client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+roxmltree = "0.21.2"
+sha1 = "0.11.0"
+
+[dev-dependencies]
+tokio.workspace = true
+axum = "0.8.9"
+
+[lints]
+workspace = true

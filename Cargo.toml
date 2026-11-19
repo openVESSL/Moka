@@ -10,11 +10,12 @@ license = "GPL-3.0-only"
 [workspace.dependencies]
 koda-core = { path = "crates/koda-core" }
 koda-db = { path = "crates/koda-db" }
+koda-download = { path = "crates/koda-download" }
+koda-indexers = { path = "crates/koda-indexers" }
+koda-metadata = { path = "crates/koda-metadata" }
 koda-parser = { path = "crates/koda-parser" }
 
-koda-metadata = { path = "crates/koda-metadata" }
-
-reqwest = { version = "0.13", features = ["json", "gzip", "query", "multipart", "cookies", "stream"] }
+reqwest = { version = "0.13", features = ["json", "gzip", "query", "form", "multipart", "cookies", "stream"] }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

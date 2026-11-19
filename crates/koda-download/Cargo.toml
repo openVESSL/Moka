@@ -1,0 +1,19 @@
+[package]
+name = "koda-download"
+description = "Download client connectors (qBittorrent)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+axum = "0.8.9"
+
+[lints]
+workspace = true

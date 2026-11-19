@@ -18,6 +18,9 @@ the steps to migrate.
 - A `/api/v3` API compatible with Radarr: indexer managers can sync
   Torznab/Newznab indexers into Koda, and request apps can add films,
   follow their status and see the download queue.
+- Subtitle apps that work with Radarr can read films with their file paths
+  and release names from `/api/v3`, and webhooks pointed at their
+  `/api/webhooks/radarr` address are told about each import.
 
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.

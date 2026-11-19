@@ -1,5 +1,6 @@
 //! Outgoing webhooks. Plain JSON for bots and scripts; Discord webhook
-//! addresses get a Discord message with the poster instead.
+//! addresses get a Discord message with the poster instead, and subtitle
+//! apps listening at `/api/webhooks/radarr` get the import in that format.
 
 use std::time::Duration;
 
@@ -68,6 +69,9 @@ pub struct TitleInfo {
     pub year: Option<i64>,
     pub poster_url: Option<String>,
     pub detail: Option<String>,
+    /// Library file id, filled for `available`.
+    #[serde(skip)]
+    pub file_id: Option<i64>,
 }
 
 impl TitleInfo {
@@ -80,6 +84,7 @@ impl TitleInfo {
             year: t.year,
             poster_url: t.poster_path.as_ref().map(|p| format!("{}/w500{p}", koda_metadata::IMAGE_BASE_URL)),
             detail,
+            file_id: None,
         }
     }
 }
@@ -99,6 +104,15 @@ pub fn send(state: &AppState, event: Event, title: Option<TitleInfo>, user: Opti
             Ok(h) => h,
             Err(e) => return tracing::warn!(error = ?e, "could not load webhooks"),
         };
+        let mut title = title;
+        if event == Event::Available
+            && let Some(t) = title.as_mut()
+        {
+            t.file_id = koda_db::library::files_for_title(&state.db, t.id)
+                .await
+                .ok()
+                .and_then(|f| f.last().map(|f| f.id));
+        }
         let name = title.as_ref().map(|t| t.title.as_str()).unwrap_or("A film");
         let payload =
             Payload { event, occurred_at: now(), message: event.headline(name), title: title.clone(), user };
@@ -113,8 +127,17 @@ pub fn send(state: &AppState, event: Event, title: Option<TitleInfo>, user: Opti
 /// Sends one payload; one retry after a short wait on network or server errors.
 pub async fn deliver(http: &reqwest::Client, url: &str, payload: &Payload) -> Result<(), String> {
     koda_net::check_str(url).map_err(|e| e.to_string())?;
-    let body =
-        if is_discord(url) { discord(payload) } else { serde_json::to_value(payload).unwrap_or_default() };
+    let body = if is_discord(url) {
+        discord(payload)
+    } else if is_radarr_hook(url) {
+        match radarr(payload) {
+            Some(b) => b,
+            // only imports matter to these listeners
+            None => return Ok(()),
+        }
+    } else {
+        serde_json::to_value(payload).unwrap_or_default()
+    };
     let mut last = String::new();
     for attempt in 0..2 {
         if attempt > 0 {
@@ -139,6 +162,26 @@ fn is_discord(url: &str) -> bool {
             Some("discord.com" | "discordapp.com" | "ptb.discord.com" | "canary.discord.com")
         ) && u.path().starts_with("/api/webhooks/")
     })
+}
+
+fn is_radarr_hook(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .is_some_and(|u| u.path().trim_end_matches('/').ends_with("/api/webhooks/radarr"))
+}
+
+/// Import notice in the film-manager webhook format; `None` for other events.
+fn radarr(p: &Payload) -> Option<serde_json::Value> {
+    match (p.event, &p.title) {
+        (Event::Test, _) => Some(serde_json::json!({ "eventType": "Test" })),
+        (Event::Available, Some(t)) => Some(serde_json::json!({
+            "eventType": "Download",
+            "isUpgrade": false,
+            "movie": { "id": t.id, "title": t.title, "year": t.year, "tmdbId": t.tmdb_id, "imdbId": t.imdb_id },
+            "movieFile": { "id": t.file_id? },
+        })),
+        _ => None,
+    }
 }
 
 fn discord(p: &Payload) -> serde_json::Value {
@@ -190,6 +233,7 @@ mod tests {
                 year: Some(2021),
                 poster_url: Some("https://img/p.jpg".into()),
                 detail: Some("WEB-DL 1080p".into()),
+                file_id: Some(7),
             }),
             user: Some("ana".into()),
         };
@@ -197,5 +241,14 @@ mod tests {
         assert_eq!(v["embeds"][0]["title"], "Dune is ready to watch");
         assert_eq!(v["embeds"][0]["description"], "2021 · WEB-DL 1080p · Requested by ana");
         assert_eq!(v["embeds"][0]["thumbnail"]["url"], "https://img/p.jpg");
+
+        assert!(is_radarr_hook("http://subs.local:6767/api/webhooks/radarr?apikey=x"));
+        assert!(!is_radarr_hook("http://bot.local/hook"));
+        let r = radarr(&p).unwrap();
+        assert_eq!(
+            (r["eventType"].as_str(), r["movie"]["id"].as_i64(), r["movieFile"]["id"].as_i64()),
+            (Some("Download"), Some(1), Some(7))
+        );
+        assert!(radarr(&Payload { event: Event::Grabbed, ..p }).is_none(), "only imports are sent");
     }
 }

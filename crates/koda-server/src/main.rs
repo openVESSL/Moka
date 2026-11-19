@@ -364,6 +364,8 @@ mod tests {
             "PUT /api/v3/movie/1",
             "POST /api/v3/command",
             "GET /api/v3/queue",
+            "GET /api/v3/history?movieIds=1",
+            "GET /api/system/status",
         ] {
             let (m, p) = extra.split_once(' ').unwrap();
             routes.push((m.into(), p.into()));
@@ -546,6 +548,12 @@ mod tests {
         assert_eq!(call("POST", "/api/v3/command", &cmd).await.unwrap().status(), StatusCode::CREATED);
         let q = body_json(call("GET", "/api/v3/queue?page=1&pageSize=50", "").await.unwrap()).await;
         assert_eq!(q["totalRecords"], 0);
+        let h =
+            body_json(call("GET", &format!("/api/v3/history?eventType=1&movieIds={id}"), "").await.unwrap())
+                .await;
+        assert_eq!(h["totalRecords"], 0, "nothing grabbed yet");
+        let legacy = body_json(call("GET", "/api/system/status", "").await.unwrap()).await;
+        assert!(legacy["version"].as_str().unwrap().starts_with('5'));
         let p = body_json(call("GET", "/api/v3/qualityProfile", "").await.unwrap()).await;
         assert_eq!(p[0]["name"], "HD 1080p");
     }

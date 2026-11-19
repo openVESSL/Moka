@@ -43,13 +43,18 @@ pub fn router() -> Router<AppState> {
         .route("/movie/{id}", get(one_movie).put(update_movie))
         .route("/command", post(command))
         .route("/queue", get(queue))
+        // subtitle apps
+        .route("/history", get(history))
         .fallback(|| async { ApiError::NotFound("endpoint") })
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("x-application-version"),
             HeaderValue::from_static(COMPAT_VERSION),
         ))
         .layer(middleware::map_request(key_from_query));
-    Router::new().nest("/api/v3", v3)
+    Router::new()
+        .nest("/api/v3", v3)
+        // older clients ask here first for the version
+        .route("/api/system/status", get(status).layer(middleware::map_request(key_from_query)))
 }
 
 /// Some clients send the key as `?apikey=`: treat it like the header.
@@ -345,12 +350,23 @@ async fn movie(s: &AppState, t: &Title, root: &str) -> ApiResult<Value> {
         .as_ref()
         .and_then(|f| std::path::Path::new(&f.path).parent().map(|p| p.to_string_lossy().into_owned()))
         .unwrap_or_else(|| format!("{}/{}", root.trim_end_matches(['/', '\\']), t.title));
+    // the release name helps subtitle apps find matching subtitles
+    let scene_name = match &file {
+        Some(_) => koda_db::grabs::latest_for_title(&s.db, t.id)
+            .await?
+            .filter(|g| g.status == "imported")
+            .map(|g| g.release_title),
+        None => None,
+    };
     let movie_file = file.as_ref().map(|f| {
         let q = f.quality.clone().unwrap_or_default();
         json!({
             "id": f.id,
             "movieId": t.id,
             "path": f.path,
+            "sceneName": scene_name,
+            // shortcut: audio languages are not reported; subtitle apps read them from the file
+            "languages": [],
             "relativePath": std::path::Path::new(&f.path).file_name().map(|n| n.to_string_lossy().into_owned()),
             "size": f.size_bytes,
             "dateAdded": date(f.added_at),
@@ -572,6 +588,41 @@ async fn command(
         Json(
             json!({ "id": 1, "name": c.name, "commandName": c.name, "status": "queued", "queued": date(now) }),
         ),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryQuery {
+    /// Comma-separated title ids.
+    #[serde(default)]
+    movie_ids: String,
+}
+
+/// Grab history (the release each film came from), newest grab per film.
+async fn history(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Query(q): Query<HistoryQuery>,
+) -> ApiResult<Json<Value>> {
+    admin(&user)?;
+    let mut records = Vec::new();
+    for id in q.movie_ids.split(',').filter_map(|i| i.trim().parse::<i64>().ok()) {
+        if let Some(g) = koda_db::grabs::latest_for_title(&s.db, id).await? {
+            records.push(json!({
+                "id": g.id,
+                "movieId": g.title_id,
+                "sourceTitle": g.release_title,
+                "eventType": "grabbed",
+                "date": date(g.created_at),
+                "downloadId": g.info_hash,
+                "quality": { "quality": { "id": 0, "name": g.quality.clone().unwrap_or_default() } },
+                "data": {},
+            }));
+        }
+    }
+    Ok(Json(
+        json!({ "page": 1, "pageSize": records.len().max(1), "totalRecords": records.len(), "records": records }),
     ))
 }
 

@@ -64,7 +64,7 @@ pub struct ListQuery {
     pub state: Option<String>,
 }
 
-#[utoipa::path(get, path = "/api/v1/titles", tag = "titles", params(ListQuery),
+#[utoipa::path(get, path = "/api/v1/titles", operation_id = "list_titles", tag = "titles", params(ListQuery),
     responses((status = 200, body = [Title])))]
 pub async fn list(
     _user: CurrentUser,

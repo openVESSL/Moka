@@ -95,7 +95,7 @@ fn parse_status(s: &str) -> ApiResult<RequestStatus> {
     })
 }
 
-#[utoipa::path(get, path = "/api/v1/requests", tag = "requests", params(ListQuery),
+#[utoipa::path(get, path = "/api/v1/requests", operation_id = "list_requests", tag = "requests", params(ListQuery),
     responses((status = 200, body = [Request])))]
 pub async fn list(
     user: CurrentUser,

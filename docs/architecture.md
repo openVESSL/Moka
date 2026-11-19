@@ -256,8 +256,9 @@ GET    /api/v1/titles/{id}
 POST   /api/v1/titles/{id}/search         manual search now
 GET    /api/v1/titles/{id}/releases       last search results with accept/reject reasons
 POST   /api/v1/titles/{id}/grab           { release_id } manual pick
-POST   /api/v1/titles/{id}/play           playback decision
-PUT    /api/v1/titles/{id}/progress       { position_seconds, played }
+GET    /api/v1/titles/{id}/files          imported files
+POST   /api/v1/titles/{id}/play           playback decision (with remux/transcode)
+GET|PUT /api/v1/files/{id}/progress       { position_seconds, played }, per user
 
 GET|POST|PUT|DELETE /api/v1/indexers[/{id}]     + POST /api/v1/indexers/{id}/test
 GET|POST|PUT|DELETE /api/v1/download-clients[/{id}]  + /test
@@ -265,7 +266,8 @@ GET|PUT             /api/v1/quality-profiles[/{id}]
 GET|PUT             /api/v1/settings
 
 GET    /api/v1/images/{size}/{path}       cached TMDB images
-GET    /api/v1/stream/{session}/...       direct file, HLS playlists and segments, subtitles
+GET    /api/v1/files/{id}/stream          original file with range requests (direct play)
+GET    /api/v1/stream/{session}/...       HLS playlists and segments, subtitles (with transcoding)
 GET    /api/v1/events                     SSE
 GET    /api/v1/health
 ```

@@ -150,6 +150,43 @@ pub async fn admin_count(pool: &Pool) -> Result<i64, Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE permissions & 1 = 1").fetch_one(pool).await
 }
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ApiKey {
+    pub id: i64,
+    pub user_id: i64,
+    pub name: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+pub async fn create_api_key(
+    pool: &Pool,
+    user_id: i64,
+    name: &str,
+    token_hash: &str,
+) -> Result<ApiKey, Error> {
+    sqlx::query_as(
+        "INSERT INTO api_keys (user_id, name, token_hash) VALUES (?, ?, ?)
+         RETURNING id, user_id, name, created_at, last_used_at",
+    )
+    .bind(user_id)
+    .bind(name)
+    .bind(token_hash)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn api_keys(pool: &Pool) -> Result<Vec<ApiKey>, Error> {
+    sqlx::query_as("SELECT id, user_id, name, created_at, last_used_at FROM api_keys ORDER BY id")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn delete_api_key(pool: &Pool, id: i64) -> Result<(), Error> {
+    sqlx::query("DELETE FROM api_keys WHERE id = ?").bind(id).execute(pool).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -43,8 +43,8 @@ pub fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(digest)
 }
 
-/// The signed-in user. Resolved from `Authorization: Bearer <api key>` or the
-/// session cookie. Rejects with 401 when neither is valid.
+/// The signed-in user. Resolved from `Authorization: Bearer <api key>`,
+/// `X-Api-Key: <api key>` or the session cookie. Rejects with 401 when neither is valid.
 pub struct CurrentUser(pub User);
 
 impl CurrentUser {
@@ -62,6 +62,8 @@ impl FromRequestParts<AppState> for CurrentUser {
             .get(AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
+            // the header other media apps send
+            .or_else(|| parts.headers.get("x-api-key").and_then(|v| v.to_str().ok()))
         {
             return koda_db::users::by_api_key(&state.db, &token_hash(key.trim()))
                 .await?

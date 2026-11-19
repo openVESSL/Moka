@@ -4,6 +4,39 @@
  */
 
 export interface paths {
+    "/api/v1/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_keys"];
+        put?: never;
+        /** Creates a key that acts as the signed-in admin. */
+        post: operations["create_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-keys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_key"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -688,6 +721,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ApiKeyView: {
+            /** Format: int64 */
+            created_at: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            last_used_at?: number | null;
+            name: string;
+            /** Format: int64 */
+            user_id: number;
+        };
         AuthStatus: {
             /** @description True until the first admin account exists. */
             needs_setup: boolean;
@@ -761,6 +805,10 @@ export interface components {
             max_height?: number | null;
             /** @description e.g. ["h264", "hevc", "av1", "vp9"] */
             video_codecs: string[];
+        };
+        CreatedApiKey: components["schemas"]["ApiKeyView"] & {
+            /** @description Shown only now. Koda keeps just a hash of it. */
+            key: string;
         };
         Credentials: {
             password: string;
@@ -886,6 +934,9 @@ export interface components {
         };
         /** @enum {string} */
         Method: "direct" | "remux" | "transcode";
+        NewApiKey: {
+            name: string;
+        };
         NewRequest: {
             /** Format: int64 */
             tmdb_id: number;
@@ -1119,6 +1170,67 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyView"][];
+                };
+            };
+        };
+    };
+    create_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewApiKey"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedApiKey"];
+                };
+            };
+        };
+    };
+    delete_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;

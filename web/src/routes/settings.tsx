@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
+import { ApiKeysSection } from "./apikeys";
 import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, ScanPanel } from "./connectors";
 import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
@@ -51,6 +52,12 @@ export function SettingsPage() {
         intro="Tell other apps when a film is requested, approved, downloading, ready or stuck. Works with Discord webhooks and any service that accepts JSON."
       >
         <WebhooksSection />
+      </Section>
+      <Section
+        title="API keys"
+        intro="Let other apps connect to Koda. Apps that can talk to Radarr (indexer managers, request apps) can use this server's address and a key from here. A key acts as the admin who made it."
+      >
+        <ApiKeysSection />
       </Section>
       <QuotaSection />
     </main>

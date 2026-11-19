@@ -18,6 +18,7 @@ pub mod auth;
 pub mod catalog;
 pub mod connectors;
 pub mod images;
+pub mod keys;
 pub mod library;
 pub mod play;
 pub mod profiles;
@@ -25,6 +26,7 @@ pub mod requests;
 pub mod settings;
 pub mod titles;
 pub mod users;
+pub mod v3;
 pub mod webhooks;
 
 #[derive(OpenApi)]
@@ -87,6 +89,9 @@ pub mod webhooks;
         settings::put_library,
         settings::get_jellyfin,
         settings::put_jellyfin,
+        keys::list_keys,
+        keys::create_key,
+        keys::delete_key,
     ),
     components(schemas(Health, crate::error::ErrorBody))
 )]
@@ -109,8 +114,9 @@ pub fn router() -> Router<AppState> {
         .merge(play::router())
         .merge(settings::router())
         .merge(images::router())
+        .merge(keys::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });
-    Router::new().nest("/api/v1", api)
+    Router::new().nest("/api/v1", api).merge(v3::router())
 }
 
 #[derive(Serialize, ToSchema)]

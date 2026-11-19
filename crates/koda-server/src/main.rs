@@ -346,6 +346,14 @@ mod tests {
             "GET /api/v1/images/w342/abc.jpg",
             "GET /api/v1/files/1/stream",
             "GET /api/v1/hls/abc/index.m3u8",
+            "GET /api/v3/system/status",
+            "GET /api/v3/indexer",
+            "POST /api/v3/indexer",
+            "GET /api/v3/indexer/schema",
+            "POST /api/v3/indexer/test",
+            "GET /api/v3/indexer/1",
+            "PUT /api/v3/indexer/1",
+            "DELETE /api/v3/indexer/1",
         ] {
             let (m, p) = extra.split_once(' ').unwrap();
             routes.push((m.into(), p.into()));
@@ -404,6 +412,74 @@ mod tests {
     #[tokio::test]
     async fn unknown_api_route_is_json_404() {
         let res = test_app().await.oneshot(json("GET", "/api/v1/nope", "")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn other_apps_sync_indexers_through_v3() {
+        let app = test_app().await;
+        let creds = r#"{"username":"ana","password":"long enough"}"#;
+        let res = app.clone().oneshot(json("POST", "/api/v1/auth/setup", creds)).await.unwrap();
+        let c = res.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+        let res =
+            app.clone().oneshot(authed("POST", "/api/v1/api-keys", &c, r#"{"name":"sync"}"#)).await.unwrap();
+        let key = body_json(res).await["key"].as_str().unwrap().to_owned();
+        let v3 = |method: &str, uri: &str, body: &str| {
+            let mut r = json(method, uri, body);
+            r.headers_mut().insert("x-api-key", key.parse().unwrap());
+            r
+        };
+
+        let res = app.clone().oneshot(json("GET", "/api/v3/system/status", "")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let res = app
+            .clone()
+            .oneshot(json("GET", &format!("/api/v3/system/status?apikey={key}"), ""))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "key in the query works too");
+        assert!(res.headers()["x-application-version"].to_str().unwrap().starts_with('5'));
+
+        let schema =
+            body_json(app.clone().oneshot(v3("GET", "/api/v3/indexer/schema", "")).await.unwrap()).await;
+        let mut torznab =
+            schema.as_array().unwrap().iter().find(|s| s["implementation"] == "Torznab").unwrap().clone();
+        for f in torznab["fields"].as_array_mut().unwrap() {
+            match f["name"].as_str().unwrap() {
+                "baseUrl" => f["value"] = "http://indexers.local:9696/7/".into(),
+                "apiKey" => f["value"] = "THE-KEY".into(),
+                "categories" => f["value"] = serde_json::json!([2000, 2040]),
+                _ => {}
+            }
+        }
+        torznab["name"] = "Films (sync)".into();
+        let res =
+            app.clone().oneshot(v3("POST", "/api/v3/indexer/test", &torznab.to_string())).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res = app.clone().oneshot(v3("POST", "/api/v3/indexer", &torznab.to_string())).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let created = body_json(res).await;
+        let id = created["id"].as_i64().unwrap();
+        let text = created.to_string();
+        assert!(text.contains("http://indexers.local:9696/7/"), "base url as sent: {text}");
+        assert!(!text.contains("THE-KEY"), "key never comes back");
+
+        // the native API sees the same indexer
+        let list =
+            body_json(app.clone().oneshot(authed("GET", "/api/v1/indexers", &c, "")).await.unwrap()).await;
+        assert_eq!(list[0]["name"], "Films (sync)");
+        assert_eq!(list[0]["api_key_set"], true);
+
+        // re-sending what came back keeps the key
+        let res = app.clone().oneshot(v3("PUT", &format!("/api/v3/indexer/{id}"), &text)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let list =
+            body_json(app.clone().oneshot(authed("GET", "/api/v1/indexers", &c, "")).await.unwrap()).await;
+        assert_eq!(list[0]["api_key_set"], true);
+
+        let res = app.clone().oneshot(v3("DELETE", &format!("/api/v3/indexer/{id}"), "")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res = app.clone().oneshot(v3("GET", &format!("/api/v3/indexer/{id}"), "")).await.unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }

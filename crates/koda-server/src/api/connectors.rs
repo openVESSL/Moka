@@ -95,7 +95,7 @@ impl IndexerBody {
     }
 }
 
-fn check_url(u: &str) -> ApiResult<String> {
+pub(crate) fn check_url(u: &str) -> ApiResult<String> {
     let u = u.trim().trim_end_matches('/');
     match reqwest::Url::parse(u) {
         Ok(url) if matches!(url.scheme(), "http" | "https") => {

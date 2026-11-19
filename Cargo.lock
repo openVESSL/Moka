@@ -1241,6 +1241,11 @@ dependencies = [
 [[package]]
 name = "koda-parser"
 version = "0.1.0"
+dependencies = [
+ "koda-core",
+ "regex",
+ "serde",
+]
 
 [[package]]
 name = "koda-server"

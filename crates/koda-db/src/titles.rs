@@ -123,6 +123,29 @@ pub async fn list(pool: &Pool, state: Option<TitleState>) -> Result<Vec<Title>, 
         .await
 }
 
+/// Local id and state for each TMDB id that exists in the library, used to
+/// annotate catalog results.
+pub async fn states_for_tmdb(
+    pool: &Pool,
+    kind: TitleKind,
+    tmdb_ids: &[i64],
+) -> Result<Vec<(i64, i64, String)>, Error> {
+    let ids = serde_json::to_string(tmdb_ids).map_err(|e| Error::Encode(Box::new(e)))?;
+    sqlx::query_as(
+        "SELECT tmdb_id, id, state FROM titles
+         WHERE kind = ? AND tmdb_id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(kind.as_str())
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn delete(pool: &Pool, id: i64) -> Result<(), Error> {
+    sqlx::query("DELETE FROM titles WHERE id = ?").bind(id).execute(pool).await?;
+    Ok(())
+}
+
 /// Titles the background loop should search now.
 pub async fn due_for_search(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!(
@@ -230,5 +253,14 @@ mod tests {
         assert_eq!(list(&pool, Some(TitleState::Wanted)).await.unwrap().len(), 1);
         assert_eq!(list(&pool, Some(TitleState::Available)).await.unwrap().len(), 0);
         assert_eq!(due_for_search(&pool, 10).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn states_for_tmdb_returns_only_known_ids() {
+        let pool = crate::memory().await;
+        let t = upsert_movie(&pool, &matrix(), TitleState::Wanted).await.unwrap();
+        let found = states_for_tmdb(&pool, TitleKind::Movie, &[603, 999]).await.unwrap();
+        assert_eq!(found, vec![(603, t.id, "wanted".to_owned())]);
+        assert!(states_for_tmdb(&pool, TitleKind::Movie, &[]).await.unwrap().is_empty());
     }
 }

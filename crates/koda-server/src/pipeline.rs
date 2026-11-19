@@ -293,6 +293,10 @@ pub async fn grab(
     cand: &Candidate,
     quality: Option<Quality>,
 ) -> anyhow::Result<()> {
+    // never two downloads in flight for one film
+    if koda_db::grabs::active(&state.db).await?.iter().any(|g| g.title_id == title_id) {
+        bail!("This film is already downloading");
+    }
     let clients = koda_db::connectors::download_clients(&state.db).await?;
     let client_row = clients
         .into_iter()
@@ -312,9 +316,13 @@ pub async fn grab(
         .ok_or_else(|| anyhow!("Could not work out the torrent's hash, so it could not be tracked"))?;
 
     let qbit = download_client(state, &client_row);
-    match &payload {
-        Payload::Magnet(m) => qbit.add_magnet(m).await?,
-        Payload::File(bytes) => qbit.add_torrent_file(bytes, &r.title).await?,
+    // after a crash between sending and recording, the torrent may already be there
+    let already = qbit.list().await.map(|l| l.iter().any(|d| d.hash == hash)).unwrap_or(false);
+    if !already {
+        match &payload {
+            Payload::Magnet(m) => qbit.add_magnet(m).await?,
+            Payload::File(bytes) => qbit.add_torrent_file(bytes, &r.title).await?,
+        }
     }
     koda_db::grabs::create(
         &state.db,

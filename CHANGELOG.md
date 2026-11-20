@@ -23,6 +23,13 @@ the steps to migrate.
   `/api/webhooks/radarr` address are told about each import.
 - Music catalog from MusicBrainz: search artists, browse their albums with
   covers, see an album's tracks and request it.
+- Wanted albums are searched at indexers (music search, or "Artist Album"
+  text in audio categories), the best release in an allowed audio format is
+  downloaded, and its tracks are matched by number or title and imported
+  into the music folder as `Artist/Album (Year)/01 - Title.flac` with
+  `cover.jpg`. Settings choose the music folder and the accepted formats.
+- Album pages play the tracks in the library; a player at the bottom keeps
+  going across pages and answers the system's media keys.
 - Shows through `/api/v3` as well: TV request apps can look up shows by
   TheTVDB id, add them with the seasons asked for, follow episodes and the
   queue; subtitle apps can list episode files with their release names, and
@@ -65,6 +72,8 @@ the steps to migrate.
   per list, and connection settings on their own page.
 
 ### Fixed
+- With Radarr in front, shows were no longer searched; only films are left
+  to Radarr now.
 - CI reads the pnpm version from `web/package.json`.
 - Web install no longer fails on a dependency's install script, which is
   now skipped (it only downloads a font list).

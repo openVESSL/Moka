@@ -17,7 +17,7 @@ Working in development builds, not yet tested widely:
 - Shows: episodes or whole seasons, new episodes followed as they air.
 - In-browser player: direct play, remux or conversion with FFmpeg (optionally on a graphics card), subtitles inside or next to the file.
 - Works next to other self-hosted media apps through their usual APIs and webhooks.
-- Music: catalog and album requests. Downloading and playing music are in progress.
+- Music: catalog, album requests, release choice by audio format, import into `Artist/Album (Year)/` with the cover, and playback in the browser.
 
 Planned: ebooks and audiobooks, an API that existing phone and TV apps can connect to, a new interface.
 

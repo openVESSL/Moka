@@ -1,6 +1,6 @@
 # Architecture
 
-Status: describes the code as it is (films, shows, the start of music) and the direction after it.
+Status: describes the code as it is (films, shows, music) and the direction after it.
 
 ## Goals
 
@@ -125,7 +125,7 @@ Secrets are write-only through the API and encrypted at rest.
 | `moka-metadata` | TMDB (films, shows, seasons) and MusicBrainz (artists, albums, tracks) clients |
 | `moka-indexers` | Torznab/Newznab: capabilities, film and TV search, feeds, `.torrent`/magnet fetching, backoff |
 | `moka-download` | qBittorrent, Transmission, SABnzbd behind one client type |
-| `moka-decision` | accept/reject rules and ranking, for films, episodes and season packs |
+| `moka-decision` | accept/reject rules and ranking, for films, episodes, season packs and albums (by audio format) |
 | `moka-net` | outgoing HTTP guard: blocks link-local, metadata and other forbidden addresses on every hop |
 | `moka-server` | the binary: API, auth, background loop, import, playback, compatibility layer, embedded web app |
 | `web/` | React app |
@@ -203,19 +203,20 @@ The browser posts what it can decode; the server answers with one method and the
 ## 10. Frontend
 
 - React + Vite + TanStack Router + TanStack Query + Tailwind. The build is embedded in the binary.
-- Pages: setup, login, discover (films/shows), search (films, shows, artists), film, show (seasons, per-episode panel), artist, album, requests, library, settings, player.
+- Pages: setup, login, discover (films/shows), search (films, shows, artists), film, show (seasons, per-episode panel), artist, album (tracks with play), requests, library, settings, player.
+- Music player: one `<audio>` element in the app shell playing the album's files directly, with a queue, seeking and Media Session controls.
 - Player: `<video>` + hls.js, JASSUB for styled subtitles, custom controls.
 - The current look is a placeholder; a full redesign comes before 1.0.
 
 ## 11. Status and roadmap
 
-**Done**: films end to end; security basics; working next to existing servers and apps; full browser playback; shows end to end (requests, season packs, daily and anime numbering, import, refresh, existing folders, compatibility layer); music catalog and album requests.
+**Done**: films end to end; security basics; working next to existing servers and apps; full browser playback; shows end to end (requests, season packs, daily and anime numbering, import, refresh, existing folders, compatibility layer); music end to end (catalog, album requests, search by audio format, import of tracks matched by number or title, playback in the browser).
 
 **Next, in order**:
-1. Music: album search at indexers, download, import (tracks matched by number and title), audio playback.
+1. Music: bring in an existing music folder.
 2. Ebooks and audiobooks.
 3. Media-server compatible API for existing phone and TV apps.
-4. Redesign, then 1.0 (and the final name).
+4. Redesign, then 1.0.
 
 ## 12. Testing
 

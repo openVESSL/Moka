@@ -11,7 +11,10 @@ use koda_core::{Modifier, Quality, Resolution, Revision, Source};
 use regex::Regex;
 use serde::Serialize;
 
+mod episode;
 mod words;
+
+pub use episode::{ParsedEpisode, parse_episode};
 
 use words::{Word, classify};
 
@@ -70,10 +73,19 @@ struct Token<'a> {
 /// no usable title (hashes, obfuscated names).
 pub fn parse_movie(name: &str) -> Option<ParsedRelease> {
     let original = name.trim();
+    let (s, group) = prepare(original)?;
+    let tokens = tokenize(&s);
+    let (title_end, year_idx) = locate_title(&tokens);
+    let r = release(original, &s, &tokens, title_end, year_idx, group);
+    (!r.title.is_empty()).then_some(r)
+}
+
+/// Strips extension, site names, hashes and a leading `[Group]`. Returns the
+/// cleaned name and that group, or `None` for hashed or empty names.
+fn prepare(original: &str) -> Option<(String, Option<String>)> {
     if !original.chars().any(char::is_alphanumeric) {
         return None;
     }
-
     let mut s = VIDEO_EXT.replace(original, "").into_owned();
     if HASHED.is_match(&s) {
         return None;
@@ -89,21 +101,28 @@ pub fn parse_movie(name: &str) -> Option<ParsedRelease> {
     s = TRAILING_HASH.replace(&s, "").into_owned();
     s = DOTTED_CODEC.replace_all(&s, "$1$2").into_owned();
     let s = s.trim_matches(|c: char| c == '-' || c == '_' || c.is_whitespace()).to_owned();
+    Some((s, group))
+}
 
-    let tokens = tokenize(&s);
-    if tokens.is_empty() {
-        return None;
-    }
-
-    let (title_end, year_idx) = locate_title(&tokens);
-    if title_end == 0 {
-        return None;
-    }
-    let raw_title = &s[..tokens[title_end - 1].end];
-    let (title, alt_titles) = clean_title(raw_title)?;
-
+/// Everything read from a name once we know where its title ends. The title
+/// is empty when there is none (`title_end == 0`).
+fn release(
+    original: &str,
+    s: &str,
+    tokens: &[Token],
+    title_end: usize,
+    year_idx: Option<usize>,
+    mut group: Option<String>,
+) -> ParsedRelease {
+    let (title, alt_titles) = match title_end {
+        0 => Default::default(),
+        _ => clean_title(&s[..tokens[title_end - 1].end]).unwrap_or_default(),
+    };
     let tail = &tokens[title_end..];
-    let tail_str = &s[tokens[title_end - 1].end..];
+    let tail_str = match title_end {
+        0 => s,
+        _ => &s[tokens[title_end - 1].end..],
+    };
     let (mut quality, revision) = quality_of(tail, tail_str);
     if original.to_ascii_lowercase().ends_with(".iso") && quality.source == Source::Bluray {
         quality.modifier = Modifier::Disc;
@@ -125,7 +144,7 @@ pub fn parse_movie(name: &str) -> Option<ParsedRelease> {
         group = trailing_group(tail_str);
     }
 
-    Some(ParsedRelease {
+    ParsedRelease {
         title,
         alt_titles,
         year: year_idx.and_then(|i| match tokens[i].word {
@@ -135,12 +154,12 @@ pub fn parse_movie(name: &str) -> Option<ParsedRelease> {
         quality,
         revision,
         group,
-        edition: edition(&tokens, title_end),
+        edition: edition(tokens, title_end),
         languages,
         hardcoded_subs: tail.iter().any(|t| t.word == Word::HardcodedSubs),
         imdb_id: IMDB_ID.captures(original).map(|c| format!("tt{}", &c[1])),
         tmdb_id: TMDB_ID.captures(original).and_then(|c| c[1].parse().ok()),
-    })
+    }
 }
 
 /// Quality of any name (release or file), without needing the title.
@@ -189,6 +208,9 @@ fn tokenize(s: &str) -> Vec<Token<'_>> {
 /// Returns (index where the title ends, index of the year token).
 fn locate_title(tokens: &[Token]) -> (usize, Option<usize>) {
     let n = tokens.len();
+    if n == 0 {
+        return (0, None);
+    }
     let first_strong = (1..n).find(|&i| tokens[i].word.is_strong()).unwrap_or(n);
 
     // The year is the last plausible year before the technical part, never

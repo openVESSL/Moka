@@ -12,9 +12,11 @@ use regex::Regex;
 use serde::Serialize;
 
 mod episode;
+mod music;
 mod words;
 
 pub use episode::{ParsedEpisode, parse_episode};
+pub use music::{ParsedAlbum, audio_quality, parse_album};
 
 use words::{Word, classify};
 

@@ -1,9 +1,11 @@
-//! Domain types shared by every crate: title lifecycle, quality model, permissions.
+//! Domain types shared by every crate: title lifecycle, video and audio quality, permissions.
 
+mod audio;
 mod permissions;
 mod quality;
 mod title;
 
+pub use audio::AudioQuality;
 pub use permissions::Permissions;
 pub use quality::{Modifier, Quality, Resolution, Revision, Source};
 pub use title::{TitleKind, TitleState};

@@ -1,6 +1,6 @@
 [package]
 name = "koda-metadata"
-description = "Film catalog metadata (TMDB) client"
+description = "Catalog metadata clients: TMDB for films and shows, MusicBrainz for music"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,9 +10,9 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 axum = "0.8.9"
 
 [lints]

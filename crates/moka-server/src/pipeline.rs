@@ -85,13 +85,12 @@ pub async fn run(state: AppState) {
 async fn tick(state: &AppState) -> anyhow::Result<bool> {
     let tracking = track_downloads(state).await?;
     let importing = import_pending(state).await?;
-    // with Radarr in front, it does the searching
-    if crate::radarr::tick(state).await? {
-        return Ok(tracking || importing);
-    }
-    for title in moka_db::titles::due_for_search(&state.db, 3).await? {
-        if let Err(e) = search_and_grab(state, &title).await {
-            tracing::warn!(title = %title.title, error = ?e, "search failed");
+    // with Radarr in front, it searches for films; shows and music stay here
+    if !crate::radarr::tick(state).await? {
+        for title in moka_db::titles::due_for_search(&state.db, 3).await? {
+            if let Err(e) = search_and_grab(state, &title).await {
+                tracing::warn!(title = %title.title, error = ?e, "search failed");
+            }
         }
     }
     if let Err(e) = crate::series::tick(state).await {

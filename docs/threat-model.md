@@ -25,7 +25,7 @@ listed as "tested" has an automated test that runs in CI.
 
 | Risk | Mitigation | Tested |
 |---|---|---|
-| Anonymous access to the API | Every route requires a session or API key, except health, sign-in, first-run setup and logout. | yes |
+| Anonymous access to the API | Every route requires a session or API key, except health, sign-in, first-run setup and logout, and the few app routes listed under known limits. | yes |
 | Credentials leaking through the API | Secrets are write-only: the API reports whether one is set, never its value. Webhook addresses are shown as scheme and host only. | yes |
 | Database copy reveals credentials | Secrets are encrypted at rest (XChaCha20-Poly1305) with a key kept in `secret.key` or `MOKA_SECRET_KEY`, not in the database. | yes |
 | Password guessing | Passwords hashed with Argon2id. After five failures an account name is locked for a minute, doubling up to 30 minutes. | yes |
@@ -48,6 +48,12 @@ listed as "tested" has an automated test that runs in CI.
   an account name can keep it locked for up to 30 minutes.
 - **The secret key sits on the same machine as the database.** Encryption
   protects copies of the database, not a fully compromised host.
+- **Apps at `/jellyfin` see a little without signing in.** The server's
+  name, version and id (also answered on UDP port 7359 in the home network),
+  artwork of titles that are in the library (apps load pictures without a
+  token; they come from public catalogs), and the segments of a running
+  conversion, reached through its random, short-lived session id. Sign-in
+  there gives a token valid for a year, stored hashed like other sessions.
 - No two-factor authentication or single sign-on yet.
 - `X-Forwarded-For` is not read anywhere, so it cannot be spoofed to bypass
   limits; the downside is that logs show the proxy's address.

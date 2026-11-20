@@ -63,6 +63,29 @@ the steps to migrate.
   one by one or a whole season at a time, from the show page.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
+- Existing music folders can be brought into the library: `Artist/Album
+  (Year)` folders are matched on MusicBrainz and their tracks become
+  available; an album with missing tracks says how many are on disk.
+- Books from Open Library: search books and authors, see a book's page and
+  request it as an ebook, an audiobook or both.
+- Wanted books are searched at indexers (book search, or "Author Title"
+  text; ebooks in book categories, audiobooks in the audiobook category).
+  A release must name the author and the whole title; ebooks are ranked by
+  format (EPUB, AZW3, MOBI by default), then retail, and audiobooks prefer
+  M4B. Imports land in `Author/Title (Year)/` with `cover.jpg`; settings
+  choose an ebooks and an audiobooks folder.
+- An EPUB reader in the browser that remembers where each person stopped,
+  with contents and text size; other ebook formats can be downloaded.
+- Audiobooks play in the bottom player, resume at the part and second they
+  were left, and skip back 15 or forward 30 seconds.
+- Existing ebook and audiobook folders can be brought into the library as
+  `Author/Title (Year)` folders or `Author/Title` files, matched on Open
+  Library.
+- Phone and TV apps made for Jellyfin can connect at `/jellyfin`: sign-in,
+  films, shows and music, continue watching and next up, search, artwork,
+  playback (the file as it is, or converted when the app's device profile
+  cannot play it), text subtitles, progress, watched and favorites. Apps on
+  the local network find the server on their own (UDP port 7359).
 
 ### Changed
 - The catalog works without setup: a built-in TMDB key is used unless an
@@ -72,6 +95,8 @@ the steps to migrate.
   per list, and connection settings on their own page.
 
 ### Fixed
+- qBittorrent 5.1 and later can be connected: they answer sign-in and
+  adding a torrent differently from earlier versions.
 - With Radarr in front, shows were no longer searched; only films are left
   to Radarr now.
 - CI reads the pnpm version from `web/package.json`.

@@ -128,7 +128,7 @@ Secrets are write-only through the API and encrypted at rest.
 | `moka-parser` | release names: films, episodes (`S01E02`, `1x02`, season packs, air dates, absolute numbers), albums, books (checked for an author and title rather than split) |
 | `moka-metadata` | TMDB (films, shows, seasons), MusicBrainz (artists, albums, tracks) and Open Library (books, authors) clients |
 | `moka-indexers` | Torznab/Newznab: capabilities, film, TV, music and book search, feeds, `.torrent`/magnet fetching, backoff |
-| `moka-download` | qBittorrent, Transmission, SABnzbd behind one client type |
+| `moka-download` | qBittorrent (4.x and 5.x, whose sign-in and add answers differ), Transmission, SABnzbd behind one client type |
 | `moka-decision` | accept/reject rules and ranking, for films, episodes, season packs, albums (by audio format) and books (by ebook format, M4B first for audiobooks) |
 | `moka-net` | outgoing HTTP guard: blocks link-local, metadata and other forbidden addresses on every hop |
 | `moka-server` | the binary: API, auth, background loop, import, playback, compatibility layer, embedded web app |

@@ -4,7 +4,7 @@
 FROM node:24-bookworm-slim AS web
 WORKDIR /src/web
 RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build

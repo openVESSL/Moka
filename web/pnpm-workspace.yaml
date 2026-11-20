@@ -1,0 +1,3 @@
+allowBuilds:
+  # only refreshes a Google Fonts list at install time; not needed
+  lfa-ponyfill: false

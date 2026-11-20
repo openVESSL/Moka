@@ -50,6 +50,12 @@ pub struct SubtitleStream {
     pub index: usize,
     pub codec: String,
     pub language: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub default: bool,
+    #[serde(default)]
+    pub forced: bool,
 }
 
 pub async fn probe(path: &Path) -> anyhow::Result<Probe> {
@@ -96,9 +102,14 @@ pub fn parse_probe(json: &str) -> anyhow::Result<Probe> {
                 language: lang,
                 default: st["disposition"]["default"].as_i64() == Some(1),
             }),
-            Some("subtitle") => {
-                p.subtitles.push(SubtitleStream { index: p.subtitles.len(), codec, language: lang })
-            }
+            Some("subtitle") => p.subtitles.push(SubtitleStream {
+                index: p.subtitles.len(),
+                codec,
+                language: lang,
+                title: s(&st["tags"], "title"),
+                default: st["disposition"]["default"].as_i64() == Some(1),
+                forced: st["disposition"]["forced"].as_i64() == Some(1),
+            }),
             _ => {}
         }
     }
@@ -201,10 +212,44 @@ pub fn decide(p: &Probe, caps: &ClientCaps) -> Decision {
     }
 }
 
+/// Video encoder used when a film must be converted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Encoder {
+    /// On the processor (libx264). Works everywhere.
+    #[default]
+    Software,
+    /// NVIDIA graphics cards.
+    Nvenc,
+    /// Intel and AMD graphics on Linux.
+    Vaapi,
+    /// Intel Quick Sync.
+    Qsv,
+}
+
+/// Hardware video conversion, stored under the `playback` setting.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct HwAccel {
+    #[serde(default)]
+    pub encoder: Encoder,
+    /// Render device for VAAPI, e.g. `/dev/dri/renderD128`.
+    #[serde(default)]
+    pub device: String,
+}
+
+impl HwAccel {
+    pub const KEY: &'static str = "playback";
+}
+
 /// FFmpeg arguments for an HLS session starting at `start` seconds.
-pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32) -> Vec<String> {
+pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32, hw: &HwAccel) -> Vec<String> {
     let mut a: Vec<String> =
         vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
+    let encoder = if d.copy_video { Encoder::Software } else { hw.encoder };
+    if encoder == Encoder::Vaapi {
+        let dev = if hw.device.is_empty() { "/dev/dri/renderD128" } else { hw.device.as_str() };
+        a.extend(["-vaapi_device".into(), dev.into()]);
+    }
     if start > 0.0 {
         a.extend(["-ss".into(), format!("{start:.3}")]);
     }
@@ -213,10 +258,27 @@ pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32) -> V
     if let Some(i) = d.audio_index {
         a.extend(["-map".into(), format!("0:a:{i}")]);
     }
+    // same keyframe spacing for every encoder: 4-second segments at 24 fps
+    let gop = ["-g", "96", "-keyint_min", "96"].map(String::from);
+    let scale = format!("scale=-2:'min({max_height},ih)'");
     if d.copy_video {
         a.extend(["-c:v".into(), "copy".into()]);
+    } else if encoder == Encoder::Nvenc {
+        a.extend(
+            ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-profile:v", "high"]
+                .map(String::from),
+        );
+        a.extend(gop);
+        a.extend(["-vf".into(), format!("{scale},format=yuv420p")]);
+    } else if encoder == Encoder::Vaapi {
+        a.extend(["-c:v", "h264_vaapi", "-qp", "23"].map(String::from));
+        a.extend(gop);
+        a.extend(["-vf".into(), format!("{scale},format=nv12,hwupload")]);
+    } else if encoder == Encoder::Qsv {
+        a.extend(["-c:v", "h264_qsv", "-global_quality", "23", "-profile:v", "high"].map(String::from));
+        a.extend(gop);
+        a.extend(["-vf".into(), format!("{scale},format=nv12")]);
     } else {
-        // shortcut: software H.264 only; hardware encoders (VAAPI/QSV/NVENC) come later.
         a.extend(
             [
                 "-c:v",
@@ -238,7 +300,7 @@ pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32) -> V
             ]
             .map(String::from),
         );
-        a.extend(["-vf".into(), format!("scale=-2:'min({max_height},ih)'")]);
+        a.extend(["-vf".into(), scale]);
     }
     if d.audio_index.is_some() {
         if d.copy_audio {
@@ -294,6 +356,7 @@ impl Sessions {
         d: &Decision,
         start: f64,
         max_height: u32,
+        hw: &HwAccel,
     ) -> anyhow::Result<String> {
         let mut id_bytes = [0u8; 12];
         getrandom::fill(&mut id_bytes).map_err(|e| anyhow::anyhow!("rng: {e}"))?;
@@ -301,7 +364,7 @@ impl Sessions {
         let dir = root.join(&id);
         tokio::fs::create_dir_all(&dir).await?;
         let child = Command::new("ffmpeg")
-            .args(ffmpeg_args(input, d, start, max_height))
+            .args(ffmpeg_args(input, d, start, max_height, hw))
             .current_dir(&dir)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -465,7 +528,7 @@ mod tests {
     fn ffmpeg_arguments() {
         let p = parse_probe(MKV_HEVC_DTS).unwrap();
         let d = decide(&p, &chrome());
-        let args = ffmpeg_args(Path::new("/m/film.mkv"), &d, 600.0, 1080).join(" ");
+        let args = ffmpeg_args(Path::new("/m/film.mkv"), &d, 600.0, 1080, &HwAccel::default()).join(" ");
         assert!(args.starts_with("-hide_banner -loglevel error -nostdin -ss 600.000 -i /m/film.mkv"));
         assert!(args.contains("-c:v libx264"));
         assert!(args.contains("-c:a aac -ac 2"));
@@ -473,8 +536,20 @@ mod tests {
 
         let mut caps = chrome();
         caps.video_codecs.push("hevc".into());
-        let args = ffmpeg_args(Path::new("f.mkv"), &decide(&p, &caps), 0.0, 1080).join(" ");
+        let args =
+            ffmpeg_args(Path::new("f.mkv"), &decide(&p, &caps), 0.0, 1080, &HwAccel::default()).join(" ");
         assert!(args.contains("-c:v copy") && !args.contains("-ss"));
+
+        let hw = |encoder| HwAccel { encoder, device: String::new() };
+        let a = ffmpeg_args(Path::new("f.mkv"), &d, 0.0, 720, &hw(Encoder::Vaapi)).join(" ");
+        assert!(a.starts_with("-hide_banner -loglevel error -nostdin -vaapi_device /dev/dri/renderD128 -i"));
+        assert!(a.contains("-c:v h264_vaapi") && a.contains("format=nv12,hwupload"), "{a}");
+        let a = ffmpeg_args(Path::new("f.mkv"), &d, 0.0, 720, &hw(Encoder::Nvenc)).join(" ");
+        assert!(a.contains("-c:v h264_nvenc") && !a.contains("libx264"), "{a}");
+        // nothing to convert: the encoder is not touched
+        let copy = decide(&p, &caps);
+        let a = ffmpeg_args(Path::new("f.mkv"), &copy, 0.0, 720, &hw(Encoder::Qsv)).join(" ");
+        assert!(!a.contains("qsv") && a.contains("-c:v copy"));
     }
 
     #[test]
@@ -544,7 +619,7 @@ mod ffmpeg_tests {
         assert!((p.duration_seconds - 12.0).abs() < 0.5);
         let d = decide(&p, &caps);
         assert_eq!(d.method, Method::Remux);
-        let id = sessions.start(&dir.join("t"), &mkv, &d, 0.0, 1080).await.unwrap();
+        let id = sessions.start(&dir.join("t"), &mkv, &d, 0.0, 1080, &HwAccel::default()).await.unwrap();
         let playlist =
             tokio::fs::read_to_string(sessions.touch(&id).unwrap().join("index.m3u8")).await.unwrap();
         assert!(playlist.contains("#EXT-X-MAP:URI=\"init.mp4\""), "{playlist}");
@@ -554,7 +629,7 @@ mod ffmpeg_tests {
         let hevc = make_clip(&dir, "hevc.mkv", "libx265", "aac").await;
         let d = decide(&probe(&hevc).await.unwrap(), &caps);
         assert_eq!(d.method, Method::Transcode);
-        let id = sessions.start(&dir.join("t"), &hevc, &d, 6.0, 720).await.unwrap();
+        let id = sessions.start(&dir.join("t"), &hevc, &d, 6.0, 720, &HwAccel::default()).await.unwrap();
         let seg_dir = sessions.touch(&id).unwrap();
         assert!(seg_dir.join("init.mp4").exists());
         sessions.stop(&id).await;

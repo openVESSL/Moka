@@ -18,6 +18,8 @@ pub fn router() -> Router<AppState> {
         .route("/files/{id}/play", post(play))
         .route("/hls/{session}/{name}", get(hls_file))
         .route("/hls/{session}", axum::routing::delete(stop))
+        .route("/files/{id}/subtitles", get(subtitles))
+        .route("/files/{id}/subtitles/{track}", get(subtitle_track))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -41,7 +43,7 @@ pub struct PlayResponse {
     pub session: Option<String>,
 }
 
-async fn probe_cached(s: &AppState, file_id: i64, path: &std::path::Path) -> ApiResult<Probe> {
+pub(crate) async fn probe_cached(s: &AppState, file_id: i64, path: &std::path::Path) -> ApiResult<Probe> {
     if let Some(p) = koda_db::library::probe_json(&s.db, file_id)
         .await?
         .and_then(|j| serde_json::from_str::<Probe>(&j).ok())
@@ -86,11 +88,21 @@ pub async fn play(
         }));
     }
     let max_height = req.caps.max_height.unwrap_or(1080).clamp(360, 2160);
-    let session = s
-        .streams
-        .start(&s.config.transcode_dir(), &path, &decision, start, max_height)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let hw: crate::streaming::HwAccel =
+        koda_db::settings::get(&s.db, crate::streaming::HwAccel::KEY).await?.unwrap_or_default();
+    let dir = s.config.transcode_dir();
+    let session = match s.streams.start(&dir, &path, &decision, start, max_height, &hw).await {
+        Ok(id) => id,
+        // a graphics card that is missing or busy should not stop playback
+        Err(e) if hw.encoder != crate::streaming::Encoder::Software && !decision.copy_video => {
+            tracing::warn!(error = %e, "hardware conversion failed, using the processor");
+            s.streams
+                .start(&dir, &path, &decision, start, max_height, &Default::default())
+                .await
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        }
+        Err(e) => return Err(ApiError::BadRequest(e.to_string())),
+    };
     Ok(Json(PlayResponse {
         method: decision.method,
         url: format!("/api/v1/hls/{session}/index.m3u8"),
@@ -129,4 +141,87 @@ pub async fn stop(
 ) -> ApiResult<()> {
     s.streams.stop(&session).await;
     Ok(())
+}
+
+async fn media_path(s: &AppState, id: i64) -> ApiResult<(koda_db::library::MediaFile, std::path::PathBuf)> {
+    let f = koda_db::library::file(&s.db, id).await?.ok_or(ApiError::NotFound("file"))?;
+    let path = std::path::PathBuf::from(&f.path);
+    if !path.exists() {
+        return Err(ApiError::NotFound("file on disk"));
+    }
+    Ok((f, path))
+}
+
+/// Subtitle tracks inside the file and subtitle files next to it.
+#[utoipa::path(get, path = "/api/v1/files/{id}/subtitles", tag = "play", params(("id" = i64, Path)),
+    responses((status = 200, body = [crate::subtitles::Track])))]
+pub async fn subtitles(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Vec<crate::subtitles::Track>>> {
+    user.require(Permissions::PLAY)?;
+    let (_, path) = media_path(&s, id).await?;
+    let probe = probe_cached(&s, id, &path).await?;
+    Ok(Json(crate::subtitles::tracks(&path, &probe)))
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct SubtitleQuery {
+    /// Where the stream starts, in seconds; cues are moved to match.
+    pub offset: Option<f64>,
+}
+
+/// One subtitle track as WebVTT.
+#[utoipa::path(get, path = "/api/v1/files/{id}/subtitles/{track}", tag = "play",
+    params(("id" = i64, Path), ("track" = String, Path), SubtitleQuery),
+    responses((status = 200, content_type = "text/vtt", body = String)))]
+pub async fn subtitle_track(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path((id, track)): Path<(i64, String)>,
+    axum::extract::Query(q): axum::extract::Query<SubtitleQuery>,
+) -> ApiResult<Response> {
+    user.require(Permissions::PLAY)?;
+    let (f, path) = media_path(&s, id).await?;
+    let track = track.trim_end_matches(".vtt");
+    let bad = || ApiError::NotFound("subtitle track");
+    let n: usize = track.get(1..).and_then(|n| n.parse().ok()).ok_or_else(bad)?;
+    let vtt = match track.as_bytes().first() {
+        Some(b'x') => {
+            let files = crate::subtitles::external(&path);
+            let (file, _) = files.get(n).ok_or_else(bad)?;
+            crate::subtitles::to_vtt(file, None).await.map_err(|e| ApiError::BadRequest(e.to_string()))?
+        }
+        Some(b'e') => {
+            let probe = probe_cached(&s, id, &path).await?;
+            let st = probe.subtitles.get(n).ok_or_else(bad)?;
+            if !crate::subtitles::tracks(&path, &probe).iter().any(|t| t.id == track && t.text) {
+                return Err(ApiError::BadRequest(format!(
+                    "{} subtitles are images and cannot be shown yet",
+                    st.codec
+                )));
+            }
+            // reading a track means reading the whole film: keep the result
+            let cache =
+                s.config.cache_dir().join("subtitles").join(format!("{id}-{}-{track}.vtt", f.size_bytes));
+            match tokio::fs::read_to_string(&cache).await {
+                Ok(v) => v,
+                Err(_) => {
+                    let v = crate::subtitles::to_vtt(&path, Some(n))
+                        .await
+                        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+                    if let Some(dir) = cache.parent() {
+                        let _ = tokio::fs::create_dir_all(dir).await;
+                    }
+                    let _ = tokio::fs::write(&cache, &v).await;
+                    v
+                }
+            }
+        }
+        _ => return Err(bad()),
+    };
+    let body = crate::subtitles::shift_vtt(&vtt, q.offset.unwrap_or(0.0));
+    Ok(([(header::CONTENT_TYPE, "text/vtt; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], body)
+        .into_response())
 }

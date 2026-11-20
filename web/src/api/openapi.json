@@ -545,6 +545,92 @@
         }
       }
     },
+    "/api/v1/files/{id}/subtitles": {
+      "get": {
+        "tags": [
+          "play"
+        ],
+        "summary": "Subtitle tracks inside the file and subtitle files next to it.",
+        "operationId": "subtitles",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Track"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/{id}/subtitles/{track}": {
+      "get": {
+        "tags": [
+          "play"
+        ],
+        "summary": "One subtitle track as WebVTT.",
+        "operationId": "subtitle_track",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "track",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Where the stream starts, in seconds; cues are moved to match.",
+            "required": false,
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/vtt": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -1226,6 +1312,53 @@
           },
           "400": {
             "description": "folder not usable"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/playback": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_playback",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HwAccel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Chooses how films are converted for playback. If the graphics card fails,\nplayback falls back to the processor.",
+        "operationId": "put_playback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HwAccel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HwAccel"
+                }
+              }
+            }
           }
         }
       }
@@ -2211,6 +2344,16 @@
           }
         }
       },
+      "Encoder": {
+        "type": "string",
+        "description": "Video encoder used when a film must be converted.",
+        "enum": [
+          "software",
+          "nvenc",
+          "vaapi",
+          "qsv"
+        ]
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -2251,6 +2394,19 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "HwAccel": {
+        "type": "object",
+        "description": "Hardware video conversion, stored under the `playback` setting.",
+        "properties": {
+          "device": {
+            "type": "string",
+            "description": "Render device for VAAPI, e.g. `/dev/dri/renderD128`."
+          },
+          "encoder": {
+            "$ref": "#/components/schemas/Encoder"
           }
         }
       },
@@ -3335,6 +3491,50 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "Track": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "codec",
+          "external",
+          "default",
+          "forced",
+          "text"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "forced": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "description": "`e<N>` for the N-th track inside the file, `x<N>` for the N-th file next to it."
+          },
+          "label": {
+            "type": "string"
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO language code when known, e.g. `en`, `eng`, `rum`."
+          },
+          "text": {
+            "type": "boolean",
+            "description": "False for image subtitles, which the player cannot show yet."
           }
         }
       },

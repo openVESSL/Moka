@@ -13,6 +13,7 @@ mod radarr;
 mod scan;
 mod state;
 mod streaming;
+mod subtitles;
 mod web;
 
 use config::Config;

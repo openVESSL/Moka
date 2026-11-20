@@ -233,6 +233,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/subtitles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Subtitle tracks inside the file and subtitle files next to it. */
+        get: operations["subtitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/subtitles/{track}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One subtitle track as WebVTT. */
+        get: operations["subtitle_track"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -513,6 +547,26 @@ export interface paths {
         get: operations["get_library"];
         /** Saves the library folder after checking the server can write to it. */
         put: operations["put_library"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/playback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_playback"];
+        /**
+         * Chooses how films are converted for playback. If the graphics card fails,
+         *     playback falls back to the processor.
+         */
+        put: operations["put_playback"];
         post?: never;
         delete?: never;
         options?: never;
@@ -860,6 +914,11 @@ export interface components {
             password?: string | null;
             username?: string | null;
         };
+        /**
+         * @description Video encoder used when a film must be converted.
+         * @enum {string}
+         */
+        Encoder: "software" | "nvenc" | "vaapi" | "qsv";
         ErrorBody: {
             error: string;
             message: string;
@@ -871,6 +930,12 @@ export interface components {
         Health: {
             status: string;
             version: string;
+        };
+        /** @description Hardware video conversion, stored under the `playback` setting. */
+        HwAccel: {
+            /** @description Render device for VAAPI, e.g. `/dev/dri/renderD128`. */
+            device?: string;
+            encoder?: components["schemas"]["Encoder"];
         };
         Indexer: {
             api_key_set: boolean;
@@ -1187,6 +1252,19 @@ export interface components {
             updated_at: number;
             /** Format: int64 */
             year?: number | null;
+        };
+        Track: {
+            codec: string;
+            default: boolean;
+            external: boolean;
+            forced: boolean;
+            /** @description `e<N>` for the N-th track inside the file, `x<N>` for the N-th file next to it. */
+            id: string;
+            label: string;
+            /** @description ISO language code when known, e.g. `en`, `eng`, `rum`. */
+            language?: string | null;
+            /** @description False for image subtitles, which the player cannot show yet. */
+            text: boolean;
         };
         UserUpdate: {
             /** @description Sets a new password and signs the user out of every device. */
@@ -1637,6 +1715,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Progress"];
+                };
+            };
+        };
+    };
+    subtitles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Track"][];
+                };
+            };
+        };
+    };
+    subtitle_track: {
+        parameters: {
+            query?: {
+                /** @description Where the stream starts, in seconds; cues are moved to match. */
+                offset?: number | null;
+            };
+            header?: never;
+            path: {
+                id: number;
+                track: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/vtt": string;
                 };
             };
         };
@@ -2235,6 +2359,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_playback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HwAccel"];
+                };
+            };
+        };
+    };
+    put_playback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HwAccel"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HwAccel"];
+                };
             };
         };
     };

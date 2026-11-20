@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/settings/library", get(get_library).put(put_library))
         .route("/settings/jellyfin", get(get_jellyfin).put(put_jellyfin))
         .route("/settings/radarr", get(get_radarr).put(put_radarr))
+        .route("/settings/playback", get(get_playback).put(put_playback))
 }
 
 /// Catalog settings as the UI sees them. The key itself is never returned.
@@ -386,4 +387,33 @@ pub async fn put_radarr(
         state.wake.notify_one();
     }
     Ok(Json(radarr_view(&state, next).await))
+}
+
+#[utoipa::path(get, path = "/api/v1/settings/playback", tag = "settings",
+    responses((status = 200, body = crate::streaming::HwAccel)))]
+pub async fn get_playback(
+    user: CurrentUser,
+    State(state): State<AppState>,
+) -> ApiResult<Json<crate::streaming::HwAccel>> {
+    user.require(Permissions::ADMIN)?;
+    let hw = koda_db::settings::get(&state.db, crate::streaming::HwAccel::KEY).await?.unwrap_or_default();
+    Ok(Json(hw))
+}
+
+/// Chooses how films are converted for playback. If the graphics card fails,
+/// playback falls back to the processor.
+#[utoipa::path(put, path = "/api/v1/settings/playback", tag = "settings",
+    request_body = crate::streaming::HwAccel, responses((status = 200, body = crate::streaming::HwAccel)))]
+pub async fn put_playback(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(mut b): Json<crate::streaming::HwAccel>,
+) -> ApiResult<Json<crate::streaming::HwAccel>> {
+    user.require(Permissions::ADMIN)?;
+    b.device = b.device.trim().to_owned();
+    if !b.device.is_empty() && !b.device.starts_with("/dev/") {
+        return Err(ApiError::BadRequest("the device is a path under /dev, e.g. /dev/dri/renderD128".into()));
+    }
+    koda_db::settings::set(&state.db, crate::streaming::HwAccel::KEY, &b).await?;
+    Ok(Json(b))
 }

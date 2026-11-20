@@ -1,12 +1,31 @@
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import Hls from "hls.js";
-import { ArrowLeft, Maximize, Pause, Play } from "lucide-react";
+import { ArrowLeft, Captions, Maximize, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, unwrap, type Schemas } from "../api/client";
 
 type PlayResponse = Schemas["PlayResponse"];
 
 const SAVE_EVERY_MS = 10_000;
+const SUB_LANG_KEY = "koda.subtitle-language";
+
+function storedLanguage(): string | null {
+  try {
+    return localStorage.getItem(SUB_LANG_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeLanguage(lang: string | null) {
+  try {
+    if (lang) localStorage.setItem(SUB_LANG_KEY, lang);
+    else localStorage.removeItem(SUB_LANG_KEY);
+  } catch {
+    // private mode: the choice just is not remembered
+  }
+}
 
 /** What this browser can decode, asked the way the player will use it (Media Source). */
 function detectCaps(): Schemas["ClientCaps"] {
@@ -61,6 +80,24 @@ export function WatchPage({ fileId }: { fileId: number }) {
   const [now, setNow] = useState(0);
   const [paused, setPaused] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [subTrack, setSubTrack] = useState<string | null>(null);
+  const [subMenu, setSubMenu] = useState(false);
+  const { data: tracks } = useQuery({
+    queryKey: ["subtitles", fileId],
+    queryFn: () => unwrap(api.GET("/api/v1/files/{id}/subtitles", { params: { path: { id: fileId } } })),
+  });
+
+  // pick the language chosen last time, else a forced or default track
+  useEffect(() => {
+    if (!tracks) return;
+    const lang = storedLanguage();
+    const usable = tracks.filter((t) => t.text);
+    const pick =
+      (lang && usable.find((t) => t.language === lang && !t.forced)) ||
+      usable.find((t) => t.forced) ||
+      usable.find((t) => t.default);
+    setSubTrack(pick ? pick.id : null);
+  }, [tracks]);
 
   const offset = stream?.start_seconds ?? 0;
   const duration = stream?.duration_seconds ?? 0;
@@ -172,7 +209,17 @@ export function WatchPage({ fileId }: { fileId: number }) {
         onWaiting={() => setLoading(true)}
         onPlaying={() => setLoading(false)}
         onError={() => stream?.method === "direct" && setError("This file could not be played.")}
-      />
+      >
+        {subTrack && stream && (
+          <track
+            key={`${subTrack}-${offset}`}
+            kind="subtitles"
+            default
+            src={`/api/v1/files/${fileId}/subtitles/${subTrack}?offset=${offset}`}
+            onLoad={(e) => (e.currentTarget.track.mode = "showing")}
+          />
+        )}
+      </video>
 
       <button
         type="button"
@@ -231,6 +278,42 @@ export function WatchPage({ fileId }: { fileId: number }) {
           className="flex-1 accent-grease"
         />
         <span className="data w-16 text-sm text-chalk-dim">{clock(duration)}</span>
+        {tracks && tracks.length > 0 && (
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Subtitles"
+              aria-expanded={subMenu}
+              className={subTrack ? "text-grease" : undefined}
+              onClick={() => setSubMenu((m) => !m)}
+            >
+              <Captions aria-hidden className="size-5" />
+            </button>
+            {subMenu && (
+              <ul className="absolute right-0 bottom-9 max-h-72 w-60 overflow-y-auto rounded bg-black/90 py-1 text-sm">
+                {[{ id: "", label: "Off", text: true, language: null as string | null | undefined }, ...tracks].map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      disabled={!t.text}
+                      title={t.text ? undefined : "Image subtitles cannot be shown yet"}
+                      onClick={() => {
+                        setSubTrack(t.id || null);
+                        storeLanguage(t.id ? (t.language ?? null) : null);
+                        setSubMenu(false);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left hover:bg-white/10 disabled:opacity-40 ${
+                        (subTrack ?? "") === t.id ? "text-grease" : ""
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <button type="button" aria-label="Full screen" onClick={() => document.documentElement.requestFullscreen?.()}>
           <Maximize aria-hidden className="size-5" />
         </button>

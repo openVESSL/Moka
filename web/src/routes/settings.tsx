@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { ApiKeysSection } from "./apikeys";
+import { PlaybackSection } from "./playback";
 import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, RadarrSection, ScanPanel } from "./connectors";
 import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
@@ -43,6 +44,12 @@ export function SettingsPage() {
         intro="Keep watching in Jellyfin if you like. Koda tells it about new films right after import and brings back what people watched there."
       >
         <JellyfinSection />
+      </Section>
+      <Section
+        title="Playback"
+        intro="When a browser cannot play a film as it is, Koda converts it on the fly. A graphics card does this faster and keeps the processor free. In Docker, the card must be passed to the container. If it fails, Koda uses the processor."
+      >
+        <PlaybackSection />
       </Section>
       <Section
         title="Radarr"

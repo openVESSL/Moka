@@ -24,6 +24,11 @@ the steps to migrate.
 - Koda in front of an existing Radarr: approved films are sent to Radarr,
   followed until they have a file, and Radarr's downloaded films are listed
   in Koda's library (with optional path mapping).
+- Subtitles in the player: tracks inside the file and subtitle files next
+  to it, shown as WebVTT and kept in step when seeking; the chosen language
+  is remembered. Image subtitles (PGS, VobSub) are listed but not shown yet.
+- Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
+  fallback to the processor if the card fails.
 
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.

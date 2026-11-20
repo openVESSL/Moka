@@ -19,4 +19,18 @@ services:
     volumes:
       - ./config:/config
       - /srv/media:/data
+    # Faster conversion on a graphics card (Settings > Playback):
+    # Intel/AMD (VAAPI, QSV): pass the render device
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "render"   # or the numeric group id of /dev/dri/renderD128
+    # NVIDIA (NVENC): needs the NVIDIA Container Toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, video]
     restart: unless-stopped

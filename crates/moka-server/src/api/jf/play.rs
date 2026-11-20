@@ -171,7 +171,7 @@ fn media_streams(
         out.push(json!({
             "Index": 0, "Type": "Video", "Codec": v.codec, "Profile": v.profile, "Width": v.width, "Height": v.height,
             "PixelFormat": v.pix_fmt, "BitDepth": if ten_bit { 10 } else { 8 }, "VideoRange": "SDR", "VideoRangeType": "SDR",
-            "IsDefault": true, "IsForced": false, "IsInterlaced": false, "IsExternal": false, "IsHearingImpaired": false,
+            "IsDefault": true, "IsForced": false, "IsInterlaced": false, "IsExternal": false, "IsHearingImpaired": false, "IsOriginal": false, "AudioSpatialFormat": "None",
             "IsTextSubtitleStream": false, "SupportsExternalStream": false, "IsAVC": v.codec == "h264",
             "DisplayTitle": format!("{res} {}", v.codec.to_uppercase()),
         }));
@@ -185,7 +185,7 @@ fn media_streams(
         out.push(json!({
             "Index": 1 + i, "Type": "Audio", "Codec": a.codec, "Channels": a.channels, "Language": a.language,
             "ChannelLayout": channels_label(a.channels).to_lowercase(), "IsDefault": a.default, "IsForced": false,
-            "IsInterlaced": false, "IsExternal": false, "IsHearingImpaired": false, "IsTextSubtitleStream": false,
+            "IsInterlaced": false, "IsExternal": false, "IsHearingImpaired": false, "IsOriginal": false, "AudioSpatialFormat": "None", "IsTextSubtitleStream": false,
             "SupportsExternalStream": false,
             "DisplayTitle": title.join(" - "),
         }));
@@ -196,7 +196,7 @@ fn media_streams(
         let mut v = json!({
             "Index": index, "Type": "Subtitle", "Codec": s.codec, "Language": s.language, "Title": s.label,
             "IsDefault": s.default, "IsForced": s.forced, "IsInterlaced": false, "IsExternal": s.external,
-            "IsHearingImpaired": false, "IsTextSubtitleStream": s.text, "SupportsExternalStream": s.text,
+            "IsHearingImpaired": false, "IsOriginal": false, "AudioSpatialFormat": "None", "IsTextSubtitleStream": s.text, "SupportsExternalStream": s.text,
             "DisplayTitle": format!("{} - {}", language_name(s.language.as_deref()), s.codec.to_uppercase()),
             "DeliveryMethod": if s.text { "External" } else { "Encode" },
         });
@@ -293,7 +293,6 @@ pub(super) async fn media_source(
         ));
         v["TranscodingSubProtocol"] = json!("hls");
         v["TranscodingContainer"] = json!("mp4");
-        v["TranscodeReasons"] = json!("ContainerNotSupported");
     }
     let _ = lib;
     Ok(v)

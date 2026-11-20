@@ -51,6 +51,7 @@ pub mod webhooks;
         requests::decline,
         titles::list,
         titles::episodes,
+        titles::set_monitored,
         titles::one,
         titles::search_now,
         titles::releases,

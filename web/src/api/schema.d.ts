@@ -774,6 +774,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/{id}/monitored": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Follows or stops following an episode, or all episodes of a season.
+         *     Followed episodes that are wanted get searched.
+         */
+        put: operations["set_monitored"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/{id}/releases": {
         parameters: {
             query?: never;
@@ -1161,6 +1181,9 @@ export interface components {
         };
         /** @enum {string} */
         Method: "direct" | "remux" | "transcode";
+        MonitoredBody: {
+            monitored: boolean;
+        };
         NewApiKey: {
             name: string;
         };
@@ -2917,6 +2940,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Title"];
                 };
+            };
+        };
+    };
+    set_monitored: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitoredBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Title"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

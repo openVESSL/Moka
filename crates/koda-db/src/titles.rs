@@ -321,6 +321,22 @@ pub async fn unmonitor_missing(pool: &Pool, show_id: i64) -> Result<(), Error> {
     Ok(())
 }
 
+/// Follows or stops following an episode, or every episode of a season.
+/// Wanted episodes that start being followed are searched right away.
+pub async fn set_monitored(pool: &Pool, id: i64, monitored: bool) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE titles SET monitored = ?1,
+            next_search_at = CASE WHEN ?1 AND state = 'wanted' THEN ?2 ELSE next_search_at END
+         WHERE id = ?3 OR (kind = 'episode' AND parent_id = ?3)",
+    )
+    .bind(monitored)
+    .bind(now())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Shows, newest change first.
 pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await
@@ -599,6 +615,14 @@ mod tests {
         assert_eq!((p.aired, p.available, p.busy), (1, 0, 0));
         assert_eq!(p.state(TitleState::Wanted), TitleState::Wanted);
         mark_available(&pool, eps[0].id).await.unwrap();
+        set_monitored(&pool, eps[1].id, false).await.unwrap();
+        assert!(!by_id(&pool, eps[1].id).await.unwrap().unwrap().monitored);
+        let season = children(&pool, t.id).await.unwrap().remove(0);
+        set_monitored(&pool, season.id, true).await.unwrap();
+        assert!(
+            episodes_of_show(&pool, t.id).await.unwrap().iter().all(|e| e.monitored),
+            "a season covers its episodes"
+        );
         assert_eq!(
             progress(t.id).await.state(TitleState::Wanted),
             TitleState::Available,

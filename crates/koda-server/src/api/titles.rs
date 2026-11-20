@@ -15,6 +15,7 @@ pub fn router() -> Router<AppState> {
         .route("/titles", get(list))
         .route("/titles/{id}", get(one))
         .route("/titles/{id}/episodes", get(episodes))
+        .route("/titles/{id}/monitored", axum::routing::put(set_monitored))
         .route("/titles/{id}/search", axum::routing::post(search_now))
         .route("/titles/{id}/releases", get(releases))
         .route("/titles/{id}/grab", axum::routing::post(grab))
@@ -291,6 +292,31 @@ pub async fn list(
         Some(_) => return Err(ApiError::BadRequest("kind must be movie or show".into())),
     };
     Ok(Json(rows.into_iter().map(Title::from).collect()))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MonitoredBody {
+    pub monitored: bool,
+}
+
+/// Follows or stops following an episode, or all episodes of a season.
+/// Followed episodes that are wanted get searched.
+#[utoipa::path(put, path = "/api/v1/titles/{id}/monitored", tag = "titles", params(("id" = i64, Path)),
+    request_body = MonitoredBody, responses((status = 200, body = Title), (status = 404)))]
+pub async fn set_monitored(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<MonitoredBody>,
+) -> ApiResult<Json<Title>> {
+    user.require(koda_core::Permissions::MANAGE_LIBRARY)?;
+    let t = koda_db::titles::by_id(&state.db, id).await?.ok_or(ApiError::NotFound("title"))?;
+    if t.kind != "episode" && t.kind != "season" {
+        return Err(ApiError::BadRequest("only episodes and seasons can be followed".into()));
+    }
+    koda_db::titles::set_monitored(&state.db, id, body.monitored).await?;
+    state.wake.notify_one();
+    one(user, State(state), Path(id)).await
 }
 
 /// Every episode of a show, by season and number.

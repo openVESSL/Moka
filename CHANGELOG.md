@@ -43,7 +43,8 @@ the steps to migrate.
   dates arrive on their own and are searched once they air.
 - Existing show folders can be brought into the library: episodes on disk
   become available, aired episodes that are missing are not searched, and
-  episodes airing from then on are.
+  episodes airing from then on are. Missing episodes can be fetched later,
+  one by one or a whole season at a time, from the show page.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

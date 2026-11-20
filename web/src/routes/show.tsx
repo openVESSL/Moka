@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { img, type Schemas } from "../api/client";
+import { api, img, unwrap, type Schemas } from "../api/client";
 import { episodesQuery, meQuery, showQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
 import { SlateFields } from "../components/SlateFields";
@@ -133,6 +133,13 @@ function Episodes({ titleId }: { titleId: number }) {
   const { data, isPending } = useQuery({ ...episodesQuery(titleId), refetchInterval: 15_000 });
   const { data: me } = useQuery(meQuery);
   const [open, setOpen] = useState<number | null>(null);
+  const qc = useQueryClient();
+  const canManage = ((me?.permissions ?? 0) & (1 | 16)) !== 0;
+  const follow = useMutation({
+    mutationFn: ({ id, monitored }: { id: number; monitored: boolean }) =>
+      unwrap(api.PUT("/api/v1/titles/{id}/monitored", { params: { path: { id } }, body: { monitored } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["titles", titleId, "episodes"] }),
+  });
   if (isPending) return <div className="h-40 animate-pulse rounded bg-slate-raised/50" />;
   const bySeason = new Map<number, Schemas["Title"][]>();
   for (const e of data ?? []) {
@@ -143,38 +150,62 @@ function Episodes({ titleId }: { titleId: number }) {
     <div className="grid gap-10">
       {[...bySeason].map(([n, eps]) => (
         <section key={n} aria-labelledby={`season-${n}`}>
-          <h3 id={`season-${n}`} className="slate-label mb-3">
-            {n === 0 ? "Specials" : `Season ${n}`}
-            <span className="ml-3 data text-chalk-faint">
-              {eps.filter((e) => e.state === "available").length}/{eps.length}
-            </span>
-          </h3>
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+            <h3 id={`season-${n}`} className="slate-label">
+              {n === 0 ? "Specials" : `Season ${n}`}
+              <span className="ml-3 data text-chalk-faint">
+                {eps.filter((e) => e.state === "available").length}/{eps.length}
+              </span>
+            </h3>
+            {canManage && eps[0]?.parent_id && eps.some((e) => !e.monitored && e.state !== "available") && (
+              <button
+                type="button"
+                className="font-slate text-xs font-bold tracking-[0.1em] text-grease uppercase hover:text-grease-hot disabled:opacity-50"
+                disabled={follow.isPending}
+                onClick={() => follow.mutate({ id: eps[0].parent_id!, monitored: true })}
+              >
+                Get missing episodes
+              </button>
+            )}
+          </div>
           <ol className="border-t border-slate-line">
             {eps.map((e) => (
               <li key={e.id} className="border-b border-slate-line">
-                <button
-                  type="button"
-                  aria-expanded={open === e.id}
-                  onClick={() => setOpen(open === e.id ? null : e.id)}
-                  className="flex w-full items-center gap-4 py-2.5 text-left hover:text-white"
-                >
-                  <span className="w-10 shrink-0 data text-sm text-chalk-faint">
-                    {String(e.episode_number ?? 0).padStart(2, "0")}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-slate text-[17px] font-semibold">{e.title}</span>
-                  {e.release_date && (
-                    <span className="data hidden text-xs text-chalk-faint sm:inline">{e.release_date}</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-expanded={open === e.id}
+                    onClick={() => setOpen(open === e.id ? null : e.id)}
+                    className="flex min-w-0 flex-1 items-center gap-4 py-2.5 text-left hover:text-white"
+                  >
+                    <span className="w-10 shrink-0 data text-sm text-chalk-faint">
+                      {String(e.episode_number ?? 0).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-slate text-[17px] font-semibold">{e.title}</span>
+                    {e.release_date && (
+                      <span className="data hidden text-xs text-chalk-faint sm:inline">{e.release_date}</span>
+                    )}
+                    {!e.monitored ? (
+                      <span className="text-xs text-chalk-faint">Not monitored</span>
+                    ) : (
+                      e.state !== "available" && <Tape state={e.state} />
+                    )}
+                    <ChevronDown
+                      aria-hidden
+                      className={`size-4 shrink-0 text-chalk-faint transition-transform ${open === e.id ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {canManage && !e.monitored && e.state !== "available" && (
+                    <button
+                      type="button"
+                      className="shrink-0 font-slate text-xs font-bold tracking-[0.1em] text-grease uppercase hover:text-grease-hot disabled:opacity-50"
+                      disabled={follow.isPending}
+                      onClick={() => follow.mutate({ id: e.id, monitored: true })}
+                    >
+                      Get this one
+                    </button>
                   )}
-                  {!e.monitored ? (
-                    <span className="text-xs text-chalk-faint">Not monitored</span>
-                  ) : (
-                    e.state !== "available" && <Tape state={e.state} />
-                  )}
-                  <ChevronDown
-                    aria-hidden
-                    className={`size-4 shrink-0 text-chalk-faint transition-transform ${open === e.id ? "rotate-180" : ""}`}
-                  />
-                </button>
+                </div>
                 {open === e.id && (
                   <div className="pb-6 [&>section]:mt-0 [&>section]:px-0">
                     <TitlePanel titleId={e.id} permissions={me?.permissions ?? 0} />

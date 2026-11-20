@@ -1856,6 +1856,48 @@
         }
       }
     },
+    "/api/v1/titles/{id}/monitored": {
+      "put": {
+        "tags": [
+          "titles"
+        ],
+        "summary": "Follows or stops following an episode, or all episodes of a season.\nFollowed episodes that are wanted get searched.",
+        "operationId": "set_monitored",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitoredBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Title"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/titles/{id}/releases": {
       "get": {
         "tags": [
@@ -3136,6 +3178,17 @@
           "remux",
           "transcode"
         ]
+      },
+      "MonitoredBody": {
+        "type": "object",
+        "required": [
+          "monitored"
+        ],
+        "properties": {
+          "monitored": {
+            "type": "boolean"
+          }
+        }
       },
       "NewApiKey": {
         "type": "object",

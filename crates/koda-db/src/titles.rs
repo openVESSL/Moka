@@ -9,6 +9,10 @@ use crate::{Error, Pool, now};
 pub struct Title {
     pub id: i64,
     pub kind: String,
+    /// Season for an episode, show for a season.
+    pub parent_id: Option<i64>,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
     pub tmdb_id: Option<i64>,
     pub imdb_id: Option<String>,
     pub title: String,
@@ -52,11 +56,34 @@ pub struct NewTitle {
     pub metadata_json: Option<String>,
 }
 
+/// A show with the seasons and episodes to create under it.
+#[derive(Debug, Clone, Default)]
+pub struct NewShow {
+    pub show: NewTitle,
+    pub tvdb_id: Option<i64>,
+    pub seasons: Vec<NewSeason>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewSeason {
+    /// TMDB id of the season, number, name, overview, air date and poster.
+    pub title: NewTitle,
+    pub number: i64,
+    pub episodes: Vec<NewEpisode>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewEpisode {
+    /// TMDB id of the episode, name, overview, air date, runtime and still.
+    pub title: NewTitle,
+    pub number: i64,
+}
+
 /// `SELECT <title columns> FROM titles <rest>` as a static string.
 macro_rules! select_titles {
     ($rest:literal) => {
         concat!(
-            "SELECT id, kind, tmdb_id, imdb_id, title, original_title, year, overview, \
+            "SELECT id, kind, parent_id, season_number, episode_number, tmdb_id, imdb_id, title, original_title, year, overview, \
              runtime_minutes, release_date, poster_path, backdrop_path, state, state_reason, \
              quality_profile_id, monitored, next_search_at, last_search_at, created_at, updated_at \
              FROM titles ",
@@ -96,6 +123,118 @@ pub async fn upsert_movie(pool: &Pool, t: &NewTitle, state: TitleState) -> Resul
     by_tmdb(pool, TitleKind::Movie, t.tmdb_id).await?.ok_or(Error::RowNotFound)
 }
 
+/// Inserts a show with its seasons and episodes. Parts that already exist
+/// keep their state, so calling it again only adds new seasons and episodes.
+/// Specials (season 0) are not monitored.
+pub async fn upsert_show(pool: &Pool, s: &NewShow, state: TitleState) -> Result<Title, Error> {
+    let profile: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(id) FROM quality_profiles").fetch_one(pool).await?;
+    let mut tx = pool.begin().await?;
+    let show = insert_part(&mut tx, TitleKind::Show, None, &s.show, None, None, state, profile, true).await?;
+    sqlx::query("UPDATE titles SET tvdb_id = COALESCE(?, tvdb_id) WHERE id = ?")
+        .bind(s.tvdb_id)
+        .bind(show)
+        .execute(&mut *tx)
+        .await?;
+    for season in &s.seasons {
+        let monitored = season.number > 0;
+        let sid = insert_part(
+            &mut tx,
+            TitleKind::Season,
+            Some(show),
+            &season.title,
+            Some(season.number),
+            None,
+            state,
+            profile,
+            monitored,
+        )
+        .await?;
+        for e in &season.episodes {
+            insert_part(
+                &mut tx,
+                TitleKind::Episode,
+                Some(sid),
+                &e.title,
+                Some(season.number),
+                Some(e.number),
+                state,
+                profile,
+                monitored,
+            )
+            .await?;
+        }
+    }
+    tx.commit().await?;
+    by_id(pool, show).await?.ok_or(Error::RowNotFound)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_part(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    kind: TitleKind,
+    parent: Option<i64>,
+    t: &NewTitle,
+    season: Option<i64>,
+    episode: Option<i64>,
+    state: TitleState,
+    profile: Option<i64>,
+    monitored: bool,
+) -> Result<i64, Error> {
+    sqlx::query(
+        "INSERT INTO titles (kind, parent_id, season_number, episode_number, tmdb_id, imdb_id, title,
+            original_title, year, overview, runtime_minutes, release_date, poster_path, backdrop_path,
+            metadata_json, state, quality_profile_id, monitored, next_search_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO NOTHING",
+    )
+    .bind(kind.as_str())
+    .bind(parent)
+    .bind(season)
+    .bind(episode)
+    .bind(t.tmdb_id)
+    .bind(&t.imdb_id)
+    .bind(&t.title)
+    .bind(&t.original_title)
+    .bind(t.year)
+    .bind(&t.overview)
+    .bind(t.runtime_minutes)
+    .bind(&t.release_date)
+    .bind(&t.poster_path)
+    .bind(&t.backdrop_path)
+    .bind(&t.metadata_json)
+    .bind(state.as_str())
+    .bind(profile)
+    .bind(monitored)
+    .bind((state == TitleState::Wanted).then(now))
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query_scalar("SELECT id FROM titles WHERE kind = ? AND tmdb_id = ?")
+        .bind(kind.as_str())
+        .bind(t.tmdb_id)
+        .fetch_one(&mut **tx)
+        .await
+}
+
+/// Seasons of a show, or episodes of a season, in order.
+pub async fn children(pool: &Pool, parent_id: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE parent_id = ? ORDER BY season_number, episode_number"))
+        .bind(parent_id)
+        .fetch_all(pool)
+        .await
+}
+
+/// Every episode of a show, in order.
+pub async fn episodes_of_show(pool: &Pool, show_id: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!(
+        "WHERE kind = 'episode' AND parent_id IN (SELECT id FROM titles WHERE parent_id = ?)
+         ORDER BY season_number, episode_number"
+    ))
+    .bind(show_id)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn by_id(pool: &Pool, id: i64) -> Result<Option<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE id = ?")).bind(id).fetch_optional(pool).await
 }
@@ -108,11 +247,14 @@ pub async fn by_tmdb(pool: &Pool, kind: TitleKind, tmdb_id: i64) -> Result<Optio
         .await
 }
 
+/// Films, newest change first (shows are listed on their own).
 pub async fn list(pool: &Pool, state: Option<TitleState>) -> Result<Vec<Title>, Error> {
-    sqlx::query_as(select_titles!("WHERE (?1 IS NULL OR state = ?1) ORDER BY updated_at DESC"))
-        .bind(state.map(TitleState::as_str))
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(select_titles!(
+        "WHERE kind = 'movie' AND (?1 IS NULL OR state = ?1) ORDER BY updated_at DESC"
+    ))
+    .bind(state.map(TitleState::as_str))
+    .fetch_all(pool)
+    .await
 }
 
 /// Local id and state for each TMDB id that exists in the library, used to
@@ -138,10 +280,10 @@ pub async fn delete(pool: &Pool, id: i64) -> Result<(), Error> {
     Ok(())
 }
 
-/// Titles the background loop should search now.
+/// Films the background loop should search now.
 pub async fn due_for_search(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!(
-        "WHERE state = 'wanted' AND monitored = 1 AND (next_search_at IS NULL OR next_search_at <= ?)
+        "WHERE kind = 'movie' AND state = 'wanted' AND monitored = 1 AND (next_search_at IS NULL OR next_search_at <= ?)
          ORDER BY next_search_at LIMIT ?"
     ))
     .bind(now())
@@ -223,9 +365,9 @@ pub async fn set_reason(pool: &Pool, id: i64, reason: Option<&str>) -> Result<()
     Ok(())
 }
 
-/// Titles in one state, oldest change first.
+/// Films in one state, oldest change first.
 pub async fn in_state(pool: &Pool, state: TitleState) -> Result<Vec<Title>, Error> {
-    sqlx::query_as(select_titles!("WHERE state = ? ORDER BY updated_at"))
+    sqlx::query_as(select_titles!("WHERE kind = 'movie' AND state = ? ORDER BY updated_at"))
         .bind(state.as_str())
         .fetch_all(pool)
         .await
@@ -279,6 +421,41 @@ mod tests {
         assert_eq!(list(&pool, Some(TitleState::Wanted)).await.unwrap().len(), 1);
         assert_eq!(list(&pool, Some(TitleState::Available)).await.unwrap().len(), 0);
         assert_eq!(due_for_search(&pool, 10).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn shows_hold_seasons_and_episodes() {
+        let pool = crate::memory().await;
+        let part = |id: i64, name: &str| NewTitle { tmdb_id: id, title: name.into(), ..Default::default() };
+        let episodes =
+            |base: i64| (1..=2).map(|n| NewEpisode { title: part(base + n, "Ep"), number: n }).collect();
+        let mut show = NewShow {
+            show: part(1399, "Thrones"),
+            tvdb_id: Some(121361),
+            seasons: vec![
+                NewSeason { title: part(10, "Specials"), number: 0, episodes: episodes(100) },
+                NewSeason { title: part(11, "Season 1"), number: 1, episodes: episodes(110) },
+            ],
+        };
+        let a = upsert_show(&pool, &show, TitleState::Wanted).await.unwrap();
+        assert_eq!(a.kind, "show");
+        let seasons = children(&pool, a.id).await.unwrap();
+        assert_eq!(seasons.iter().map(|s| s.season_number).collect::<Vec<_>>(), [Some(0), Some(1)]);
+        let eps = episodes_of_show(&pool, a.id).await.unwrap();
+        assert_eq!(eps.len(), 4);
+        assert!(!eps[0].monitored && eps[2].monitored, "specials are not monitored");
+        assert_eq!((eps[3].season_number, eps[3].episode_number), (Some(1), Some(2)));
+
+        // a new episode later: only it is added, the rest keep their state
+        transition(&pool, eps[2].id, TitleState::Searching, None).await.unwrap();
+        show.seasons[1].episodes.push(NewEpisode { title: part(113, "Ep 3"), number: 3 });
+        let b = upsert_show(&pool, &show, TitleState::Wanted).await.unwrap();
+        assert_eq!(a.id, b.id);
+        let eps = episodes_of_show(&pool, a.id).await.unwrap();
+        assert_eq!(eps.len(), 5);
+        assert_eq!(eps[2].state(), TitleState::Searching);
+        assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave shows out");
+        assert!(due_for_search(&pool, 10).await.unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -1,4 +1,4 @@
-//! TMDB client: catalog lists, search and film details.
+//! TMDB client: catalog lists, search, film and show details.
 //!
 //! Knows nothing about the database. Takes a base URL so tests can point it
 //! at a local mock server.
@@ -125,6 +125,130 @@ pub struct Videos {
 pub struct ExternalIds {
     #[serde(default)]
     pub imdb_id: Option<String>,
+    /// Shows only.
+    #[serde(default)]
+    pub tvdb_id: Option<i64>,
+}
+
+/// One show in a list or search result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShowSummary {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub original_name: Option<String>,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default, deserialize_with = "empty_as_none")]
+    pub first_air_date: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub backdrop_path: Option<String>,
+    #[serde(default)]
+    pub vote_average: f64,
+    #[serde(default)]
+    pub vote_count: i64,
+    #[serde(default)]
+    pub original_language: Option<String>,
+}
+
+impl ShowSummary {
+    pub fn year(&self) -> Option<i64> {
+        year_of(self.first_air_date.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeasonSummary {
+    pub id: i64,
+    pub season_number: i64,
+    pub name: String,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default, deserialize_with = "empty_as_none")]
+    pub air_date: Option<String>,
+    #[serde(default)]
+    pub episode_count: i64,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShowDetails {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub original_name: Option<String>,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default)]
+    pub tagline: Option<String>,
+    #[serde(default, deserialize_with = "empty_as_none")]
+    pub first_air_date: Option<String>,
+    /// Typical episode lengths in minutes.
+    #[serde(default)]
+    pub episode_run_time: Vec<i64>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub backdrop_path: Option<String>,
+    #[serde(default)]
+    pub vote_average: f64,
+    #[serde(default)]
+    pub genres: Vec<Genre>,
+    /// e.g. "Returning Series", "Ended".
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub seasons: Vec<SeasonSummary>,
+    #[serde(default)]
+    pub credits: Credits,
+    #[serde(default)]
+    pub videos: Videos,
+    #[serde(default)]
+    pub external_ids: ExternalIds,
+}
+
+impl ShowDetails {
+    pub fn year(&self) -> Option<i64> {
+        year_of(self.first_air_date.as_deref())
+    }
+
+    pub fn runtime(&self) -> Option<i64> {
+        self.episode_run_time.first().copied()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Episode {
+    pub id: i64,
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub name: String,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default, deserialize_with = "empty_as_none")]
+    pub air_date: Option<String>,
+    #[serde(default)]
+    pub runtime: Option<i64>,
+    #[serde(default)]
+    pub still_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeasonDetails {
+    pub id: i64,
+    pub season_number: i64,
+    pub name: String,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default, deserialize_with = "empty_as_none")]
+    pub air_date: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub episodes: Vec<Episode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +332,16 @@ impl List {
             List::TopRated => "/movie/top_rated",
         }
     }
+
+    fn show_path(self) -> &'static str {
+        match self {
+            List::Trending => "/trending/tv/week",
+            List::Popular => "/tv/popular",
+            // shows have no release window; "on the air" is the closest
+            List::Upcoming | List::NowPlaying => "/tv/on_the_air",
+            List::TopRated => "/tv/top_rated",
+        }
+    }
 }
 
 impl Tmdb {
@@ -259,6 +393,24 @@ impl Tmdb {
 
     pub async fn recommendations(&self, id: i64) -> Result<Page<MovieSummary>, Error> {
         self.get(&format!("/movie/{id}/recommendations"), &[]).await
+    }
+
+    pub async fn show_list(&self, list: List, page: u32) -> Result<Page<ShowSummary>, Error> {
+        let page = page.max(1).to_string();
+        self.get(list.show_path(), &[("page", page.as_str())]).await
+    }
+
+    pub async fn search_shows(&self, query: &str, page: u32) -> Result<Page<ShowSummary>, Error> {
+        let page = page.max(1).to_string();
+        self.get("/search/tv", &[("query", query), ("page", &page), ("include_adult", "false")]).await
+    }
+
+    pub async fn show(&self, id: i64) -> Result<ShowDetails, Error> {
+        self.get(&format!("/tv/{id}"), &[("append_to_response", "credits,videos,external_ids")]).await
+    }
+
+    pub async fn season(&self, show_id: i64, season: i64) -> Result<SeasonDetails, Error> {
+        self.get(&format!("/tv/{show_id}/season/{season}"), &[]).await
     }
 
     async fn get<T: serde::de::DeserializeOwned>(
@@ -353,6 +505,29 @@ mod tests {
                     }))
                 }),
             );
+        let app = app
+            .route(
+                "/tv/1399",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id": 1399, "name": "Thrones", "first_air_date": "2011-04-17", "episode_run_time": [60],
+                        "status": "Ended", "external_ids": { "imdb_id": "tt0944947", "tvdb_id": 121361 },
+                        "seasons": [
+                            {"id": 3627, "season_number": 0, "name": "Specials", "episode_count": 2, "air_date": ""},
+                            {"id": 3624, "season_number": 1, "name": "Season 1", "episode_count": 10, "air_date": "2011-04-17"}]
+                    }))
+                }),
+            )
+            .route(
+                "/tv/1399/season/1",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id": 3624, "season_number": 1, "name": "Season 1",
+                        "episodes": [{"id": 63056, "season_number": 1, "episode_number": 1, "name": "Winter",
+                                      "air_date": "2011-04-17", "runtime": 62}]
+                    }))
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -372,6 +547,13 @@ mod tests {
         assert_eq!(m.imdb(), Some("tt0133093"));
         assert_eq!(m.directors(), vec!["Lana Wachowski"]);
         assert_eq!(m.trailer_key(), Some("real"));
+
+        let show = tmdb.show(1399).await.unwrap();
+        assert_eq!((show.year(), show.runtime()), (Some(2011), Some(60)));
+        assert_eq!(show.external_ids.tvdb_id, Some(121361));
+        assert_eq!(show.seasons[0].air_date, None);
+        let season = tmdb.season(1399, 1).await.unwrap();
+        assert_eq!((season.episodes[0].episode_number, season.episodes[0].runtime), (1, Some(62)));
     }
 
     #[tokio::test]

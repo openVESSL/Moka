@@ -3038,6 +3038,10 @@
           "movies_path": {
             "type": "string",
             "description": "Folder films are imported into, as the server sees it."
+          },
+          "shows_path": {
+            "type": "string",
+            "description": "Folder shows are imported into. Empty until shows are wanted."
           }
         }
       },

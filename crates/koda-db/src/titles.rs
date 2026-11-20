@@ -216,6 +216,34 @@ async fn insert_part(
         .await
 }
 
+/// Aired, monitored episodes the background loop should search now.
+pub async fn due_episodes(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!(
+        "WHERE kind = 'episode' AND state = 'wanted' AND monitored = 1
+           AND release_date IS NOT NULL AND release_date <= date('now')
+           AND (next_search_at IS NULL OR next_search_at <= ?)
+         ORDER BY next_search_at, season_number, episode_number LIMIT ?"
+    ))
+    .bind(now())
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+/// TheTVDB id of a show, when the catalog gave one.
+pub async fn tvdb_id(pool: &Pool, id: i64) -> Result<Option<i64>, Error> {
+    sqlx::query_scalar("SELECT tvdb_id FROM titles WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map(Option::flatten)
+}
+
+/// Every title waiting to be imported: films, episodes and season packs.
+pub async fn importing(pool: &Pool) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE state = 'importing' ORDER BY updated_at")).fetch_all(pool).await
+}
+
 /// Approves a requested show: its seasons and episodes become wanted too.
 pub async fn approve_show_parts(pool: &Pool, show_id: i64) -> Result<(), Error> {
     sqlx::query(
@@ -485,6 +513,19 @@ mod tests {
         let eps = episodes_of_show(&pool, t.id).await.unwrap();
         assert!(eps.iter().all(|e| e.state() == TitleState::Wanted && e.next_search_at.is_some()));
         assert_eq!(children(&pool, t.id).await.unwrap()[0].state(), TitleState::Wanted);
+        assert!(due_episodes(&pool, 10).await.unwrap().is_empty(), "episodes without an air date wait");
+        sqlx::query("UPDATE titles SET release_date = '2011-04-17' WHERE id = ?")
+            .bind(eps[0].id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE titles SET release_date = '2999-01-01' WHERE id = ?")
+            .bind(eps[1].id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let due = due_episodes(&pool, 10).await.unwrap();
+        assert_eq!(due.iter().map(|e| e.id).collect::<Vec<_>>(), [eps[0].id], "only aired episodes");
         assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave shows out");
         assert!(due_for_search(&pool, 10).await.unwrap().is_empty());
     }

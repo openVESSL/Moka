@@ -1130,6 +1130,8 @@ export interface components {
         LibrarySettingsBody: {
             /** @description Folder films are imported into, as the server sees it. */
             movies_path: string;
+            /** @description Folder shows are imported into. Empty until shows are wanted. */
+            shows_path?: string;
         };
         /** @description Where a catalog film stands locally, if it is known at all. */
         LocalState: {

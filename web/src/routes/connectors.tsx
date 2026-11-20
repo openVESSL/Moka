@@ -24,7 +24,7 @@ function TestLine({ result, error }: { result?: TestResult; error?: Error | null
   );
 }
 
-/** Library folder: where imported films are placed. */
+/** Library folders: where imported films and shows are placed. */
 export function LibrarySection() {
   const qc = useQueryClient();
   const { data } = useQuery({
@@ -32,9 +32,14 @@ export function LibrarySection() {
     queryFn: () => unwrap(api.GET("/api/v1/settings/library")),
   });
   const [path, setPath] = useState("");
-  useEffect(() => setPath(data?.movies_path ?? ""), [data]);
+  const [shows, setShows] = useState("");
+  useEffect(() => {
+    setPath(data?.movies_path ?? "");
+    setShows(data?.shows_path ?? "");
+  }, [data]);
   const save = useMutation({
-    mutationFn: () => unwrap(api.PUT("/api/v1/settings/library", { body: { movies_path: path } })),
+    mutationFn: () =>
+      unwrap(api.PUT("/api/v1/settings/library", { body: { movies_path: path, shows_path: shows } })),
     onSuccess: (v) => qc.setQueryData(["settings", "library"], v),
   });
 
@@ -52,6 +57,15 @@ export function LibrarySection() {
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="/data/movies"
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Shows folder" className="min-w-0 flex-1 basis-80">
+        <input
+          className="chalk-input data text-base"
+          value={shows}
+          onChange={(e) => setShows(e.target.value)}
+          placeholder="/data/tv"
           spellCheck={false}
         />
       </Field>

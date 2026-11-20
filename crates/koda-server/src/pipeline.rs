@@ -1,4 +1,4 @@
-//! Background work that moves a film from "wanted" to "available":
+//! Background work that moves a film (or an episode, see `series`) from "wanted" to "available":
 //! search indexers, pick a release, hand it to the download client, follow
 //! the download, and import the finished file into the library.
 //!
@@ -15,7 +15,7 @@ use koda_core::{Quality, TitleState};
 use koda_db::titles::Title;
 use koda_decision::{Candidate, Evaluated, Profile, SizeLimit, Target, Term};
 use koda_download::{ClientConfig, Kind, Status};
-use koda_indexers::{Capabilities, IndexerConfig, IndexerKind, MovieQuery, torrent::Payload};
+use koda_indexers::{Capabilities, IndexerConfig, IndexerKind, MovieQuery, TvQuery, torrent::Payload};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
@@ -27,6 +27,9 @@ pub struct LibrarySettings {
     /// Folder films are imported into.
     #[serde(default)]
     pub movies_path: String,
+    /// Folder shows are imported into.
+    #[serde(default)]
+    pub shows_path: String,
 }
 
 impl LibrarySettings {
@@ -47,7 +50,7 @@ pub const VIDEO_EXTENSIONS: &[&str] =
     &["mkv", "mp4", "m4v", "avi", "mov", "wmv", "ts", "m2ts", "webm", "mpg"];
 const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -85,21 +88,50 @@ async fn tick(state: &AppState) -> anyhow::Result<bool> {
             tracing::warn!(title = %title.title, error = ?e, "search failed");
         }
     }
+    if let Err(e) = crate::series::tick(state).await {
+        tracing::warn!(error = ?e, "episode search failed");
+    }
     Ok(tracking || importing)
+}
+
+/// One background pass, for tests in other modules.
+#[cfg(test)]
+pub(crate) async fn tick_for_tests(state: &AppState) {
+    tick(state).await.unwrap();
 }
 
 pub(crate) fn publish_state(state: &AppState, t: &Title) {
     state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: t.state_reason.clone() });
 }
 
-async fn move_to(state: &AppState, id: i64, to: TitleState, reason: Option<&str>) -> anyhow::Result<()> {
+pub(crate) async fn move_to(
+    state: &AppState,
+    id: i64,
+    to: TitleState,
+    reason: Option<&str>,
+) -> anyhow::Result<()> {
     let t = koda_db::titles::transition(&state.db, id, to, reason).await?;
     publish_state(state, &t);
     Ok(())
 }
 
+/// Moves a grab's title and the other episodes it holds.
+async fn move_grab(
+    state: &AppState,
+    g: &koda_db::grabs::Grab,
+    to: TitleState,
+    reason: Option<&str>,
+) -> anyhow::Result<()> {
+    move_to(state, g.title_id, to, reason).await?;
+    for id in koda_db::grabs::covered(&state.db, g.id).await? {
+        // an episode moved by hand meanwhile keeps its own state
+        let _ = move_to(state, id, to, reason).await;
+    }
+    Ok(())
+}
+
 /// Wait before searching again after `attempts` fruitless searches.
-fn retry_delay(attempts: i64) -> i64 {
+pub(crate) fn retry_delay(attempts: i64) -> i64 {
     const STEPS: [i64; 6] = [15 * 60, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600];
     STEPS[(attempts.max(0) as usize).min(STEPS.len() - 1)]
 }
@@ -127,9 +159,47 @@ fn indexer_config(i: &koda_db::connectors::Indexer) -> IndexerConfig {
     }
 }
 
+/// What to ask indexers for.
+#[derive(Debug, Clone)]
+pub(crate) enum Query {
+    Movie(MovieQuery),
+    Tv(TvQuery),
+}
+
 /// Asks every usable indexer for a film and evaluates what comes back.
 pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchResult> {
-    let profile = load_profile(state, title.quality_profile_id).await?;
+    if title.kind != "movie" {
+        bail!("Episodes are searched automatically; searching one by hand is not available yet");
+    }
+    let query = MovieQuery {
+        title: title.title.clone(),
+        year: title.year.and_then(|y| u16::try_from(y).ok()),
+        imdb_id: title.imdb_id.clone(),
+        tmdb_id: title.tmdb_id,
+    };
+    let target = Target {
+        title: title.title.clone(),
+        original_title: None,
+        year: query.year,
+        imdb_id: title.imdb_id.clone(),
+        tmdb_id: title.tmdb_id,
+        runtime_minutes: title.runtime_minutes.and_then(|m| u32::try_from(m).ok()),
+        existing: existing_quality(state, title.id).await?,
+        episodes: None,
+    };
+    search_with(state, title.id, title.quality_profile_id, Query::Movie(query), target).await
+}
+
+/// Searches every usable indexer and evaluates the releases for `target`.
+/// The result is kept under `unit_id` for the releases view.
+pub(crate) async fn search_with(
+    state: &AppState,
+    unit_id: i64,
+    profile_id: Option<i64>,
+    query: Query,
+    target: Target,
+) -> anyhow::Result<SearchResult> {
+    let profile = load_profile(state, profile_id).await?;
     let all = koda_db::connectors::indexers(&state.db).await?;
     let usable: Vec<_> = all
         .into_iter()
@@ -139,12 +209,6 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
         bail!("No indexer is available. Add one in Settings, or wait for paused ones to come back.");
     }
 
-    let query = MovieQuery {
-        title: title.title.clone(),
-        year: title.year.and_then(|y| u16::try_from(y).ok()),
-        imdb_id: title.imdb_id.clone(),
-        tmdb_id: title.tmdb_id,
-    };
     let mut jobs = JoinSet::new();
     for idx in usable {
         let client = state.indexers.clone();
@@ -153,9 +217,13 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
         jobs.spawn(async move {
             let result = async {
                 let cfg = indexer_config(&idx);
+                // capabilities saved before TV search was read lack it: ask again
+                let stale = matches!(query, Query::Tv(_))
+                    && !idx.capabilities.as_deref().is_some_and(|c| c.contains("tv_search"));
                 let caps = match idx
                     .capabilities
                     .as_deref()
+                    .filter(|_| !stale)
                     .and_then(|c| serde_json::from_str::<Capabilities>(c).ok())
                 {
                     Some(c) => c,
@@ -167,14 +235,17 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
                         c
                     }
                 };
-                client.search_movie(&cfg, &caps, &query).await
+                match &query {
+                    Query::Movie(q) => client.search_movie(&cfg, &caps, q).await,
+                    Query::Tv(q) => client.search_tv(&cfg, &caps, q).await,
+                }
             }
             .await;
             (idx, result)
         });
     }
 
-    let blocked = koda_db::grabs::blocklisted(&state.db, title.id).await?;
+    let blocked = koda_db::grabs::blocklisted(&state.db, unit_id).await?;
     let mut candidates = Vec::new();
     let mut indexer_errors = Vec::new();
     while let Some(joined) = jobs.join_next().await {
@@ -202,18 +273,9 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
         }
     }
 
-    let target = Target {
-        title: title.title.clone(),
-        original_title: None,
-        year: query.year,
-        imdb_id: title.imdb_id.clone(),
-        tmdb_id: title.tmdb_id,
-        runtime_minutes: title.runtime_minutes.and_then(|m| u32::try_from(m).ok()),
-        existing: existing_quality(state, title.id).await?,
-    };
     let evaluated = koda_decision::evaluate(&target, &profile, &candidates);
     let result = SearchResult { at: now(), candidates, evaluated, indexer_errors };
-    state.searches.lock().expect("searches lock").insert(title.id, result.clone());
+    state.searches.lock().expect("searches lock").insert(unit_id, result.clone());
     Ok(result)
 }
 
@@ -304,6 +366,17 @@ pub async fn grab(
     cand: &Candidate,
     quality: Option<Quality>,
 ) -> anyhow::Result<()> {
+    grab_covering(state, title_id, &[], cand, quality).await
+}
+
+/// `grab` for a release that also holds other episodes (`covered`).
+pub(crate) async fn grab_covering(
+    state: &AppState,
+    title_id: i64,
+    covered: &[i64],
+    cand: &Candidate,
+    quality: Option<Quality>,
+) -> anyhow::Result<()> {
     // never two downloads in flight for one film
     if koda_db::grabs::active(&state.db).await?.iter().any(|g| g.title_id == title_id) {
         bail!("This film is already downloading");
@@ -351,7 +424,7 @@ pub async fn grab(
         };
         client.add(koda_download::Payload::Nzb(nzb), &r.title, None).await?
     };
-    koda_db::grabs::create(
+    let grab_id = koda_db::grabs::create(
         &state.db,
         &koda_db::grabs::NewGrab {
             title_id,
@@ -364,8 +437,13 @@ pub async fn grab(
         },
     )
     .await?;
-    move_to(state, title_id, TitleState::Grabbed, Some(&format!("Sent {} to {}", r.title, client_row.name)))
-        .await?;
+    let sent = format!("Sent {} to {}", r.title, client_row.name);
+    move_to(state, title_id, TitleState::Grabbed, Some(&sent)).await?;
+    let others: Vec<i64> = covered.iter().copied().filter(|id| *id != title_id).collect();
+    koda_db::grabs::add_covered(&state.db, grab_id, &others).await?;
+    for id in others {
+        let _ = move_to(state, id, TitleState::Grabbed, Some(&sent)).await;
+    }
     if let Some(t) = koda_db::titles::by_id(&state.db, title_id).await? {
         let info = crate::notify::TitleInfo::from_title(&t, Some(r.title.clone()));
         crate::notify::send(state, crate::notify::Event::Grabbed, Some(info), None);
@@ -418,13 +496,13 @@ async fn track_downloads(state: &AppState) -> anyhow::Result<bool> {
                             d.content_path.as_deref(),
                         )
                         .await?;
-                        move_to(state, g.title_id, TitleState::Importing, None).await?;
+                        move_grab(state, &g, TitleState::Importing, None).await?;
                     }
                 }
                 Some(d) => {
                     if g.status == "sent" {
                         koda_db::grabs::set_status(&state.db, g.id, "downloading", None, None).await?;
-                        move_to(state, g.title_id, TitleState::Downloading, None).await?;
+                        move_grab(state, &g, TitleState::Downloading, None).await?;
                     }
                     koda_db::titles::set_reason(&state.db, g.title_id, d.message.as_deref()).await?;
                     state.publish(LiveEvent::DownloadProgress {
@@ -442,8 +520,18 @@ async fn track_downloads(state: &AppState) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-async fn fail_grab(state: &AppState, g: &koda_db::grabs::Grab, reason: &str) -> anyhow::Result<()> {
+pub(crate) async fn fail_grab(
+    state: &AppState,
+    g: &koda_db::grabs::Grab,
+    reason: &str,
+) -> anyhow::Result<()> {
     koda_db::grabs::set_status(&state.db, g.id, "failed", Some(reason), None).await?;
+    for id in koda_db::grabs::covered(&state.db, g.id).await? {
+        if let Ok(t) = koda_db::titles::transition(&state.db, id, TitleState::Wanted, Some(reason)).await {
+            koda_db::titles::schedule_search(&state.db, t.id, now(), Some(reason)).await?;
+            publish_state(state, &t);
+        }
+    }
     koda_db::grabs::blocklist(&state.db, g.title_id, &g.release_title, g.info_hash.as_deref(), reason)
         .await?;
     if let Ok(t) = koda_db::titles::transition(&state.db, g.title_id, TitleState::Wanted, Some(reason)).await
@@ -461,14 +549,20 @@ async fn fail_grab(state: &AppState, g: &koda_db::grabs::Grab, reason: &str) -> 
 }
 
 async fn import_pending(state: &AppState) -> anyhow::Result<bool> {
-    let titles = koda_db::titles::in_state(&state.db, TitleState::Importing).await?;
+    let titles = koda_db::titles::importing(&state.db).await?;
     let busy = !titles.is_empty();
     for t in titles {
+        // episodes inside a season pack are imported with the season's grab
         let Some(g) = koda_db::grabs::latest_for_title(&state.db, t.id).await? else { continue };
         if g.status != "completed" {
             continue;
         }
-        match import(state, &t, &g).await {
+        let done = if t.kind == "movie" {
+            import(state, &t, &g).await
+        } else {
+            crate::series::import(state, &t, &g).await
+        };
+        match done {
             Ok(()) => {}
             Err(ImportError::Wait(reason)) => {
                 koda_db::titles::set_reason(&state.db, t.id, Some(&reason)).await?
@@ -479,7 +573,7 @@ async fn import_pending(state: &AppState) -> anyhow::Result<bool> {
     Ok(busy)
 }
 
-enum ImportError {
+pub(crate) enum ImportError {
     /// Fixable by the user; try again later.
     Wait(String),
     /// This download is unusable.
@@ -592,13 +686,19 @@ pub fn sanitize(s: &str) -> String {
 
 /// The biggest video file in a download, skipping samples.
 pub fn main_video(path: &Path) -> Option<PathBuf> {
+    videos(path).into_iter().max_by_key(|(s, _)| *s).map(|(_, p)| p)
+}
+
+/// Every video file in a download with its size, skipping samples and trailers.
+pub(crate) fn videos(path: &Path) -> Vec<(u64, PathBuf)> {
     let is_video = |p: &Path| {
         p.extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| VIDEO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
     };
     if path.is_file() {
-        return is_video(path).then(|| path.to_path_buf());
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        return if is_video(path) { vec![(size, path.to_path_buf())] } else { vec![] };
     }
     let mut found = Vec::new();
     let mut stack = vec![(path.to_path_buf(), 0)];
@@ -618,12 +718,12 @@ pub fn main_video(path: &Path) -> Option<PathBuf> {
             }
         }
     }
-    found.into_iter().max_by_key(|(s, _)| *s).map(|(_, p)| p)
+    found
 }
 
 /// Hardlink when possible (no extra space, the torrent keeps seeding), copy otherwise.
 // shortcut: never moves, even when seeding is done; moving needs the client's "can move" flag carried here.
-fn place(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn place(from: &Path, to: &Path) -> std::io::Result<()> {
     if to.exists() {
         std::fs::remove_file(to)?;
     }
@@ -636,7 +736,7 @@ fn place(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Copies subtitle files next to the video, keeping a language suffix like `.en`.
-fn copy_subtitles(dir: &Path, video: &Path, dest: &Path) {
+pub(crate) fn copy_subtitles(dir: &Path, video: &Path, dest: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let dest_stem = dest.with_extension("");
     let video_stem = video.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
@@ -818,7 +918,8 @@ mod flow {
         assert!(t.state_reason.unwrap().contains("library folder"));
 
         // pass 3: with a library folder the file is placed and the film is available
-        let lib = LibrarySettings { movies_path: library.to_string_lossy().into_owned() };
+        let lib =
+            LibrarySettings { movies_path: library.to_string_lossy().into_owned(), ..Default::default() };
         koda_db::settings::set(&db, LibrarySettings::KEY, &lib).await.unwrap();
         tick(&state).await.unwrap();
         let t = koda_db::titles::by_id(&db, t.id).await.unwrap().unwrap();
@@ -934,7 +1035,10 @@ mod usenet_flow {
         )
         .await
         .unwrap();
-        let lib = LibrarySettings { movies_path: root.join("movies").to_string_lossy().into_owned() };
+        let lib = LibrarySettings {
+            movies_path: root.join("movies").to_string_lossy().into_owned(),
+            ..Default::default()
+        };
         koda_db::settings::set(&db, LibrarySettings::KEY, &lib).await.unwrap();
         let t = koda_db::titles::upsert_movie(
             &db,

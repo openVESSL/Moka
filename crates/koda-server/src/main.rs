@@ -11,6 +11,7 @@ mod notify;
 mod pipeline;
 mod radarr;
 mod scan;
+mod series;
 mod state;
 mod streaming;
 mod subtitles;

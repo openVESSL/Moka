@@ -143,6 +143,9 @@ mod tests {
 pub struct LibrarySettingsBody {
     /// Folder films are imported into, as the server sees it.
     pub movies_path: String,
+    /// Folder shows are imported into. Empty until shows are wanted.
+    #[serde(default)]
+    pub shows_path: String,
 }
 
 #[utoipa::path(get, path = "/api/v1/settings/library", tag = "settings",
@@ -154,7 +157,7 @@ pub async fn get_library(
     user.require(Permissions::ADMIN)?;
     let lib: crate::pipeline::LibrarySettings =
         koda_db::settings::get(&state.db, crate::pipeline::LibrarySettings::KEY).await?.unwrap_or_default();
-    Ok(Json(LibrarySettingsBody { movies_path: lib.movies_path }))
+    Ok(Json(LibrarySettingsBody { movies_path: lib.movies_path, shows_path: lib.shows_path }))
 }
 
 /// Saves the library folder after checking the server can write to it.
@@ -167,9 +170,23 @@ pub async fn put_library(
 ) -> ApiResult<Json<LibrarySettingsBody>> {
     user.require(Permissions::ADMIN)?;
     let path = body.movies_path.trim().to_owned();
-    let dir = std::path::PathBuf::from(&path);
-    if path.is_empty() || !dir.is_absolute() {
+    let shows = body.shows_path.trim().to_owned();
+    if path.is_empty() {
         return Err(ApiError::BadRequest("use a full folder path, like /data/movies".into()));
+    }
+    for p in [&path, &shows].into_iter().filter(|p| !p.is_empty()) {
+        writable_folder(p).await?;
+    }
+    let lib = crate::pipeline::LibrarySettings { movies_path: path.clone(), shows_path: shows.clone() };
+    koda_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
+    state.wake.notify_one();
+    Ok(Json(LibrarySettingsBody { movies_path: path, shows_path: shows }))
+}
+
+async fn writable_folder(path: &str) -> ApiResult<()> {
+    let dir = std::path::PathBuf::from(path);
+    if !dir.is_absolute() {
+        return Err(ApiError::BadRequest(format!("use a full folder path, not {path}")));
     }
     let probe = dir.join(".koda-write-test");
     let writable = tokio::fs::create_dir_all(&dir).await.is_ok()
@@ -178,10 +195,7 @@ pub async fn put_library(
     if !writable {
         return Err(ApiError::BadRequest(format!("the server cannot write to {path}")));
     }
-    let lib = crate::pipeline::LibrarySettings { movies_path: path.clone() };
-    koda_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
-    state.wake.notify_one();
-    Ok(Json(LibrarySettingsBody { movies_path: path }))
+    Ok(())
 }
 
 /// Jellyfin connection as the UI sees it. The key is never returned.

@@ -49,6 +49,26 @@ pub async fn create(pool: &Pool, g: &NewGrab) -> Result<i64, Error> {
     .await
 }
 
+/// Records the other episodes a grab holds (season packs, multi-episode files).
+pub async fn add_covered(pool: &Pool, grab_id: i64, title_ids: &[i64]) -> Result<(), Error> {
+    for id in title_ids {
+        sqlx::query("INSERT OR IGNORE INTO grab_titles (grab_id, title_id) VALUES (?, ?)")
+            .bind(grab_id)
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// The other episodes a grab holds.
+pub async fn covered(pool: &Pool, grab_id: i64) -> Result<Vec<i64>, Error> {
+    sqlx::query_scalar("SELECT title_id FROM grab_titles WHERE grab_id = ? ORDER BY title_id")
+        .bind(grab_id)
+        .fetch_all(pool)
+        .await
+}
+
 /// Grabs still in flight (not imported, not failed).
 pub async fn active(pool: &Pool) -> Result<Vec<Grab>, Error> {
     sqlx::query_as("SELECT * FROM grabs WHERE status IN ('sent', 'downloading', 'completed') ORDER BY id")

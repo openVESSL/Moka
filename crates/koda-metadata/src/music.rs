@@ -229,30 +229,36 @@ impl MusicBrainz {
         path: &str,
         query: &[(&str, &str)],
     ) -> Result<T, Error> {
-        {
-            // one request at a time, spaced out as MusicBrainz asks
-            let mut last = self.last.lock().await;
-            if let Some(at) = *last {
-                let wait = SPACING.saturating_sub(at.elapsed());
-                if !wait.is_zero() {
-                    tokio::time::sleep(wait).await;
+        // MusicBrainz often answers "busy" (503): wait a little longer each time
+        for attempt in 0..3u64 {
+            {
+                // one request at a time, spaced out as MusicBrainz asks
+                let mut last = self.last.lock().await;
+                let spacing = SPACING * (1 + 2 * attempt as u32);
+                if let Some(at) = *last {
+                    let wait = spacing.saturating_sub(at.elapsed());
+                    if !wait.is_zero() {
+                        tokio::time::sleep(wait).await;
+                    }
                 }
+                *last = Some(Instant::now());
             }
-            *last = Some(Instant::now());
+            let res = self
+                .http
+                .get(format!("{}{path}", self.base_url))
+                .query(&[("fmt", "json")])
+                .query(query)
+                .send()
+                .await?;
+            match res.status().as_u16() {
+                200..=299 => return Ok(res.json().await?),
+                400 | 404 => return Err(Error::NotFound),
+                503 | 429 if attempt < 2 => continue,
+                503 | 429 => return Err(Error::RateLimited),
+                s => return Err(Error::Status(s)),
+            }
         }
-        let res = self
-            .http
-            .get(format!("{}{path}", self.base_url))
-            .query(&[("fmt", "json")])
-            .query(query)
-            .send()
-            .await?;
-        match res.status().as_u16() {
-            200..=299 => Ok(res.json().await?),
-            400 | 404 => Err(Error::NotFound),
-            503 | 429 => Err(Error::RateLimited),
-            s => Err(Error::Status(s)),
-        }
+        Err(Error::RateLimited)
     }
 }
 

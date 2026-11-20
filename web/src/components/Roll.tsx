@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Film } from "lucide-react";
-import { img } from "../api/client";
+import { cover, img } from "../api/client";
 import { GreaseCircle } from "./GreaseCircle";
 import { Tape } from "./Tape";
 
@@ -11,7 +11,9 @@ export type RollItem = {
   year?: number | null;
   posterPath?: string | null;
   state?: string | null;
-  kind?: "movie" | "show";
+  kind?: "movie" | "show" | "album";
+  /** MusicBrainz id, for albums (cover and link). */
+  mbid?: string | null;
 };
 
 /**
@@ -34,9 +36,9 @@ function RollCell({ item, take }: { item: RollItem; take?: number }) {
   const inner = (
     <>
       <div className="relative aspect-[2/3] overflow-hidden rounded-[3px] bg-slate-raised shadow-[0_8px_18px_-10px_rgb(0_0_0/0.9)] transition-transform duration-300 ease-[var(--ease-out-expo)] group-hover:-translate-y-1">
-        {item.posterPath ? (
+        {item.posterPath || item.mbid ? (
           <img
-            src={img("w342", item.posterPath)}
+            src={item.mbid ? cover(item.mbid) : img("w342", item.posterPath)}
             alt=""
             loading="lazy"
             decoding="async"
@@ -68,6 +70,18 @@ function RollCell({ item, take }: { item: RollItem; take?: number }) {
     </>
   );
 
+  if (item.kind === "album" && item.mbid) {
+    return (
+      <Link
+        to="/album/$mbid"
+        params={{ mbid: item.mbid }}
+        className="group block rounded-[3px] focus-visible:outline-offset-4"
+        aria-label={item.year ? `${item.title} (${item.year})` : item.title}
+      >
+        {inner}
+      </Link>
+    );
+  }
   if (!item.tmdbId) return <div className="group">{inner}</div>;
   return (
     <Link

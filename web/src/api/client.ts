@@ -36,6 +36,11 @@ export async function unwrap<T>(
   );
 }
 
+/** Album cover (Cover Art Archive) served through our own cache. */
+export function cover(mbid?: string | null) {
+  return mbid ? `/api/v1/images/cover/${mbid}` : undefined;
+}
+
 /** URL of a TMDB image served through our own cache. */
 export function img(size: "w185" | "w342" | "w500" | "w780" | "w1280" | "original", path?: string | null) {
   if (!path) return undefined;

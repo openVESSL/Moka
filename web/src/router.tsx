@@ -6,6 +6,7 @@ import { DiscoverPage, SearchPage } from "./routes/discover";
 import { LibraryPage } from "./routes/library";
 import { MoviePage } from "./routes/movie";
 import { ShowPage } from "./routes/show";
+import { AlbumPage, ArtistPage } from "./routes/music";
 import { RequestsPage } from "./routes/requests";
 import { SettingsPage } from "./routes/settings";
 import { Shell } from "./routes/Shell";
@@ -91,6 +92,24 @@ const show = createRoute({
   },
 });
 
+const artist = createRoute({
+  getParentRoute: () => app,
+  path: "/artist/$mbid",
+  component: function Artist() {
+    const { mbid } = artist.useParams();
+    return <ArtistPage key={mbid} mbid={mbid} />;
+  },
+});
+
+const album = createRoute({
+  getParentRoute: () => app,
+  path: "/album/$mbid",
+  component: function Album() {
+    const { mbid } = album.useParams();
+    return <AlbumPage key={mbid} mbid={mbid} />;
+  },
+});
+
 const requests = createRoute({
   getParentRoute: () => app,
   path: "/requests",
@@ -113,7 +132,7 @@ const watch = createRoute({
 });
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: SettingsPage });
 
-const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, show, requests, library, settings, watch])]);
+const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, show, artist, album, requests, library, settings, watch])]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({

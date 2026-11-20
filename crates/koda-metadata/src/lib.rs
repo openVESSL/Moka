@@ -19,13 +19,13 @@ pub enum Error {
     MissingKey,
     #[error("TMDB rejected the API key")]
     Unauthorized,
-    #[error("not found on TMDB")]
+    #[error("not found in the catalog")]
     NotFound,
-    #[error("TMDB is rate limiting requests, retry shortly")]
+    #[error("the catalog service is busy or rate limiting requests, retry shortly")]
     RateLimited,
-    #[error("TMDB request failed: {0}")]
+    #[error("catalog request failed: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("TMDB returned status {0}")]
+    #[error("the catalog service returned status {0}")]
     Status(u16),
 }
 

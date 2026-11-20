@@ -21,6 +21,8 @@ the steps to migrate.
 - Subtitle apps that work with Radarr can read films with their file paths
   and release names from `/api/v3`, and webhooks pointed at their
   `/api/webhooks/radarr` address are told about each import.
+- Music catalog from MusicBrainz: search artists, browse their albums with
+  covers, see an album's tracks and request it.
 - Shows through `/api/v3` as well: TV request apps can look up shows by
   TheTVDB id, add them with the seasons asked for, follow episodes and the
   queue; subtitle apps can list episode files with their release names, and

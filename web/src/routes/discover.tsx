@@ -5,6 +5,7 @@ import {
   DISCOVER_LISTS,
   SHOW_LISTS,
   discoverQuery,
+  artistSearchQuery,
   searchQuery,
   type DiscoverList,
   type MediaKind,
@@ -133,14 +134,22 @@ export function SearchPage({ q }: { q: string }) {
         {q ? <>“{q}”</> : "Search"}
       </h1>
       {q ? (
-        KINDS.map((k) => (
-          <section key={k.id} aria-labelledby={`found-${k.id}`} className="mb-14">
-            <h2 id={`found-${k.id}`} className="mb-6 border-b border-slate-line pb-3 font-slate text-2xl font-extrabold uppercase">
-              {k.label}
+        <>
+          {KINDS.map((k) => (
+            <section key={k.id} aria-labelledby={`found-${k.id}`} className="mb-14">
+              <h2 id={`found-${k.id}`} className="mb-6 border-b border-slate-line pb-3 font-slate text-2xl font-extrabold uppercase">
+                {k.label}
+              </h2>
+              <Found q={q} kind={k.id} />
+            </section>
+          ))}
+          <section aria-labelledby="found-artists" className="mb-14">
+            <h2 id="found-artists" className="mb-6 border-b border-slate-line pb-3 font-slate text-2xl font-extrabold uppercase">
+              Artists
             </h2>
-            <Found q={q} kind={k.id} />
+            <Artists q={q} />
           </section>
-        ))
+        </>
       ) : (
         <p className="text-chalk-dim">Type a title in the search box above.</p>
       )}
@@ -150,7 +159,18 @@ export function SearchPage({ q }: { q: string }) {
 
 function Found({ q, kind }: { q: string; kind: MediaKind }) {
   const { data, error, isFetching } = useQuery(searchQuery(q, kind));
-  if (error) return <CatalogError error={error} />;
+  if (error instanceof ApiError && error.code === "not_configured") {
+    return (
+      <p className="text-chalk-dim">
+        Add a TMDB key in{" "}
+        <Link to="/settings" className="text-grease hover:text-grease-hot">
+          Settings
+        </Link>{" "}
+        to search films and shows.
+      </p>
+    );
+  }
+  if (error) return <p className="text-grease-hot">{error.message}</p>;
   const items = data?.results ?? [];
   return (
     <>
@@ -173,6 +193,27 @@ function Found({ q, kind }: { q: string; kind: MediaKind }) {
         <p className="text-chalk-dim">Nothing matches that. Try the original title or fewer words.</p>
       )}
     </>
+  );
+}
+
+function Artists({ q }: { q: string }) {
+  const { data, error, isFetching } = useQuery(artistSearchQuery(q));
+  if (error) return <p className="text-grease-hot">{error.message}</p>;
+  if (isFetching && !data) return <div className="h-24 animate-pulse rounded bg-slate-raised/50" />;
+  if (!data?.length) return <p className="text-chalk-dim">No artists match that.</p>;
+  return (
+    <ul className="grid gap-x-8 border-t border-slate-line sm:grid-cols-2">
+      {data.map((a) => (
+        <li key={a.mbid} className="border-b border-slate-line">
+          <Link to="/artist/$mbid" params={{ mbid: a.mbid }} className="flex items-baseline gap-3 py-3 hover:text-white">
+            <span className="font-slate text-lg font-semibold">{a.name}</span>
+            <span className="truncate text-sm text-chalk-faint">
+              {[a.disambiguation, a.kind, a.country].filter(Boolean).join(" · ")}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

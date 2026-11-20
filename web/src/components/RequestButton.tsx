@@ -1,6 +1,6 @@
 import { Check, Plus } from "lucide-react";
 import type { Schemas } from "../api/client";
-import { useRequestFilm, type MediaKind } from "../api/queries";
+import { useRequestFilm, type RequestKind } from "../api/queries";
 import { STATE_HINT, isTitleState } from "../lib/states";
 import { Tape } from "./Tape";
 
@@ -12,10 +12,13 @@ export function RequestButton({
   tmdbId,
   local,
   kind = "movie",
+  mbid,
 }: {
   tmdbId: number;
   local?: Schemas["LocalState"] | null;
-  kind?: MediaKind;
+  kind?: RequestKind;
+  /** MusicBrainz id, for albums. */
+  mbid?: string;
 }) {
   const request = useRequestFilm();
   const state = request.data?.title_state ?? local?.state;
@@ -43,7 +46,7 @@ export function RequestButton({
         type="button"
         className="btn-grease"
         disabled={request.isPending}
-        onClick={() => request.mutate({ tmdbId, kind })}
+        onClick={() => request.mutate({ tmdbId, kind, mbid })}
       >
         <Plus aria-hidden className="size-4" strokeWidth={2.5} />
         {request.isPending ? "Requesting…" : "Request"}

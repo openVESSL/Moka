@@ -450,13 +450,13 @@ impl Client {
     ) -> Result<Vec<Release>, Error> {
         let has = |p: &str| caps.book_params.iter().any(|x| x == p);
         let mut params: Vec<(&str, String)> = Vec::new();
-        if caps.book_search && has("author") && has("title") {
+        if caps.book_search && has("author") && has("title") && !q.author.trim().is_empty() {
             params.push(("t", "book".into()));
             params.push(("author", search_text(&q.author)));
             params.push(("title", search_text(&q.title)));
         } else {
             params.push(("t", "search".into()));
-            params.push(("q", search_text(&format!("{} {}", q.author, q.title))));
+            params.push(("q", search_text(format!("{} {}", q.author, q.title).trim())));
         }
         let cats = if q.audiobook { AUDIOBOOK_CATEGORY.to_string() } else { book_categories(cfg) };
         params.push(("cat", cats));

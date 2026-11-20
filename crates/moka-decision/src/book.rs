@@ -79,16 +79,25 @@ pub fn evaluate_book(target: &BookTarget, profile: &BookProfile, candidates: &[C
             let name = &c.release.title;
             let parsed = parse_book(name);
             let audio = audio_quality(name);
+            // a pack counts by the best of its formats the profile allows
+            let format = parsed
+                .formats
+                .iter()
+                .copied()
+                .filter_map(|f| profile.rank_of(f).map(|r| (r, f)))
+                .min()
+                .map(|(_, f)| f)
+                .unwrap_or(parsed.format);
             Evaluated {
                 candidate_index: i,
                 title: name.clone(),
                 parsed: None,
                 quality: None,
                 audio: (target.audiobook && audio != AudioQuality::Unknown).then_some(audio),
-                ebook: (!target.audiobook && parsed.format != EbookFormat::Unknown).then_some(parsed.format),
+                ebook: (!target.audiobook && format != EbookFormat::Unknown).then_some(format),
                 score: 0,
                 covers: Vec::new(),
-                rejections: rules(target, profile, c, parsed.format),
+                rejections: rules(target, profile, c, format),
                 beats_next_by: None,
             }
         })
@@ -246,6 +255,12 @@ mod tests {
         assert_eq!(out[0].quality_key().as_deref(), Some("epub"));
         let codes: Vec<&str> = out.iter().filter(|e| !e.accepted()).map(|e| e.rejections[0].code).collect();
         assert_eq!(codes, ["quality", "audiobook", "wrong_book", "wrong_book"]);
+
+        // a pack is judged by the best format it holds that the profile allows
+        let pdf_only = BookProfile { formats: vec![EbookFormat::Pdf], ..Default::default() };
+        let out = evaluate_book(&dune(false), &pdf_only, &[cand("Frank Herbert - Dune (epub, pdf)", 5)]);
+        assert!(out[0].accepted());
+        assert_eq!(out[0].quality_key().as_deref(), Some("pdf"));
     }
 
     #[test]

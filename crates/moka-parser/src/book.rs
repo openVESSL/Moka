@@ -14,6 +14,8 @@ pub struct ParsedBook {
     pub year: Option<u16>,
     /// The best format the name announces; packs often hold several.
     pub format: EbookFormat,
+    /// Every format the name announces, best first.
+    pub formats: Vec<EbookFormat>,
     /// Made from the publisher's file, not scanned or converted.
     pub retail: bool,
     pub group: Option<String>,
@@ -32,8 +34,13 @@ fn words(name: &str) -> Vec<String> {
 
 pub fn parse_book(name: &str) -> ParsedBook {
     let w = words(name);
-    let format = w.iter().map(|x| EbookFormat::from_extension(x)).max().unwrap_or_default();
+    let mut formats: Vec<EbookFormat> =
+        w.iter().map(|x| EbookFormat::from_extension(x)).filter(|f| *f != EbookFormat::Unknown).collect();
+    formats.sort_by(|a, b| b.cmp(a));
+    formats.dedup();
+    let format = formats.first().copied().unwrap_or_default();
     ParsedBook {
+        formats,
         year: YEAR.captures_iter(name).filter_map(|c| c[1].parse().ok()).next(),
         format,
         retail: w.iter().any(|x| x == "retail"),
@@ -148,12 +155,17 @@ mod tests {
             ParsedBook {
                 year: Some(2012),
                 format: EbookFormat::Epub,
+                formats: vec![EbookFormat::Epub],
                 retail: true,
                 group: Some("BitBook".into())
             }
         );
         let p = parse_book("Tolkien, J.R.R. - The Hobbit (1937) [mobi, azw3, pdf]");
-        assert_eq!((p.year, p.format, p.retail, p.group), (Some(1937), EbookFormat::Azw3, false, None));
+        assert_eq!(
+            (p.year, p.format, p.retail, p.group.clone()),
+            (Some(1937), EbookFormat::Azw3, false, None)
+        );
+        assert_eq!(p.formats, [EbookFormat::Azw3, EbookFormat::Mobi, EbookFormat::Pdf]);
         assert_eq!(parse_book("The Hobbit by J R R Tolkien").format, EbookFormat::Unknown);
     }
 

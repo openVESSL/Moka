@@ -20,6 +20,7 @@ pub mod connectors;
 pub mod images;
 pub mod keys;
 pub mod library;
+pub mod music;
 pub mod play;
 pub mod profiles;
 pub mod requests;
@@ -46,6 +47,9 @@ pub mod webhooks;
         catalog::discover_shows,
         catalog::search_shows,
         catalog::show,
+        music::search,
+        music::artist,
+        music::album,
         requests::list,
         requests::create,
         requests::approve,
@@ -128,6 +132,7 @@ pub fn router() -> Router<AppState> {
         .merge(play::router())
         .merge(settings::router())
         .merge(images::router())
+        .merge(music::router())
         .merge(keys::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });
     Router::new().nest("/api/v1", api).merge(v3::router())

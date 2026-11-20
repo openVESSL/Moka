@@ -31,8 +31,13 @@ pub struct Quota {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NewRequest {
+    /// TMDB id, for films and shows.
+    #[serde(default)]
     pub tmdb_id: i64,
-    /// `movie` (default) or `show`. A show is requested whole; specials are left out.
+    /// MusicBrainz album (release group) id, for albums.
+    #[serde(default)]
+    pub mbid: Option<String>,
+    /// `movie` (default), `show` or `album`. A show is requested whole; specials are left out.
     #[serde(default)]
     pub kind: RequestKind,
 }
@@ -43,6 +48,7 @@ pub enum RequestKind {
     #[default]
     Movie,
     Show,
+    Album,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -50,7 +56,9 @@ pub struct Request {
     pub id: i64,
     pub title_id: i64,
     pub tmdb_id: Option<i64>,
-    /// movie | show
+    /// MusicBrainz id, for albums.
+    pub mbid: Option<String>,
+    /// movie | show | album
     pub kind: String,
     pub title: String,
     pub year: Option<i64>,
@@ -72,6 +80,7 @@ impl From<RequestRow> for Request {
             id: r.id,
             title_id: r.title_id,
             tmdb_id: r.tmdb_id,
+            mbid: r.mbid,
             kind: r.kind,
             title: r.title,
             year: r.year,
@@ -157,6 +166,11 @@ pub async fn create(
             koda_db::titles::upsert_show(db, &show, initial).await?
         }
         RequestKind::Movie => movie_title(&state, body.tmdb_id, initial).await?,
+        RequestKind::Album => {
+            let mbid = body.mbid.as_deref().ok_or_else(|| ApiError::BadRequest("mbid is missing".into()))?;
+            let album = crate::api::music::new_album(&state, mbid).await?;
+            koda_db::titles::upsert_album(db, &album, initial).await?
+        }
     };
 
     // An auto-approved request moves a title someone else left pending.

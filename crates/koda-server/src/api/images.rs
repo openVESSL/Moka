@@ -12,7 +12,49 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/images/{size}/{name}", get(image))
+    Router::new().route("/images/{size}/{name}", get(image)).route("/images/cover/{mbid}", get(cover))
+}
+
+/// Album cover from the Cover Art Archive, cached like other artwork.
+pub async fn cover(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path(mbid): Path<String>,
+) -> ApiResult<Response> {
+    let valid = mbid.len() == 36 && mbid.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    if !valid {
+        return Err(ApiError::NotFound("cover"));
+    }
+    let dir = state.config.cache_dir().join("images").join("covers");
+    let path = dir.join(format!("{mbid}.jpg"));
+    let bytes = match tokio::fs::read(&path).await {
+        Ok(b) => b,
+        Err(_) => {
+            let url = koda_metadata::music::cover_url(&mbid, 500);
+            let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
+            if res.status().as_u16() == 404 {
+                return Err(ApiError::NotFound("cover"));
+            }
+            if !res.status().is_success() {
+                return Err(ApiError::Upstream(format!("cover host returned {}", res.status())));
+            }
+            let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
+            tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
+            let tmp = dir.join(format!(".{mbid}.part"));
+            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+                let _ = tokio::fs::rename(&tmp, &path).await;
+            }
+            bytes
+        }
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/jpeg".to_owned()),
+            (header::CACHE_CONTROL, "private, max-age=604800".to_owned()),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 pub async fn image(

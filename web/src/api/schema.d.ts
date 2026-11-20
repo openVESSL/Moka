@@ -134,6 +134,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/music/album/{mbid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["music_album"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/music/artist/{mbid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["music_artist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/music/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["search_music"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/search": {
         parameters: {
             query?: never;
@@ -731,7 +779,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every episode of a show, by season and number. */
+        /** Every episode of a show, by season and number, or every track of an album. */
         get: operations["episodes"];
         put?: never;
         post?: never;
@@ -1184,14 +1232,61 @@ export interface components {
         MonitoredBody: {
             monitored: boolean;
         };
+        MusicAlbum: {
+            /** @description Album, EP... */
+            kind?: string | null;
+            local?: components["schemas"]["LocalState"] | null;
+            mbid: string;
+            /** @description A studio album or EP (not live, not a compilation). */
+            studio: boolean;
+            title: string;
+            /** Format: int64 */
+            year?: number | null;
+        };
+        MusicAlbumPage: {
+            artist: string;
+            artist_mbid?: string | null;
+            local?: components["schemas"]["LocalState"] | null;
+            mbid: string;
+            title: string;
+            tracks: components["schemas"]["MusicTrack"][];
+            /** Format: int64 */
+            year?: number | null;
+        };
+        MusicArtist: {
+            country?: string | null;
+            disambiguation?: string | null;
+            /** @description Person, Group... */
+            kind?: string | null;
+            mbid: string;
+            name: string;
+        };
+        MusicArtistPage: {
+            albums: components["schemas"]["MusicAlbum"][];
+            artist: components["schemas"]["MusicArtist"];
+        };
+        MusicTrack: {
+            /** Format: int32 */
+            disc: number;
+            /** Format: int64 */
+            length_seconds?: number | null;
+            /** Format: int32 */
+            number: number;
+            title: string;
+        };
         NewApiKey: {
             name: string;
         };
         NewRequest: {
-            /** @description `movie` (default) or `show`. A show is requested whole; specials are left out. */
+            /** @description `movie` (default), `show` or `album`. A show is requested whole; specials are left out. */
             kind?: components["schemas"]["RequestKind"];
-            /** Format: int64 */
-            tmdb_id: number;
+            /** @description MusicBrainz album (release group) id, for albums. */
+            mbid?: string | null;
+            /**
+             * Format: int64
+             * @description TMDB id, for films and shows.
+             */
+            tmdb_id?: number;
         };
         NewUser: {
             password: string;
@@ -1363,8 +1458,10 @@ export interface components {
             decided_at?: number | null;
             /** Format: int64 */
             id: number;
-            /** @description movie | show */
+            /** @description movie | show | album */
             kind: string;
+            /** @description MusicBrainz id, for albums. */
+            mbid?: string | null;
             note?: string | null;
             poster_path?: string | null;
             requested_by: string;
@@ -1381,7 +1478,7 @@ export interface components {
             year?: number | null;
         };
         /** @enum {string} */
-        RequestKind: "movie" | "show";
+        RequestKind: "movie" | "show" | "album";
         ScanRequest: {
             /**
              * @description `movie` (default) or `show`. Episodes of a new show that aired but
@@ -1419,6 +1516,8 @@ export interface components {
             kind: string;
             /** Format: int64 */
             last_search_at?: number | null;
+            /** @description MusicBrainz id, for music. */
+            mbid?: string | null;
             /** @description Searched for automatically (specials are not, by default). */
             monitored: boolean;
             /** Format: int64 */
@@ -1714,6 +1813,81 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    music_album: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicAlbumPage"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    music_artist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicArtistPage"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_music: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicArtist"][];
+                };
             };
         };
     };

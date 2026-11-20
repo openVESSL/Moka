@@ -197,6 +197,8 @@ pub struct Title {
     pub kind: String,
     /// Season of an episode, show of a season.
     pub parent_id: Option<i64>,
+    /// MusicBrainz id, for music.
+    pub mbid: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     /// Searched for automatically (specials are not, by default).
@@ -227,6 +229,7 @@ impl From<koda_db::titles::Title> for Title {
             id: t.id,
             kind: t.kind,
             parent_id: t.parent_id,
+            mbid: t.mbid,
             season_number: t.season_number,
             episode_number: t.episode_number,
             monitored: t.monitored,
@@ -289,7 +292,12 @@ pub async fn list(
                 .filter(|t| filter.is_none_or(|f| t.state() == f))
                 .collect()
         }
-        Some(_) => return Err(ApiError::BadRequest("kind must be movie or show".into())),
+        Some("album") => koda_db::titles::albums(&state.db)
+            .await?
+            .into_iter()
+            .filter(|t| filter.is_none_or(|f| t.state() == f))
+            .collect(),
+        Some(_) => return Err(ApiError::BadRequest("kind must be movie, show or album".into())),
     };
     Ok(Json(rows.into_iter().map(Title::from).collect()))
 }
@@ -319,7 +327,7 @@ pub async fn set_monitored(
     one(user, State(state), Path(id)).await
 }
 
-/// Every episode of a show, by season and number.
+/// Every episode of a show, by season and number, or every track of an album.
 #[utoipa::path(get, path = "/api/v1/titles/{id}/episodes", tag = "titles", params(("id" = i64, Path)),
     responses((status = 200, body = [Title]), (status = 404)))]
 pub async fn episodes(
@@ -328,10 +336,11 @@ pub async fn episodes(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Vec<Title>>> {
     let show = koda_db::titles::by_id(&state.db, id).await?.ok_or(ApiError::NotFound("title"))?;
-    if show.kind != "show" {
-        return Err(ApiError::BadRequest("only shows have episodes".into()));
-    }
-    let rows = koda_db::titles::episodes_of_show(&state.db, id).await?;
+    let rows = match show.kind.as_str() {
+        "show" => koda_db::titles::episodes_of_show(&state.db, id).await?,
+        "album" => koda_db::titles::children(&state.db, id).await?,
+        _ => return Err(ApiError::BadRequest("only shows and albums have episodes or tracks".into())),
+    };
     Ok(Json(rows.into_iter().map(Title::from).collect()))
 }
 

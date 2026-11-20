@@ -538,7 +538,7 @@ async fn add_movie(
     let Json(req) = super::requests::create(
         CurrentUser(user.0.clone()),
         State(s.clone()),
-        Json(super::requests::NewRequest { tmdb_id: b.tmdb_id, kind: Default::default() }),
+        Json(super::requests::NewRequest { tmdb_id: b.tmdb_id, mbid: None, kind: Default::default() }),
     )
     .await?;
     let t = koda_db::titles::by_id(&s.db, req.title_id).await?.ok_or(ApiError::NotFound("movie"))?;

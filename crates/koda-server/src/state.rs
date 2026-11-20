@@ -28,6 +28,7 @@ pub struct AppState {
     pub scan: Arc<Mutex<crate::scan::ScanStatus>>,
     pub streams: crate::streaming::Sessions,
     tmdb: Arc<RwLock<Tmdb>>,
+    music: Arc<RwLock<koda_metadata::music::MusicBrainz>>,
     cache: Arc<Mutex<HashMap<String, (Instant, serde_json::Value)>>>,
 }
 
@@ -88,12 +89,22 @@ impl AppState {
             scan: Arc::default(),
             streams: Default::default(),
             tmdb: Arc::new(RwLock::new(catalog.client())),
+            music: Arc::default(),
             cache: Arc::default(),
         }
     }
 
     pub fn tmdb(&self) -> Tmdb {
         self.tmdb.read().expect("tmdb lock").clone()
+    }
+
+    pub fn music(&self) -> koda_metadata::music::MusicBrainz {
+        self.music.read().expect("music lock").clone()
+    }
+
+    #[cfg(test)]
+    pub fn set_music(&self, client: koda_metadata::music::MusicBrainz) {
+        *self.music.write().expect("music lock") = client;
     }
 
     pub fn set_tmdb(&self, client: Tmdb) {

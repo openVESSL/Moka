@@ -254,6 +254,98 @@
         }
       }
     },
+    "/api/v1/catalog/music/album/{mbid}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "music_album",
+        "parameters": [
+          {
+            "name": "mbid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MusicAlbumPage"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/catalog/music/artist/{mbid}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "music_artist",
+        "parameters": [
+          {
+            "name": "mbid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MusicArtistPage"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/catalog/music/search": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "search_music",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MusicArtist"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/catalog/search": {
       "get": {
         "tags": [
@@ -1752,7 +1844,7 @@
         "tags": [
           "titles"
         ],
-        "summary": "Every episode of a show, by season and number.",
+        "summary": "Every episode of a show, by season and number, or every track of an album.",
         "operationId": "episodes",
         "parameters": [
           {
@@ -3190,6 +3282,182 @@
           }
         }
       },
+      "MusicAlbum": {
+        "type": "object",
+        "required": [
+          "mbid",
+          "title",
+          "studio"
+        ],
+        "properties": {
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Album, EP..."
+          },
+          "local": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocalState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mbid": {
+            "type": "string"
+          },
+          "studio": {
+            "type": "boolean",
+            "description": "A studio album or EP (not live, not a compilation)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "MusicAlbumPage": {
+        "type": "object",
+        "required": [
+          "mbid",
+          "title",
+          "artist",
+          "tracks"
+        ],
+        "properties": {
+          "artist": {
+            "type": "string"
+          },
+          "artist_mbid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "local": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocalState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mbid": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MusicTrack"
+            }
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "MusicArtist": {
+        "type": "object",
+        "required": [
+          "mbid",
+          "name"
+        ],
+        "properties": {
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disambiguation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Person, Group..."
+          },
+          "mbid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "MusicArtistPage": {
+        "type": "object",
+        "required": [
+          "artist",
+          "albums"
+        ],
+        "properties": {
+          "albums": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MusicAlbum"
+            }
+          },
+          "artist": {
+            "$ref": "#/components/schemas/MusicArtist"
+          }
+        }
+      },
+      "MusicTrack": {
+        "type": "object",
+        "required": [
+          "number",
+          "disc",
+          "title"
+        ],
+        "properties": {
+          "disc": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "length_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "NewApiKey": {
         "type": "object",
         "required": [
@@ -3203,17 +3471,22 @@
       },
       "NewRequest": {
         "type": "object",
-        "required": [
-          "tmdb_id"
-        ],
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "`movie` (default) or `show`. A show is requested whole; specials are left out."
+            "description": "`movie` (default), `show` or `album`. A show is requested whole; specials are left out."
+          },
+          "mbid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MusicBrainz album (release group) id, for albums."
           },
           "tmdb_id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "TMDB id, for films and shows."
           }
         }
       },
@@ -3775,7 +4048,14 @@
           },
           "kind": {
             "type": "string",
-            "description": "movie | show"
+            "description": "movie | show | album"
+          },
+          "mbid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MusicBrainz id, for albums."
           },
           "note": {
             "type": [
@@ -3827,7 +4107,8 @@
         "type": "string",
         "enum": [
           "movie",
-          "show"
+          "show",
+          "album"
         ]
       },
       "ScanRequest": {
@@ -3961,6 +4242,13 @@
               "null"
             ],
             "format": "int64"
+          },
+          "mbid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MusicBrainz id, for music."
           },
           "monitored": {
             "type": "boolean",

@@ -350,6 +350,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn albums_are_requested_from_the_music_catalog() {
+        let mb = axum::Router::new()
+            .route(
+                "/artist",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({ "artists": [{ "id": "a1", "name": "Band", "type": "Group" }] }))
+                }),
+            )
+            .route(
+                "/artist/a1",
+                axum::routing::get(|| async { axum::Json(serde_json::json!({ "id": "a1", "name": "Band" })) }),
+            )
+            .route(
+                "/release-group",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({ "release-groups": [
+                        { "id": "rg1", "title": "First", "primary-type": "Album", "first-release-date": "2001-01-01" }] }))
+                }),
+            )
+            .route(
+                "/release",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({ "releases": [{ "id": "r1", "title": "First", "date": "2001-01-01",
+                        "status": "Official", "artist-credit": [{ "name": "Band", "artist": { "id": "a1" } }],
+                        "media": [{ "position": 1, "tracks": [{ "position": 1, "title": "Opening", "length": 200000 },
+                                                               { "position": 2, "title": "Closing" }] }] }] }))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, mb).await.unwrap() });
+
+        let db = koda_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        koda_db::users::create(&db, "guest", &pw, koda_core::Permissions::DEFAULT_USER).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_music(koda_metadata::music::MusicBrainz::with_base_url(&base));
+        let app = app(state);
+        let guest = login(&app, "guest", "password1").await;
+        let get = |uri: String| {
+            let app = app.clone();
+            let guest = guest.clone();
+            async move { body_json(app.oneshot(authed("GET", &uri, &guest, "")).await.unwrap()).await }
+        };
+
+        let found = get("/api/v1/catalog/music/search?q=band".into()).await;
+        assert_eq!(found[0]["mbid"], "a1");
+        let page = get("/api/v1/catalog/music/artist/a1".into()).await;
+        assert_eq!(
+            (page["albums"][0]["mbid"].as_str(), page["albums"][0]["studio"].as_bool()),
+            (Some("rg1"), Some(true))
+        );
+
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"kind":"album","mbid":"rg1"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let req = body_json(res).await;
+        assert_eq!((req["kind"].as_str(), req["mbid"].as_str()), (Some("album"), Some("rg1")));
+
+        let album = get("/api/v1/catalog/music/album/rg1".into()).await;
+        assert_eq!(album["local"]["state"], "requested");
+        assert_eq!(album["tracks"][0]["length_seconds"], 200);
+        let id = album["local"]["title_id"].as_i64().unwrap();
+        let tracks = get(format!("/api/v1/titles/{id}/episodes")).await;
+        assert_eq!(tracks.as_array().unwrap().len(), 2);
+        let albums = get("/api/v1/titles?kind=album".into()).await;
+        assert_eq!(albums.as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn admin_manages_users_but_keeps_one_admin() {
         let db = koda_db::memory().await;
         let pw = auth::hash_password("password1").unwrap();
@@ -430,6 +508,7 @@ mod tests {
         for extra in [
             "GET /api/v1/events",
             "GET /api/v1/images/w342/abc.jpg",
+            "GET /api/v1/images/cover/00000000-0000-0000-0000-000000000000",
             "GET /api/v1/files/1/stream",
             "GET /api/v1/hls/abc/index.m3u8",
             "GET /api/v3/system/status",

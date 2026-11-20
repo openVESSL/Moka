@@ -81,6 +81,8 @@ pub struct AlbumDetails {
     pub id: String,
     pub title: String,
     pub artist: String,
+    /// MusicBrainz id of the first credited artist.
+    pub artist_id: Option<String>,
     pub first_release_date: Option<String>,
     /// The edition whose track list is used (the earliest official one).
     pub release_id: String,
@@ -138,8 +140,14 @@ impl MusicBrainz {
     /// An album with the track list of its earliest official edition.
     pub async fn album(&self, id: &str) -> Result<AlbumDetails, Error> {
         #[derive(Deserialize)]
+        struct CreditArtist {
+            id: String,
+        }
+        #[derive(Deserialize)]
         struct Credit {
             name: String,
+            #[serde(default)]
+            artist: Option<CreditArtist>,
         }
         #[derive(Deserialize)]
         struct Track {
@@ -209,6 +217,7 @@ impl MusicBrainz {
             id: id.to_owned(),
             title: release.title,
             artist: release.credits.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "),
+            artist_id: release.credits.first().and_then(|c| c.artist.as_ref()).map(|a| a.id.clone()),
             first_release_date: release.date.filter(|d| !d.is_empty()),
             release_id: release.id,
             tracks,
@@ -283,7 +292,7 @@ mod tests {
                         { "id": "late", "title": "First", "date": "2010-01-01", "status": "Official",
                           "media": [{ "position": 1, "tracks": [{ "position": 1, "title": "Remaster", "length": 1 }] }] },
                         { "id": "orig", "title": "First", "date": "2001-01-01", "status": "Official",
-                          "artist-credit": [{ "name": "Band" }],
+                          "artist-credit": [{ "name": "Band", "artist": { "id": "a1" } }],
                           "media": [{ "position": 1, "tracks": [{ "position": 1, "title": "Opening", "length": 200000 },
                                                                  { "position": 2, "title": "Middle" }] },
                                     { "position": 2, "tracks": [{ "position": 1, "title": "Bonus" }] }] }] }))
@@ -308,6 +317,7 @@ mod tests {
         let album = mb.album("rg1").await.unwrap();
         assert!(started.elapsed() >= Duration::from_millis(1000), "calls are spaced out");
         assert_eq!((album.release_id.as_str(), album.artist.as_str()), ("orig", "Band"));
+        assert_eq!(album.artist_id.as_deref(), Some("a1"));
         let t: Vec<(u32, u32, u32, &str)> =
             album.tracks.iter().map(|t| (t.number, t.disc, t.position, t.title.as_str())).collect();
         assert_eq!(t, [(1, 1, 1, "Opening"), (2, 1, 2, "Middle"), (3, 2, 1, "Bonus")]);

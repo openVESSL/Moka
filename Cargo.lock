@@ -1502,6 +1502,7 @@ dependencies = [
  "moka-metadata",
  "moka-net",
  "moka-parser",
+ "regex",
  "reqwest",
  "rust-embed",
  "serde",

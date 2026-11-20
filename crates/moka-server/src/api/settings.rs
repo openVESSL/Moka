@@ -2,7 +2,7 @@
 
 use axum::extract::State;
 use axum::{Json, Router, routing::get};
-use moka_core::Permissions;
+use moka_core::{AudioQuality, Permissions};
 use moka_metadata::{List, Tmdb};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/settings/catalog", get(get_catalog).put(put_catalog))
         .route("/settings/requests", get(get_requests).put(put_requests))
         .route("/settings/library", get(get_library).put(put_library))
+        .route("/settings/music", get(get_music).put(put_music))
         .route("/settings/jellyfin", get(get_jellyfin).put(put_jellyfin))
         .route("/settings/radarr", get(get_radarr).put(put_radarr))
         .route("/settings/playback", get(get_playback).put(put_playback))
@@ -148,6 +149,9 @@ pub struct LibrarySettingsBody {
     /// Folder shows are imported into. Empty until shows are wanted.
     #[serde(default)]
     pub shows_path: String,
+    /// Folder albums are imported into. Empty until music is wanted.
+    #[serde(default)]
+    pub music_path: String,
 }
 
 #[utoipa::path(get, path = "/api/v1/settings/library", tag = "settings",
@@ -159,7 +163,11 @@ pub async fn get_library(
     user.require(Permissions::ADMIN)?;
     let lib: crate::pipeline::LibrarySettings =
         moka_db::settings::get(&state.db, crate::pipeline::LibrarySettings::KEY).await?.unwrap_or_default();
-    Ok(Json(LibrarySettingsBody { movies_path: lib.movies_path, shows_path: lib.shows_path }))
+    Ok(Json(LibrarySettingsBody {
+        movies_path: lib.movies_path,
+        shows_path: lib.shows_path,
+        music_path: lib.music_path,
+    }))
 }
 
 /// Saves the library folder after checking the server can write to it.
@@ -173,16 +181,108 @@ pub async fn put_library(
     user.require(Permissions::ADMIN)?;
     let path = body.movies_path.trim().to_owned();
     let shows = body.shows_path.trim().to_owned();
+    let music = body.music_path.trim().to_owned();
     if path.is_empty() {
         return Err(ApiError::BadRequest("use a full folder path, like /data/movies".into()));
     }
-    for p in [&path, &shows].into_iter().filter(|p| !p.is_empty()) {
+    for p in [&path, &shows, &music].into_iter().filter(|p| !p.is_empty()) {
         writable_folder(p).await?;
     }
-    let lib = crate::pipeline::LibrarySettings { movies_path: path.clone(), shows_path: shows.clone() };
+    let lib = crate::pipeline::LibrarySettings {
+        movies_path: path.clone(),
+        shows_path: shows.clone(),
+        music_path: music.clone(),
+    };
     moka_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
     state.wake.notify_one();
-    Ok(Json(LibrarySettingsBody { movies_path: path, shows_path: shows }))
+    Ok(Json(LibrarySettingsBody { movies_path: path, shows_path: shows, music_path: music }))
+}
+
+/// Every audio format, best first.
+const AUDIO_FORMATS: [AudioQuality; 10] = [
+    AudioQuality::Flac24,
+    AudioQuality::Flac,
+    AudioQuality::Alac,
+    AudioQuality::Mp3_320,
+    AudioQuality::Mp3V0,
+    AudioQuality::Mp3_256,
+    AudioQuality::Aac,
+    AudioQuality::Opus,
+    AudioQuality::Mp3,
+    AudioQuality::Mp3Low,
+];
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AudioFormat {
+    /// e.g. `flac`, `mp3-320`
+    pub key: String,
+    pub label: String,
+}
+
+/// Which audio formats music downloads may have.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MusicProfileView {
+    /// Accepted format keys, best first.
+    pub qualities: Vec<String>,
+    pub min_seeders: u32,
+    /// Every format there is, best first.
+    pub formats: Vec<AudioFormat>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MusicProfileUpdate {
+    /// Accepted format keys, in any order; they are ranked best first.
+    pub qualities: Vec<String>,
+    pub min_seeders: u32,
+}
+
+fn music_view(p: &moka_decision::AudioProfile) -> MusicProfileView {
+    MusicProfileView {
+        qualities: p.qualities.iter().map(ToString::to_string).collect(),
+        min_seeders: p.min_seeders,
+        formats: AUDIO_FORMATS
+            .iter()
+            .map(|q| AudioFormat { key: q.to_string(), label: q.label().to_owned() })
+            .collect(),
+    }
+}
+
+#[utoipa::path(get, path = "/api/v1/settings/music", tag = "settings",
+    responses((status = 200, body = MusicProfileView)))]
+pub async fn get_music(
+    user: CurrentUser,
+    State(state): State<AppState>,
+) -> ApiResult<Json<MusicProfileView>> {
+    user.require(Permissions::ADMIN)?;
+    let p = crate::music::profile(&state).await.map_err(ApiError::Internal)?;
+    Ok(Json(music_view(&p)))
+}
+
+/// Saves the audio formats accepted for music, best first.
+#[utoipa::path(put, path = "/api/v1/settings/music", tag = "settings", request_body = MusicProfileUpdate,
+    responses((status = 200, body = MusicProfileView), (status = 400, description = "no or unknown format")))]
+pub async fn put_music(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(body): Json<MusicProfileUpdate>,
+) -> ApiResult<Json<MusicProfileView>> {
+    user.require(Permissions::ADMIN)?;
+    let mut wanted = Vec::new();
+    for key in &body.qualities {
+        let q: AudioQuality =
+            key.parse().map_err(|_| ApiError::BadRequest(format!("unknown audio format {key}")))?;
+        if q == AudioQuality::Unknown {
+            return Err(ApiError::BadRequest("pick known audio formats".into()));
+        }
+        wanted.push(q);
+    }
+    let qualities: Vec<AudioQuality> = AUDIO_FORMATS.iter().copied().filter(|q| wanted.contains(q)).collect();
+    if qualities.is_empty() {
+        return Err(ApiError::BadRequest("accept at least one audio format".into()));
+    }
+    let p = moka_decision::AudioProfile { qualities, min_seeders: body.min_seeders };
+    moka_db::settings::set(&state.db, crate::music::PROFILE_KEY, &p).await?;
+    Ok(Json(music_view(&p)))
 }
 
 async fn writable_folder(path: &str) -> ApiResult<()> {

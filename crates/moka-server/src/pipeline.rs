@@ -1,4 +1,5 @@
-//! Background work that moves a film (or an episode, see `series`) from "wanted" to "available":
+//! Background work that moves a film (or an episode, see `series`, or an album, see `music`)
+//! from "wanted" to "available":
 //! search indexers, pick a release, hand it to the download client, follow
 //! the download, and import the finished file into the library.
 //!
@@ -15,7 +16,9 @@ use moka_core::{Quality, TitleState};
 use moka_db::titles::Title;
 use moka_decision::{Candidate, Evaluated, Profile, SizeLimit, Target, Term};
 use moka_download::{ClientConfig, Kind, Status};
-use moka_indexers::{Capabilities, IndexerConfig, IndexerKind, MovieQuery, TvQuery, torrent::Payload};
+use moka_indexers::{
+    Capabilities, IndexerConfig, IndexerKind, MovieQuery, MusicQuery, TvQuery, torrent::Payload,
+};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
@@ -30,6 +33,9 @@ pub struct LibrarySettings {
     /// Folder shows are imported into.
     #[serde(default)]
     pub shows_path: String,
+    /// Folder albums are imported into.
+    #[serde(default)]
+    pub music_path: String,
 }
 
 impl LibrarySettings {
@@ -90,6 +96,9 @@ async fn tick(state: &AppState) -> anyhow::Result<bool> {
     }
     if let Err(e) = crate::series::tick(state).await {
         tracing::warn!(error = ?e, "episode search failed");
+    }
+    if let Err(e) = crate::music::tick(state).await {
+        tracing::warn!(error = ?e, "album search failed");
     }
     Ok(tracking || importing)
 }
@@ -164,6 +173,7 @@ fn indexer_config(i: &moka_db::connectors::Indexer) -> IndexerConfig {
 pub(crate) enum Query {
     Movie(MovieQuery),
     Tv(TvQuery),
+    Music(MusicQuery),
 }
 
 /// Asks every usable indexer for a film and evaluates what comes back.
@@ -171,6 +181,7 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
     match title.kind.as_str() {
         "movie" => {}
         "episode" => return crate::series::search_episode(state, title).await,
+        "album" => return crate::music::search_album(state, title).await,
         _ => bail!("Search a single episode, or let the background search find the season"),
     }
     let query = MovieQuery {
@@ -202,6 +213,20 @@ pub(crate) async fn search_with(
     target: Target,
 ) -> anyhow::Result<SearchResult> {
     let profile = load_profile(state, profile_id).await?;
+    let (candidates, indexer_errors) = gather(state, unit_id, &query).await?;
+    let evaluated = moka_decision::evaluate(&target, &profile, &candidates);
+    let result = SearchResult { at: now(), candidates, evaluated, indexer_errors };
+    state.searches.lock().expect("searches lock").insert(unit_id, result.clone());
+    Ok(result)
+}
+
+/// Asks every usable indexer and returns what they found (with blocklisted
+/// releases marked) and which indexers failed.
+pub(crate) async fn gather(
+    state: &AppState,
+    unit_id: i64,
+    query: &Query,
+) -> anyhow::Result<(Vec<Candidate>, Vec<(String, String)>)> {
     let all = moka_db::connectors::indexers(&state.db).await?;
     let usable: Vec<_> = all
         .into_iter()
@@ -219,9 +244,13 @@ pub(crate) async fn search_with(
         jobs.spawn(async move {
             let result = async {
                 let cfg = indexer_config(&idx);
-                // capabilities saved before TV search was read lack it: ask again
-                let stale = matches!(query, Query::Tv(_))
-                    && !idx.capabilities.as_deref().is_some_and(|c| c.contains("tv_search"));
+                // capabilities saved before TV or music search was read lack it: ask again
+                let knows = |field: &str| idx.capabilities.as_deref().is_some_and(|c| c.contains(field));
+                let stale = match query {
+                    Query::Movie(_) => false,
+                    Query::Tv(_) => !knows("tv_search"),
+                    Query::Music(_) => !knows("music_search"),
+                };
                 let caps = match idx
                     .capabilities
                     .as_deref()
@@ -240,6 +269,7 @@ pub(crate) async fn search_with(
                 match &query {
                     Query::Movie(q) => client.search_movie(&cfg, &caps, q).await,
                     Query::Tv(q) => client.search_tv(&cfg, &caps, q).await,
+                    Query::Music(q) => client.search_music(&cfg, &caps, q).await,
                 }
             }
             .await;
@@ -275,10 +305,7 @@ pub(crate) async fn search_with(
         }
     }
 
-    let evaluated = moka_decision::evaluate(&target, &profile, &candidates);
-    let result = SearchResult { at: now(), candidates, evaluated, indexer_errors };
-    state.searches.lock().expect("searches lock").insert(unit_id, result.clone());
-    Ok(result)
+    Ok((candidates, indexer_errors))
 }
 
 /// Pauses a failing indexer: growing waits for passing trouble, until fixed
@@ -313,7 +340,7 @@ pub async fn search_and_grab(state: &AppState, title: &Title) -> anyhow::Result<
         match best {
             Some(e) => {
                 let cand = res.candidates[e.candidate_index].clone();
-                grab(state, title.id, &cand, e.quality).await.map(|_| None)
+                grab(state, title.id, &cand, e.quality_key()).await.map(|_| None)
             }
             None => {
                 let found = res.candidates.len();
@@ -361,12 +388,13 @@ pub fn download_client(
         .clone()
 }
 
-/// Sends a release to the download client and records the grab.
+/// Sends a release to the download client and records the grab. `quality`
+/// is the key stored with the grab (`webdl-1080p`, `flac`).
 pub async fn grab(
     state: &AppState,
     title_id: i64,
     cand: &Candidate,
-    quality: Option<Quality>,
+    quality: Option<String>,
 ) -> anyhow::Result<()> {
     grab_covering(state, title_id, &[], cand, quality).await
 }
@@ -377,11 +405,11 @@ pub(crate) async fn grab_covering(
     title_id: i64,
     covered: &[i64],
     cand: &Candidate,
-    quality: Option<Quality>,
+    quality: Option<String>,
 ) -> anyhow::Result<()> {
-    // never two downloads in flight for one film
+    // never two downloads in flight for one title
     if moka_db::grabs::active(&state.db).await?.iter().any(|g| g.title_id == title_id) {
-        bail!("This film is already downloading");
+        bail!("This is already downloading");
     }
     let r = &cand.release;
     let torrent = r.protocol == moka_indexers::Protocol::Torrent;
@@ -434,7 +462,7 @@ pub(crate) async fn grab_covering(
             download_client_id: client_row.id,
             release_title: r.title.clone(),
             size_bytes: r.size_bytes.and_then(|s| i64::try_from(s).ok()),
-            quality: quality.map(|q| q.key()),
+            quality,
             info_hash: id,
         },
     )
@@ -559,10 +587,10 @@ async fn import_pending(state: &AppState) -> anyhow::Result<bool> {
         if g.status != "completed" {
             continue;
         }
-        let done = if t.kind == "movie" {
-            import(state, &t, &g).await
-        } else {
-            crate::series::import(state, &t, &g).await
+        let done = match t.kind.as_str() {
+            "movie" => import(state, &t, &g).await,
+            "album" => crate::music::import(state, &t, &g).await,
+            _ => crate::series::import(state, &t, &g).await,
         };
         match done {
             Ok(()) => {}

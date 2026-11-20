@@ -7,6 +7,7 @@ mod auth;
 mod config;
 mod error;
 mod jellyfin;
+mod music;
 mod notify;
 mod pipeline;
 mod radarr;

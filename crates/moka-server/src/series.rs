@@ -245,7 +245,9 @@ async fn try_unit(
             .filter(|id| wanted.contains(id) || unit.kind == "season")
             .collect();
         let cand = res.candidates[best.candidate_index].clone();
-        crate::pipeline::grab_covering(state, unit.id, &covered, &cand, best.quality).await.map(|_| None)
+        crate::pipeline::grab_covering(state, unit.id, &covered, &cand, best.quality_key())
+            .await
+            .map(|_| None)
     }
     .await;
     let reason = match outcome {

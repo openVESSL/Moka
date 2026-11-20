@@ -684,6 +684,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/music": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_music"];
+        /** Saves the audio formats accepted for music, best first. */
+        put: operations["put_music"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/playback": {
         parameters: {
             query?: never;
@@ -973,6 +990,11 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        AudioFormat: {
+            /** @description e.g. `flac`, `mp3-320` */
+            key: string;
+            label: string;
+        };
         AuthStatus: {
             /** @description True until the first admin account exists. */
             needs_setup: boolean;
@@ -1199,6 +1221,8 @@ export interface components {
         LibrarySettingsBody: {
             /** @description Folder films are imported into, as the server sees it. */
             movies_path: string;
+            /** @description Folder albums are imported into. Empty until music is wanted. */
+            music_path?: string;
             /** @description Folder shows are imported into. Empty until shows are wanted. */
             shows_path?: string;
         };
@@ -1265,6 +1289,21 @@ export interface components {
         MusicArtistPage: {
             albums: components["schemas"]["MusicAlbum"][];
             artist: components["schemas"]["MusicArtist"];
+        };
+        MusicProfileUpdate: {
+            /** Format: int32 */
+            min_seeders: number;
+            /** @description Accepted format keys, in any order; they are ranked best first. */
+            qualities: string[];
+        };
+        /** @description Which audio formats music downloads may have. */
+        MusicProfileView: {
+            /** @description Every format there is, best first. */
+            formats: components["schemas"]["AudioFormat"][];
+            /** Format: int32 */
+            min_seeders: number;
+            /** @description Accepted format keys, best first. */
+            qualities: string[];
         };
         MusicTrack: {
             /** Format: int32 */
@@ -1432,7 +1471,7 @@ export interface components {
             info_url?: string | null;
             /** Format: int64 */
             published_at?: number | null;
-            /** @description Quality key, e.g. `webdl-1080p`. */
+            /** @description Quality key, e.g. `webdl-1080p` or `flac`. */
             quality?: string | null;
             quality_label?: string | null;
             rejections: string[];
@@ -2854,6 +2893,55 @@ export interface operations {
                 };
             };
             /** @description folder not usable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_music: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicProfileView"];
+                };
+            };
+        };
+    };
+    put_music: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MusicProfileUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicProfileView"];
+                };
+            };
+            /** @description no or unknown format */
             400: {
                 headers: {
                     [name: string]: unknown;

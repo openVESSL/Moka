@@ -25,28 +25,7 @@ pub async fn cover(
     if !valid {
         return Err(ApiError::NotFound("cover"));
     }
-    let dir = state.config.cache_dir().join("images").join("covers");
-    let path = dir.join(format!("{mbid}.jpg"));
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(b) => b,
-        Err(_) => {
-            let url = moka_metadata::music::cover_url(&mbid, 500);
-            let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
-            if res.status().as_u16() == 404 {
-                return Err(ApiError::NotFound("cover"));
-            }
-            if !res.status().is_success() {
-                return Err(ApiError::Upstream(format!("cover host returned {}", res.status())));
-            }
-            let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
-            tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
-            let tmp = dir.join(format!(".{mbid}.part"));
-            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
-                let _ = tokio::fs::rename(&tmp, &path).await;
-            }
-            bytes
-        }
-    };
+    let bytes = cover_bytes(&state, &mbid).await?.ok_or(ApiError::NotFound("cover"))?;
     Ok((
         [
             (header::CONTENT_TYPE, "image/jpeg".to_owned()),
@@ -55,6 +34,31 @@ pub async fn cover(
         bytes,
     )
         .into_response())
+}
+
+/// An album's front cover, from the cache or fetched and cached. `None` when
+/// the Cover Art Archive has none.
+pub(crate) async fn cover_bytes(state: &AppState, mbid: &str) -> ApiResult<Option<Vec<u8>>> {
+    let dir = state.config.cache_dir().join("images").join("covers");
+    let path = dir.join(format!("{mbid}.jpg"));
+    if let Ok(b) = tokio::fs::read(&path).await {
+        return Ok(Some(b));
+    }
+    let url = moka_metadata::music::cover_url(mbid, 500);
+    let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
+    if res.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    if !res.status().is_success() {
+        return Err(ApiError::Upstream(format!("cover host returned {}", res.status())));
+    }
+    let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
+    let tmp = dir.join(format!(".{mbid}.part"));
+    if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, &path).await;
+    }
+    Ok(Some(bytes))
 }
 
 pub async fn image(

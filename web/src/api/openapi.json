@@ -1618,6 +1618,56 @@
         }
       }
     },
+    "/api/v1/settings/music": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_music",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MusicProfileView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Saves the audio formats accepted for music, best first.",
+        "operationId": "put_music",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MusicProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MusicProfileView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no or unknown format"
+          }
+        }
+      }
+    },
     "/api/v1/settings/playback": {
       "get": {
         "tags": [
@@ -2297,6 +2347,22 @@
           "user_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "AudioFormat": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "e.g. `flac`, `mp3-320`"
+          },
+          "label": {
+            "type": "string"
           }
         }
       },
@@ -3174,6 +3240,10 @@
             "type": "string",
             "description": "Folder films are imported into, as the server sees it."
           },
+          "music_path": {
+            "type": "string",
+            "description": "Folder albums are imported into. Empty until music is wanted."
+          },
           "shows_path": {
             "type": "string",
             "description": "Folder shows are imported into. Empty until shows are wanted."
@@ -3425,6 +3495,57 @@
           },
           "artist": {
             "$ref": "#/components/schemas/MusicArtist"
+          }
+        }
+      },
+      "MusicProfileUpdate": {
+        "type": "object",
+        "required": [
+          "qualities",
+          "min_seeders"
+        ],
+        "properties": {
+          "min_seeders": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "qualities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Accepted format keys, in any order; they are ranked best first."
+          }
+        }
+      },
+      "MusicProfileView": {
+        "type": "object",
+        "description": "Which audio formats music downloads may have.",
+        "required": [
+          "qualities",
+          "min_seeders",
+          "formats"
+        ],
+        "properties": {
+          "formats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudioFormat"
+            },
+            "description": "Every format there is, best first."
+          },
+          "min_seeders": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "qualities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Accepted format keys, best first."
           }
         }
       },
@@ -3949,7 +4070,7 @@
               "string",
               "null"
             ],
-            "description": "Quality key, e.g. `webdl-1080p`."
+            "description": "Quality key, e.g. `webdl-1080p` or `flac`."
           },
           "quality_label": {
             "type": [

@@ -101,6 +101,8 @@ pub mod webhooks;
         webhooks::test,
         settings::get_library,
         settings::put_library,
+        settings::get_music,
+        settings::put_music,
         settings::get_jellyfin,
         settings::put_jellyfin,
         settings::get_radarr,

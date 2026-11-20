@@ -285,7 +285,8 @@ pub async fn importing(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE state = 'importing' ORDER BY updated_at")).fetch_all(pool).await
 }
 
-/// Approves a requested show: its seasons and episodes become wanted too.
+/// Approves a requested show or album: its seasons and episodes, or its
+/// tracks, become wanted too.
 pub async fn approve_show_parts(pool: &Pool, show_id: i64) -> Result<(), Error> {
     sqlx::query(
         "UPDATE titles SET state = 'wanted', next_search_at = ?1, updated_at = ?1
@@ -554,6 +555,18 @@ pub async fn delete(pool: &Pool, id: i64) -> Result<(), Error> {
 }
 
 /// Films the background loop should search now.
+/// Wanted albums whose next search is due.
+pub async fn due_albums(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!(
+        "WHERE kind = 'album' AND state = 'wanted' AND monitored = 1 AND (next_search_at IS NULL OR next_search_at <= ?)
+         ORDER BY next_search_at LIMIT ?"
+    ))
+    .bind(now())
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn due_for_search(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!(
         "WHERE kind = 'movie' AND state = 'wanted' AND monitored = 1 AND (next_search_at IS NULL OR next_search_at <= ?)

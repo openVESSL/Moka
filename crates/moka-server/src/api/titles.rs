@@ -34,7 +34,7 @@ pub struct ReleaseView {
     pub size_bytes: Option<u64>,
     pub seeders: Option<u32>,
     pub published_at: Option<i64>,
-    /// Quality key, e.g. `webdl-1080p`.
+    /// Quality key, e.g. `webdl-1080p` or `flac`.
     pub quality: Option<String>,
     pub quality_label: Option<String>,
     pub accepted: bool,
@@ -71,8 +71,8 @@ fn view(r: Option<crate::pipeline::SearchResult>) -> ReleasesView {
                     size_bytes: c.release.size_bytes,
                     seeders: c.release.seeders,
                     published_at: c.release.published_at,
-                    quality: e.quality.map(|q| q.key()),
-                    quality_label: e.quality.map(|q| q.to_string()),
+                    quality: e.quality_key(),
+                    quality_label: e.quality_label(),
                     accepted: e.accepted(),
                     rejections: e.rejections.iter().map(|x| x.message.clone()).collect(),
                     beats_next_by: e.beats_next_by.map(str::to_owned),
@@ -128,7 +128,8 @@ pub async fn grab(
     let result = state.searches.lock().expect("searches lock").get(&id).cloned();
     let result = result.ok_or_else(|| ApiError::BadRequest("search first, then pick a release".into()))?;
     let cand = result.candidates.get(body.index).ok_or(ApiError::NotFound("release"))?.clone();
-    let quality = result.evaluated.iter().find(|e| e.candidate_index == body.index).and_then(|e| e.quality);
+    let quality =
+        result.evaluated.iter().find(|e| e.candidate_index == body.index).and_then(|e| e.quality_key());
     crate::pipeline::grab(&state, id, &cand, quality)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

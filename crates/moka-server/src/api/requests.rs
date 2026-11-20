@@ -180,7 +180,7 @@ pub async fn create(
             .map_err(|e| ApiError::Internal(e.into()))?;
         moka_db::titles::schedule_search(db, title.id, 0, None).await?;
     }
-    if auto && title.kind == "show" {
+    if auto && matches!(title.kind.as_str(), "show" | "album") {
         moka_db::titles::approve_show_parts(db, title.id).await?;
     }
 
@@ -246,7 +246,7 @@ pub async fn approve(
             .await
             .map_err(|e| ApiError::Internal(e.into()))?;
         moka_db::titles::schedule_search(db, t.id, 0, None).await?;
-        if t.kind == "show" {
+        if matches!(t.kind.as_str(), "show" | "album") {
             moka_db::titles::approve_show_parts(db, t.id).await?;
         }
         state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: None });

@@ -1,7 +1,8 @@
 //! Brings an existing film or show folder into the library: each film folder
 //! or file, or each show folder, is recognized (TMDB id in the name, else
 //! title + year search) and added as available. Albums are found as
-//! `Artist/Album (Year)` and matched on MusicBrainz. Files stay where they are.
+//! `Artist/Album (Year)` and matched on MusicBrainz, books as `Author/Title`
+//! and matched on Open Library. Files stay where they are.
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -80,9 +81,8 @@ pub fn start(state: &AppState, root: PathBuf, kind: RequestKind) -> bool {
             RequestKind::Movie => run(&state, &root).await,
             RequestKind::Show => run_shows(&state, &root).await,
             RequestKind::Album => run_albums(&state, &root).await,
-            RequestKind::Ebook | RequestKind::Audiobook => {
-                Err(anyhow::anyhow!("Books cannot be scanned yet"))
-            }
+            RequestKind::Ebook => run_books(&state, &root, false).await,
+            RequestKind::Audiobook => run_books(&state, &root, true).await,
         };
         if let Err(e) = done {
             state.scan.lock().expect("scan lock").error = Some(e.to_string());
@@ -430,6 +430,141 @@ async fn add_album(state: &AppState, albums: &[AlbumSummary], f: &FoundAlbum) ->
     Ok(added)
 }
 
+/// One book on disk: a folder `Author/Title (Year)`, or a file `Author/Title.epub`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FoundBook {
+    /// `Author/Title folder or file`, as the scan reports it.
+    pub name: String,
+    pub author: String,
+    pub title: String,
+    pub year: Option<i64>,
+    pub files: Vec<PathBuf>,
+}
+
+/// Book folders and loose book files, two levels under `root`.
+pub fn find_books(root: &Path, audiobook: bool) -> std::io::Result<Vec<FoundBook>> {
+    let exts = if audiobook { crate::books::AUDIOBOOK_EXTENSIONS } else { crate::books::EBOOK_EXTENSIONS };
+    let visible = |n: &str| !n.starts_with('.');
+    let mut out = Vec::new();
+    for author_dir in std::fs::read_dir(root)?.flatten() {
+        let author = author_dir.file_name().to_string_lossy().into_owned();
+        if !visible(&author) || !author_dir.path().is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(author_dir.path()) else { continue };
+        for e in entries.flatten() {
+            let entry = e.file_name().to_string_lossy().into_owned();
+            let path = e.path();
+            if !visible(&entry) {
+                continue;
+            }
+            let files = crate::music::files_with(&path, exts);
+            if files.is_empty() {
+                continue;
+            }
+            // "Title - Author.epub" or "Title (Year)"
+            let stem = if path.is_dir() {
+                entry.clone()
+            } else {
+                path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+            };
+            let stem = match stem.rsplit_once(" - ") {
+                Some((t, a)) if moka_parser::normalize_title(a) == moka_parser::normalize_title(&author) => {
+                    t.to_owned()
+                }
+                _ => stem,
+            };
+            let (title, year) = album_name(&stem);
+            out.push(FoundBook {
+                name: format!("{author}/{entry}"),
+                author: author.clone(),
+                title,
+                year,
+                files,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+async fn run_books(state: &AppState, root: &Path, audiobook: bool) -> anyhow::Result<()> {
+    let r = root.to_path_buf();
+    let books = tokio::task::spawn_blocking(move || find_books(&r, audiobook)).await??;
+    state.scan.lock().expect("scan lock").total = books.len();
+    for f in books {
+        let outcome = add_book(state, &f, audiobook).await;
+        let mut s = state.scan.lock().expect("scan lock");
+        s.done += 1;
+        match outcome {
+            Ok(true) => s.added += 1,
+            Ok(false) => s.already_known += 1,
+            Err(_) => s.unmatched.push(f.name.clone()),
+        }
+    }
+    Ok(())
+}
+
+/// The Open Library book with this title by this author; the same year is
+/// preferred, then the most edited one (the search's own order).
+fn pick_book<'a>(
+    found: &'a [moka_metadata::books::BookSummary],
+    f: &FoundBook,
+) -> Option<&'a moka_metadata::books::BookSummary> {
+    let norm = moka_parser::normalize_title;
+    let title = norm(&f.title);
+    let author = norm(&f.author);
+    found
+        .iter()
+        .filter(|b| {
+            let main = b.title.split([':', ';']).next().unwrap_or(&b.title);
+            (norm(&b.title) == title || norm(main) == title)
+                && b.authors.iter().any(|a| {
+                    let a = norm(a);
+                    a == author || a.split_whitespace().last() == author.split_whitespace().last()
+                })
+        })
+        .min_by_key(|b| f.year.is_some() && b.year != f.year)
+}
+
+/// Ok(true) new files added, Ok(false) all already known, Err not recognized.
+async fn add_book(state: &AppState, f: &FoundBook, audiobook: bool) -> anyhow::Result<bool> {
+    let db = &state.db;
+    let ol = state.books();
+    let query = format!("{} {}", f.title, f.author);
+    let found = state
+        .cached(format!("books-search:{}", query.to_lowercase()), Duration::from_secs(600), || {
+            ol.search(&query)
+        })
+        .await?;
+    let summary = pick_book(&found, f).ok_or_else(|| anyhow::anyhow!("no book named {}", f.title))?;
+    let new = crate::api::books::new_book(state, &summary.id).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    let kind = if audiobook { TitleKind::Audiobook } else { TitleKind::Ebook };
+    let book = moka_db::titles::upsert_book(db, &new, kind, TitleState::Wanted).await?;
+    let known = moka_db::library::files_for_title(db, book.id).await?;
+    let mut added = false;
+    for file in &f.files {
+        let path = file.to_string_lossy().into_owned();
+        if known.iter().any(|m| m.path == path) {
+            continue;
+        }
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let quality = if audiobook {
+            let q = moka_parser::audio_quality(&ext);
+            (q != moka_core::AudioQuality::Unknown).then(|| q.to_string())
+        } else {
+            Some(moka_core::EbookFormat::from_extension(&ext).to_string())
+        };
+        let size = tokio::fs::metadata(file).await.map(|m| m.len() as i64).unwrap_or(0);
+        moka_db::library::add_file(db, book.id, &path, size, quality.as_deref(), None).await?;
+        added = true;
+    }
+    if added {
+        moka_db::titles::mark_available(db, book.id).await?;
+    }
+    Ok(added)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -670,6 +805,91 @@ mod tests {
         run_albums(&state, &root).await.unwrap();
         let s = state.scan.lock().unwrap().clone();
         assert_eq!((s.added, s.already_known), (0, 2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn books_on_disk_become_available() {
+        let root = std::env::temp_dir().join(format!("moka-scan-books-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let write = |p: &str| {
+            let p = root.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        write("Frank Herbert/Dune (1965)/Dune.epub");
+        write("Frank Herbert/Dune (1965)/Dune.mobi");
+        write("Frank Herbert/Children of Dune - Frank Herbert.epub");
+        write("Frank Herbert/notes.txt");
+        write("Nobody Known/Unknown Book.epub");
+
+        let found = find_books(&root, false).unwrap();
+        let view: Vec<(&str, &str, Option<i64>, usize)> =
+            found.iter().map(|f| (f.name.as_str(), f.title.as_str(), f.year, f.files.len())).collect();
+        assert_eq!(
+            view,
+            [
+                ("Frank Herbert/Children of Dune - Frank Herbert.epub", "Children of Dune", None, 1),
+                ("Frank Herbert/Dune (1965)", "Dune", Some(1965), 2),
+                ("Nobody Known/Unknown Book.epub", "Unknown Book", None, 1),
+            ]
+        );
+        assert!(find_books(&root, true).unwrap().is_empty(), "no audio here");
+
+        let doc = |id: &str, title: &str| {
+            serde_json::json!({ "key": format!("/works/{id}"), "title": title, "author_name": ["Frank Herbert"],
+                "author_key": ["OL79034A"], "first_publish_year": 1965 })
+        };
+        let ol = Router::new()
+            .route(
+                "/search.json",
+                get(
+                    move |axum::extract::Query(q): axum::extract::Query<
+                        std::collections::HashMap<String, String>,
+                    >| async move {
+                        let docs = match q["q"].as_str() {
+                            "Dune Frank Herbert" | "key:/works/OL1W" => {
+                                serde_json::json!([doc("OL1W", "Dune"), doc("OL2W", "Dune Messiah")])
+                            }
+                            "Children of Dune Frank Herbert" | "key:/works/OL3W" => {
+                                serde_json::json!([doc("OL3W", "Children of Dune")])
+                            }
+                            _ => serde_json::json!([]),
+                        };
+                        Json(serde_json::json!({ "docs": docs }))
+                    },
+                ),
+            )
+            .route("/works/{id}", get(|| async { Json(serde_json::json!({})) }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, ol).await.unwrap() });
+
+        let db = moka_db::memory().await;
+        let config = crate::config::Config {
+            config_dir: root.clone(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: String::new(),
+        };
+        let state = AppState::new(db.clone(), config, Default::default());
+        state.set_books(moka_metadata::books::OpenLibrary::with_base_url(&base));
+
+        run_books(&state, &root, false).await.unwrap();
+        let s = state.scan.lock().unwrap().clone();
+        assert_eq!(
+            (s.total, s.added, s.unmatched.clone()),
+            (3, 2, vec!["Nobody Known/Unknown Book.epub".to_owned()])
+        );
+        let dune = moka_db::titles::by_olid(&db, TitleKind::Ebook, "OL1W").await.unwrap().unwrap();
+        assert_eq!(dune.state(), TitleState::Available);
+        let files = moka_db::library::files_for_title(&db, dune.id).await.unwrap();
+        let mut formats: Vec<_> = files.iter().filter_map(|f| f.quality.clone()).collect();
+        formats.sort();
+        assert_eq!(formats, ["epub", "mobi"]);
+
+        *state.scan.lock().unwrap() = ScanStatus::default();
+        run_books(&state, &root, false).await.unwrap();
+        assert_eq!(state.scan.lock().unwrap().already_known, 2);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

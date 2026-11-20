@@ -1656,7 +1656,8 @@ export interface components {
             /**
              * @description `movie` (default), `show` or `album`. Episodes of a new show that
              *     aired but are not on disk are not searched; new episodes are. Albums
-             *     are read as `Artist/Album (Year)`.
+             *     are read as `Artist/Album (Year)`; `ebook` and `audiobook` as
+             *     `Author/Title (Year)` or `Author/Title.epub`.
              */
             kind?: components["schemas"]["RequestKind"];
             /** @description Folder to scan. Defaults to the library's films, shows or music folder. */

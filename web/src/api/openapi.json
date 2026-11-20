@@ -4592,7 +4592,7 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "`movie` (default), `show` or `album`. Episodes of a new show that\naired but are not on disk are not searched; new episodes are. Albums\nare read as `Artist/Album (Year)`."
+            "description": "`movie` (default), `show` or `album`. Episodes of a new show that\naired but are not on disk are not searched; new episodes are. Albums\nare read as `Artist/Album (Year)`; `ebook` and `audiobook` as\n`Author/Title (Year)` or `Author/Title.epub`."
           },
           "path": {
             "type": [

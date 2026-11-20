@@ -15,9 +15,10 @@ const ACTION =
 /** Read in the browser (EPUB) and download, once the ebook is in the library. */
 function EbookActions({ titleId }: { titleId: number }) {
   const { data: files } = useQuery(titleFilesQuery(titleId));
-  const file = files?.[0];
+  const isEpub = (path: string) => /\.(epub|kepub)$/i.test(path);
+  const file = files?.find((f) => isEpub(f.path)) ?? files?.[0];
   if (!file) return null;
-  const epub = /\.(epub|kepub)$/i.test(file.path);
+  const epub = isEpub(file.path);
   return (
     <>
       {epub && (

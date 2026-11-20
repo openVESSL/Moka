@@ -354,7 +354,7 @@ export function ScanPanel() {
     refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
   });
   const start = useMutation({
-    mutationFn: (kind: "movie" | "show" | "album") => unwrap(api.POST("/api/v1/library/scan", { body: { kind } })),
+    mutationFn: (kind: "movie" | "show" | "album" | "ebook" | "audiobook") => unwrap(api.POST("/api/v1/library/scan", { body: { kind } })),
     onSuccess: (v) => qc.setQueryData(["library", "scan"], v),
   });
   useEffect(() => {
@@ -373,6 +373,12 @@ export function ScanPanel() {
         <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("album")}>
           Find music already on disk
         </button>
+        <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("ebook")}>
+          Find ebooks already on disk
+        </button>
+        <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("audiobook")}>
+          Find audiobooks already on disk
+        </button>
         {s && (s.running || s.done > 0) && (
           <span className="data text-sm text-muted">
             {s.done}/{s.total} checked · {s.added} added · {s.already_known} known · {s.unmatched.length} not recognized
@@ -387,7 +393,8 @@ export function ScanPanel() {
           <p className="mt-2 max-w-[65ch]">
             Rename films and shows to <span className="data">Title (Year)</span>, or add{" "}
             <span className="data">{"{tmdb-ID}"}</span>. Albums go in{" "}
-            <span className="data">Artist/Album (Year)</span>, named as on MusicBrainz. Then scan again.
+            <span className="data">Artist/Album (Year)</span>, named as on MusicBrainz. Books go in{" "}
+            <span className="data">Author/Title (Year)</span>, named as on Open Library. Then scan again.
           </p>
           <ul className="mt-2 data text-xs">
             {s.unmatched.map((n) => (

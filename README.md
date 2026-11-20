@@ -20,9 +20,9 @@ Working in development builds, not yet tested widely:
 - Music: catalog, album requests, release choice by audio format, import into `Artist/Album (Year)/` with the cover, and playback in the browser.
 - Books: catalog from Open Library, ebook and audiobook requests, release choice by format, import into `Author/Title (Year)/`, an EPUB reader and audiobook playback in the browser that remember where you stopped.
 
-- Phone and TV apps made for Jellyfin can connect to `http://your-server:8484/jellyfin` to browse and play films and shows (early: tested with the official client library, not yet with every app).
+- Phone and TV apps made for Jellyfin can connect to `http://your-server:8484/jellyfin` to browse and play films, shows and music (early: tested with the official client library, not yet with every app).
 
-Planned: music and books in those apps, a new interface.
+Planned: books in those apps, a new interface.
 
 ## Stack
 

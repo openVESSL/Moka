@@ -44,10 +44,16 @@ async fn author_of(state: &AppState, book: &Title) -> anyhow::Result<Title> {
 /// Asks every usable indexer for a book and evaluates what comes back.
 pub async fn search_book(state: &AppState, book: &Title) -> anyhow::Result<SearchResult> {
     let author = author_of(state, book).await?;
+    // a book Open Library lists without an author is looked for by title alone
+    let name = if author.olid.as_deref().is_some_and(|o| o.starts_with("unknown:")) {
+        String::new()
+    } else {
+        author.title.clone()
+    };
     let audiobook = book.kind == "audiobook";
-    let query = BookQuery { author: author.title.clone(), title: book.title.clone(), audiobook };
+    let query = BookQuery { author: name.clone(), title: book.title.clone(), audiobook };
     let (candidates, indexer_errors) = crate::pipeline::gather(state, book.id, &Query::Book(query)).await?;
-    let target = BookTarget { author: author.title, title: book.title.clone(), audiobook };
+    let target = BookTarget { author: name, title: book.title.clone(), audiobook };
     let evaluated = moka_decision::evaluate_book(&target, &profile(state).await?, &candidates);
     let result = SearchResult { at: now(), candidates, evaluated, indexer_errors };
     state.searches.lock().expect("searches lock").insert(book.id, result.clone());
@@ -77,6 +83,23 @@ fn best_ebook(files: &[(PathBuf, u64)], profile: &BookProfile) -> Option<PathBuf
             (profile.rank_of(f).unwrap_or(usize::MAX), std::cmp::Reverse(f), std::cmp::Reverse(*size))
         })
         .map(|(p, _)| p.clone())
+}
+
+/// Names for an audiobook's files: `Title.m4b` for one file, else every
+/// part numbered in order (`001 - 01 Chapter.mp3`), so parts with the same
+/// name in different folders (`CD1/01.mp3`, `CD2/01.mp3`) stay apart.
+fn part_names(files: &[PathBuf], title: &str) -> Vec<String> {
+    if let [only] = files {
+        return vec![sanitize(&format!("{title}.{}", extension(only)))];
+    }
+    files
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            sanitize(&format!("{:03} - {name}", i + 1))
+        })
+        .collect()
 }
 
 /// Copies or links files into `dir`, each under the name given, and returns
@@ -140,16 +163,9 @@ pub async fn import(state: &AppState, book: &Title, g: &moka_db::grabs::Grab) ->
         if found.is_empty() {
             return Err(ImportError::Failed("No audio file in the download".into()));
         }
-        match found.as_slice() {
-            [(only, _)] => vec![(only.clone(), sanitize(&format!("{}.{}", book.title, extension(only))))],
-            many => many
-                .iter()
-                .map(|(p, _)| {
-                    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    (p.clone(), sanitize(&name))
-                })
-                .collect(),
-        }
+        let files: Vec<PathBuf> = found.into_iter().map(|(p, _)| p).collect();
+        let names = part_names(&files, &book.title);
+        files.into_iter().zip(names).collect()
     } else {
         let profile = profile(state).await.map_err(|e| ImportError::Wait(e.to_string()))?;
         let best = best_ebook(&found, &profile)
@@ -210,6 +226,14 @@ async fn save_cover(state: &AppState, book: &Title, dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audiobook_parts_keep_apart() {
+        let files: Vec<PathBuf> =
+            ["/d/CD1/01.mp3", "/d/CD1/02.mp3", "/d/CD2/01.mp3"].iter().map(PathBuf::from).collect();
+        assert_eq!(part_names(&files, "Dune"), ["001 - 01.mp3", "002 - 02.mp3", "003 - 01.mp3"]);
+        assert_eq!(part_names(&[PathBuf::from("/d/book.M4B")], "Dune"), ["Dune.m4b"]);
+    }
 
     #[test]
     fn keeps_the_best_ebook_format() {

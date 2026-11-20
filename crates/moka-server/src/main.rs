@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
 
 /// Same-origin only. `blob:` is needed for HLS playback, wasm for the subtitle renderer.
 const CSP: &str = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; \
-    script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; \
+    script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; \
     connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 pub fn app(state: AppState) -> axum::Router {

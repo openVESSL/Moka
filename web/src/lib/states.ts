@@ -1,4 +1,4 @@
-/** How each title state is named and which tape it gets. */
+/** How each title state is named and which color it gets. */
 export type TitleState =
   | "requested"
   | "wanted"
@@ -29,9 +29,9 @@ export const STATE_HINT: Record<TitleState, string> = {
   available: "Ready to play.",
 };
 
-export type Tape = "requested" | "wanted" | "working" | "available";
+export type StateTone = "requested" | "wanted" | "working" | "available";
 
-export function tapeFor(state: string): Tape {
+export function toneFor(state: string): StateTone {
   switch (state) {
     case "requested":
       return "requested";

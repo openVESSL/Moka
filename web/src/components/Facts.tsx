@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-export type SlateField = { label: string; value: ReactNode; mono?: boolean };
+export type Fact = { label: string; value: ReactNode; mono?: boolean };
 
 /** A row of small labelled facts. Fields with no value are left out. */
-export function SlateFields({ fields, className = "" }: { fields: SlateField[]; className?: string }) {
+export function Facts({ fields, className = "" }: { fields: Fact[]; className?: string }) {
   const shown = fields.filter((f) => f.value !== undefined && f.value !== null && f.value !== "");
   if (!shown.length) return null;
   return (

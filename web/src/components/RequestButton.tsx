@@ -2,11 +2,11 @@ import { Check, Plus } from "lucide-react";
 import type { Schemas } from "../api/client";
 import { useRequestFilm, type RequestKind } from "../api/queries";
 import { STATE_HINT, isTitleState } from "../lib/states";
-import { Tape } from "./Tape";
+import { StateBadge } from "./StateBadge";
 
 /**
  * The one action on a film or show. Unknown films get the accent button; known ones
- * show their tape and what happens next.
+ * show their state and what happens next.
  */
 export function RequestButton({
   tmdbId,
@@ -32,7 +32,7 @@ export function RequestButton({
           </span>
         ) : (
           <>
-            <Tape state={state} />
+            <StateBadge state={state} />
             <span className="text-sm text-muted">{isTitleState(state) ? STATE_HINT[state] : null}</span>
           </>
         )}

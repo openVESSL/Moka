@@ -13,7 +13,7 @@ import {
   type MediaKind,
 } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
-import { PosterRow, Roll, RollSkeleton, type RollItem } from "../components/Roll";
+import { PosterRow, PosterGrid, PosterGridSkeleton, type PosterItem } from "../components/Posters";
 
 const KINDS: { id: MediaKind; label: string }[] = [
   { id: "movie", label: "Films" },
@@ -26,7 +26,7 @@ const PILL =
 const listLabel = (id: DiscoverList, kind: MediaKind) =>
   kind === "show" && id === "now_playing" ? "On the air" : DISCOVER_LISTS.find((l) => l.id === id)!.label;
 
-const toItems = (results: CatalogItem[], kind: MediaKind): RollItem[] =>
+const toItems = (results: CatalogItem[], kind: MediaKind): PosterItem[] =>
   results.map((m) => ({
     key: m.tmdb_id,
     tmdbId: m.tmdb_id,
@@ -81,7 +81,7 @@ export function DiscoverPage({ list, kind }: { list?: DiscoverList; kind: MediaK
           </div>
         </div>
         <h1 className="sr-only">{listLabel(list, kind)}</h1>
-        {data ? <Roll items={toItems(data.results, kind)} /> : <RollSkeleton />}
+        {data ? <PosterGrid items={toItems(data.results, kind)} /> : <PosterGridSkeleton />}
       </main>
     );
   }
@@ -238,9 +238,9 @@ function Found({ q, kind }: { q: string; kind: MediaKind }) {
   return (
     <>
       {isFetching && !data ? (
-        <RollSkeleton count={12} />
+        <PosterGridSkeleton count={12} />
       ) : items.length ? (
-        <Roll
+        <PosterGrid
          
           items={items.map((m) => ({
             key: m.tmdb_id,

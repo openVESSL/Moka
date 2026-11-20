@@ -4,8 +4,8 @@ import { useState } from "react";
 import { api, img, unwrap, type Schemas } from "../api/client";
 import { episodesQuery, meQuery, showQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
-import { SlateFields } from "../components/SlateFields";
-import { Tape } from "../components/Tape";
+import { Facts } from "../components/Facts";
+import { StateBadge } from "../components/StateBadge";
 import { TitlePanel } from "../components/TitlePanel";
 import { runtime } from "../lib/states";
 import { CatalogError } from "./discover";
@@ -46,7 +46,7 @@ export function ShowPage({ tmdbId }: { tmdbId: number }) {
               <p className="mt-2 text-muted italic">{s.original_title}</p>
             )}
             {s.tagline && <p className="mt-4 max-w-[52ch] text-lg text-muted">{s.tagline}</p>}
-            <SlateFields
+            <Facts
               className="mt-7 max-w-3xl"
               fields={[
                 { label: "Year", value: s.year, mono: true },
@@ -188,7 +188,7 @@ function Episodes({ titleId }: { titleId: number }) {
                     {!e.monitored ? (
                       <span className="text-xs text-faint">Not monitored</span>
                     ) : (
-                      e.state !== "available" && <Tape state={e.state} />
+                      e.state !== "available" && <StateBadge state={e.state} />
                     )}
                     <ChevronDown
                       aria-hidden

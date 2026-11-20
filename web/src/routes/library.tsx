@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { albumsQuery, showsQuery, titlesQuery } from "../api/queries";
-import { Roll, RollSkeleton } from "../components/Roll";
+import { PosterGrid, PosterGridSkeleton } from "../components/Posters";
 
 const GROUPS = [
   { title: "In your library", states: ["available"] },
@@ -21,7 +21,7 @@ export function LibraryPage() {
       <h1 className="text-3xl font-bold">Library</h1>
       {isPending ? (
         <div className="mt-10">
-          <RollSkeleton count={12} />
+          <PosterGridSkeleton count={12} />
         </div>
       ) : titles.length === 0 ? (
         <div className="mt-10 max-w-[52ch]">
@@ -45,7 +45,7 @@ export function LibraryPage() {
                 {g.title}
                 <span className="data text-sm font-normal text-faint">{items.length}</span>
               </h2>
-              <Roll
+              <PosterGrid
                 items={items.map((t) => ({
                   key: t.id,
                   tmdbId: t.tmdb_id,

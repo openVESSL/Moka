@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Play, Search } from "lucide-react";
 import { api, unwrap, type Schemas } from "../api/client";
 import { STATE_HINT, isTitleState } from "../lib/states";
-import { Tape } from "./Tape";
+import { StateBadge } from "./StateBadge";
 
 const MANAGE_LIBRARY = 16;
 const ADMIN = 1;
@@ -15,9 +15,9 @@ function size(bytes?: number | null) {
 }
 
 /**
- * Where a film stands locally: its tape, what happens next, the file to
- * play, and the last search laid out like a camera report with the chosen
- * take circled and every other take annotated.
+ * Where a film stands locally: its state, what happens next, the file to
+ * play, and the last search with the chosen release marked and a reason
+ * next to every other one.
  */
 export function TitlePanel({ titleId, permissions }: { titleId: number; permissions: number }) {
   const qc = useQueryClient();
@@ -55,7 +55,7 @@ export function TitlePanel({ titleId, permissions }: { titleId: number; permissi
         <h2 id="report" className="sr-only">
           Status
         </h2>
-        <Tape state={title.state} className="-rotate-2" />
+        <StateBadge state={title.state} />
         <p className="min-w-0 flex-1 text-muted">
           {title.state_reason ?? (isTitleState(title.state) ? STATE_HINT[title.state] : "")}
         </p>

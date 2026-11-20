@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { img } from "../api/client";
 import { meQuery, requestsQuery, useDecideRequest } from "../api/queries";
-import { Tape } from "../components/Tape";
+import { StateBadge } from "../components/StateBadge";
 import { ago } from "../lib/states";
 
 const FILTERS = [
@@ -12,7 +12,7 @@ const FILTERS = [
 ] as const;
 type Filter = (typeof FILTERS)[number]["id"];
 
-/** Requests laid out like a camera report: one ruled line per film. */
+/** Requests, one line per title. */
 export function RequestsPage({ filter }: { filter: Filter }) {
   const { data: me } = useQuery(meQuery);
   const canManage = !!me && (me.permissions & 3) !== 0;
@@ -84,7 +84,7 @@ export function RequestsPage({ filter }: { filter: Filter }) {
                 {canManage && <td className="hidden py-3 pr-4 text-muted sm:table-cell">{r.requested_by}</td>}
                 <td className="hidden py-3 pr-4 data text-sm text-faint md:table-cell">{ago(r.created_at)}</td>
                 <td className="py-3 pr-4">
-                  <Tape state={r.title_state} className="-rotate-2" />
+                  <StateBadge state={r.title_state} />
                   {r.note && <p className="mt-1 text-xs text-faint">{r.note}</p>}
                 </td>
                 {canManage && filter === "pending" && (

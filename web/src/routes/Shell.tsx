@@ -4,7 +4,7 @@ import { House, Inbox, Info, Library, LogOut, Menu, Plug, Search, Settings, X, t
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { meQuery, titlesQuery } from "../api/queries";
-import { Tape } from "../components/Tape";
+import { StateBadge } from "../components/StateBadge";
 import { Wordmark } from "../components/Wordmark";
 
 const ADMIN = 1;
@@ -136,7 +136,7 @@ function Activity({ progress }: { progress: Progress }) {
       className="mb-2 block rounded-xl border border-line bg-white/[0.03] px-3.5 py-3 text-sm transition-colors hover:border-line-strong"
     >
       <div className="flex items-center justify-between gap-2">
-        <Tape state={first.state} />
+        <StateBadge state={first.state} />
         {p && <span className="data text-xs text-muted">{Math.round(p.progress * 100)}%</span>}
       </div>
       <p className="mt-1.5 truncate font-medium">{first.title}</p>

@@ -2,9 +2,9 @@ import { Link } from "@tanstack/react-router";
 import { Check, ChevronLeft, ChevronRight, Film } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 import { cover, img } from "../api/client";
-import { Tape } from "./Tape";
+import { StateBadge } from "./StateBadge";
 
-export type RollItem = {
+export type PosterItem = {
   key: string | number;
   tmdbId?: number | null;
   title: string;
@@ -20,12 +20,12 @@ const GRID =
   "grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-7 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]";
 
 /** A poster grid. Titles on the way carry a state badge; ones in the library a check. */
-export function Roll({ items }: { items: RollItem[] }) {
+export function PosterGrid({ items }: { items: PosterItem[] }) {
   return (
     <ol className={GRID}>
       {items.map((it) => (
         <li key={it.key}>
-          <RollCell item={it} />
+          <PosterCell item={it} />
         </li>
       ))}
     </ol>
@@ -33,7 +33,7 @@ export function Roll({ items }: { items: RollItem[] }) {
 }
 
 /** One horizontal row of posters with a title, scrolled sideways (arrows on wide screens). */
-export function PosterRow({ title, action, items }: { title: string; action?: ReactNode; items?: RollItem[] }) {
+export function PosterRow({ title, action, items }: { title: string; action?: ReactNode; items?: PosterItem[] }) {
   const scroller = useRef<HTMLOListElement>(null);
   const scroll = (dir: 1 | -1) =>
     scroller.current?.scrollBy({ left: dir * scroller.current.clientWidth * 0.85, behavior: "smooth" });
@@ -63,7 +63,7 @@ export function PosterRow({ title, action, items }: { title: string; action?: Re
         {items
           ? items.map((it) => (
               <li key={it.key} className="w-36 shrink-0 snap-start sm:w-40">
-                <RollCell item={it} />
+                <PosterCell item={it} />
               </li>
             ))
           : Array.from({ length: 10 }, (_, i) => (
@@ -76,7 +76,7 @@ export function PosterRow({ title, action, items }: { title: string; action?: Re
   );
 }
 
-function RollCell({ item }: { item: RollItem }) {
+function PosterCell({ item }: { item: PosterItem }) {
   const square = item.kind === "album";
   const inner = (
     <>
@@ -100,7 +100,7 @@ function RollCell({ item }: { item: RollItem }) {
           aria-hidden
           className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
         />
-        {item.state && item.state !== "available" && <Tape state={item.state} className="absolute top-2 left-2" />}
+        {item.state && item.state !== "available" && <StateBadge state={item.state} className="absolute top-2 left-2" />}
         {item.state === "available" && (
           <span
             className="absolute top-2 right-2 grid size-5 place-items-center rounded-full bg-state-available text-black shadow"
@@ -139,7 +139,7 @@ function RollCell({ item }: { item: RollItem }) {
   );
 }
 
-export function RollSkeleton({ count = 18 }: { count?: number }) {
+export function PosterGridSkeleton({ count = 18 }: { count?: number }) {
   return (
     <div aria-hidden className={GRID}>
       {Array.from({ length: count }, (_, i) => (

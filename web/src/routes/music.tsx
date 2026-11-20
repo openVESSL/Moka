@@ -4,8 +4,8 @@ import { Disc3 } from "lucide-react";
 import { cover } from "../api/client";
 import { albumQuery, artistQuery, meQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
-import { Roll } from "../components/Roll";
-import { SlateFields } from "../components/SlateFields";
+import { PosterGrid } from "../components/Posters";
+import { Facts } from "../components/Facts";
 import { TitlePanel } from "../components/TitlePanel";
 
 function minutes(seconds?: number | null) {
@@ -19,7 +19,7 @@ export function ArtistPage({ mbid }: { mbid: string }) {
   if (isPending) return <div className="h-[40vh] animate-pulse bg-raised/50" />;
   const studio = data.albums.filter((a) => a.studio);
   const other = data.albums.filter((a) => !a.studio);
-  const roll = (albums: typeof data.albums) =>
+  const toItems = (albums: typeof data.albums) =>
     albums.map((a) => ({
       key: a.mbid,
       title: a.title,
@@ -41,14 +41,14 @@ export function ArtistPage({ mbid }: { mbid: string }) {
         <h2 id="albums" className="mb-3 text-base font-semibold">
           Albums
         </h2>
-        {studio.length ? <Roll items={roll(studio)} /> : <p className="text-muted">No studio albums listed.</p>}
+        {studio.length ? <PosterGrid items={toItems(studio)} /> : <p className="text-muted">No studio albums listed.</p>}
       </section>
       {other.length > 0 && (
         <section aria-labelledby="other" className="mt-8">
           <h2 id="other" className="mb-3 text-base font-semibold">
             Live, compilations and more
           </h2>
-          <Roll items={roll(other)} />
+          <PosterGrid items={toItems(other)} />
         </section>
       )}
     </main>
@@ -86,7 +86,7 @@ export function AlbumPage({ mbid }: { mbid: string }) {
           ) : (
             <p className="mt-3 text-lg text-muted">{a.artist}</p>
           )}
-          <SlateFields
+          <Facts
             className="mt-7 max-w-3xl"
             fields={[
               { label: "Year", value: a.year, mono: true },

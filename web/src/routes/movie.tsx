@@ -3,8 +3,8 @@ import { ArrowUpRight } from "lucide-react";
 import { img } from "../api/client";
 import { meQuery, movieQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
-import { Roll } from "../components/Roll";
-import { SlateFields } from "../components/SlateFields";
+import { PosterGrid } from "../components/Posters";
+import { Facts } from "../components/Facts";
 import { TitlePanel } from "../components/TitlePanel";
 import { runtime } from "../lib/states";
 import { CatalogError } from "./discover";
@@ -45,7 +45,7 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
               <p className="mt-2 text-muted italic">{m.original_title}</p>
             )}
             {m.tagline && <p className="mt-4 max-w-[52ch] text-lg text-muted">{m.tagline}</p>}
-            <SlateFields
+            <Facts
               className="mt-7 max-w-3xl"
               fields={[
                 { label: "Director", value: m.directors.slice(0, 2).join(", ") },
@@ -108,7 +108,7 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
           <h2 id="more" className="mb-8 text-lg font-semibold">
             If you liked this
           </h2>
-          <Roll
+          <PosterGrid
            
             items={m.recommendations.map((r) => ({
               key: r.tmdb_id,

@@ -6,6 +6,7 @@
 //! GUIDs, seconds become ticks (1 s = 10,000,000), names are PascalCase.
 //! Paths are matched without regard to case, as the apps expect.
 
+pub mod discovery;
 #[cfg(test)]
 mod flow;
 mod items;

@@ -15,6 +15,10 @@ services:
     user: "1000:1000"
     ports:
       - "8484:8484"
+    # Phone and TV apps made for Jellyfin connect to http://<server>:8484/jellyfin.
+    # For them to find the server on their own, use the host network instead of
+    # the ports above (network broadcasts do not reach a bridged container):
+    # network_mode: host
     volumes:
       - ./config:/config
       - /srv/media:/data

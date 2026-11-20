@@ -33,6 +33,6 @@ ENV MOKA_CONFIG_DIR=/config \
     MOKA_PORT=8484 \
     RUST_LOG=info,sqlx=warn
 VOLUME ["/config"]
-EXPOSE 8484
+EXPOSE 8484 7359/udp
 USER moka
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/moka"]

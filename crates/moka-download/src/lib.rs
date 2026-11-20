@@ -221,14 +221,17 @@ impl Qbittorrent {
             .form(&form)
             .send()
             .await?;
+        // up to 5.0: 200 with "Ok." or "Fails."; newer: 204, or 401 for wrong credentials
         match res.status().as_u16() {
-            200 => {}
+            200 => {
+                if res.text().await?.trim() != "Ok." {
+                    return Err(Error::Auth);
+                }
+            }
+            204 => {}
+            401 => return Err(Error::Auth),
             403 => return Err(Error::Banned),
             s => return Err(Error::Status(s)),
-        }
-        // wrong credentials still answer 200, with "Fails."
-        if res.text().await?.trim() != "Ok." {
-            return Err(Error::Auth);
         }
         *self.logged_in.lock().await = true;
         Ok(())
@@ -314,12 +317,20 @@ impl Qbittorrent {
     }
 }
 
+/// Older versions answer "Ok." or "Fails."; newer ones a JSON count, and
+/// 409 when the torrent is already there (which is fine: it is added).
 async fn check_added(res: reqwest::Response) -> Result<(), Error> {
     let status = res.status().as_u16();
     let body = res.text().await.unwrap_or_default();
+    let refused = |body: &str| {
+        let v: serde_json::Value = serde_json::from_str(body).ok()?;
+        let n = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        Some(n("failure_count") > 0 && n("success_count") == 0 && n("pending_count") == 0)
+    };
     match (status, body.trim()) {
         (200, "Fails.") => Err(Error::Rejected),
-        (200, _) => Ok(()),
+        (200 | 202, b) if refused(b) == Some(true) => Err(Error::Rejected),
+        (200 | 202 | 204 | 409, _) => Ok(()),
         (415, _) => Err(Error::Rejected),
         (s, _) => Err(Error::Status(s)),
     }
@@ -457,6 +468,47 @@ mod tests {
 
         assert_eq!(list[2].status, Status::Warning);
         assert!(list[2].message.as_deref().unwrap().contains("stalled"));
+    }
+
+    /// qBittorrent 5.1 and later: 204 on sign-in, 401 for a wrong password,
+    /// a JSON count when adding, 409 when the torrent is already there.
+    #[tokio::test]
+    async fn newer_versions_answer_differently() {
+        let app = Router::new()
+            .route(
+                "/api/v2/auth/login",
+                post(|Form(f): Form<HashMap<String, String>>| async move {
+                    if f.get("password").map(String::as_str) == Some("secret") {
+                        ([("set-cookie", "SID=new; path=/")], StatusCode::NO_CONTENT).into_response()
+                    } else {
+                        StatusCode::UNAUTHORIZED.into_response()
+                    }
+                }),
+            )
+            .route("/api/v2/app/version", get(|| async { "v5.3.0" }))
+            .route("/api/v2/torrents/createCategory", post(|| async { StatusCode::CONFLICT }))
+            .route(
+                "/api/v2/torrents/add",
+                post(|body: String| async move {
+                    if body.contains("again") {
+                        (StatusCode::CONFLICT, "Conflict").into_response()
+                    } else if body.contains("bad") {
+                        r#"{"added_torrent_ids":[],"failure_count":1,"pending_count":0,"success_count":0}"#.into_response()
+                    } else {
+                        r#"{"added_torrent_ids":["abc"],"failure_count":0,"pending_count":0,"success_count":1}"#.into_response()
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        assert!(matches!(client(&base, "nope").test().await, Err(Error::Auth)));
+        let q = client(&base, "secret");
+        assert_eq!(q.test().await.unwrap(), "v5.3.0");
+        q.add_magnet("magnet:?xt=urn:btih:abc").await.unwrap();
+        q.add_magnet("magnet:?xt=urn:btih:again").await.unwrap();
+        assert!(matches!(q.add_magnet("magnet:?xt=urn:btih:bad").await, Err(Error::Rejected)));
     }
 
     #[tokio::test]

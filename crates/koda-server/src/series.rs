@@ -18,6 +18,30 @@ use crate::state::AppState;
 /// Seasons searched per pass, like films: indexers have request limits.
 const SEASONS_PER_PASS: usize = 3;
 
+/// Runs forever: refreshes every show from the catalog twice a day, so new
+/// episodes and air dates arrive and get searched.
+pub async fn run(state: AppState) {
+    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    loop {
+        let shows = koda_db::titles::shows(&state.db).await.unwrap_or_default();
+        for show in shows.iter().filter(|s| s.state() != TitleState::Requested) {
+            let Some(tmdb_id) = show.tmdb_id else { continue };
+            let fresh = match crate::api::catalog::new_show(&state, tmdb_id).await {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::warn!(show = %show.title, error = %e, "show refresh failed");
+                    continue;
+                }
+            };
+            if let Err(e) = koda_db::titles::upsert_show(&state.db, &fresh, TitleState::Wanted).await {
+                tracing::warn!(show = %show.title, error = %e, "show refresh failed");
+            }
+        }
+        state.wake.notify_one();
+        tokio::time::sleep(std::time::Duration::from_secs(12 * 3600)).await;
+    }
+}
+
 pub async fn tick(state: &AppState) -> anyhow::Result<()> {
     let due = koda_db::titles::due_episodes(&state.db, 50).await?;
     let mut seen = HashSet::new();

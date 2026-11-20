@@ -39,6 +39,8 @@ the steps to migrate.
 - A show's state follows its episodes (on the way, in the library), and each
   episode on the show page opens its own status, player, release search
   and grab.
+- Shows are refreshed from the catalog twice a day: new episodes and air
+  dates arrive on their own and are searched once they air.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(state.streams.clone().reap());
     tokio::spawn(jellyfin::run(state.clone()));
     tokio::spawn(radarr::run(state.clone()));
+    tokio::spawn(series::run(state.clone()));
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");

@@ -124,7 +124,8 @@ pub async fn upsert_movie(pool: &Pool, t: &NewTitle, state: TitleState) -> Resul
 }
 
 /// Inserts a show with its seasons and episodes. Parts that already exist
-/// keep their state, so calling it again only adds new seasons and episodes.
+/// keep their state and get the new names, air dates and images, so calling
+/// it again refreshes the show and adds new seasons and episodes.
 /// Specials (season 0) are not monitored.
 pub async fn upsert_show(pool: &Pool, s: &NewShow, state: TitleState) -> Result<Title, Error> {
     let profile: Option<i64> =
@@ -186,7 +187,11 @@ async fn insert_part(
             original_title, year, overview, runtime_minutes, release_date, poster_path, backdrop_path,
             metadata_json, state, quality_profile_id, monitored, next_search_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO NOTHING",
+         ON CONFLICT(kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+            title = excluded.title, overview = excluded.overview, year = excluded.year,
+            runtime_minutes = excluded.runtime_minutes, release_date = excluded.release_date,
+            poster_path = COALESCE(excluded.poster_path, poster_path),
+            backdrop_path = COALESCE(excluded.backdrop_path, backdrop_path)",
     )
     .bind(kind.as_str())
     .bind(parent)
@@ -539,11 +544,13 @@ mod tests {
         // a new episode later: only it is added, the rest keep their state
         transition(&pool, eps[2].id, TitleState::Searching, None).await.unwrap();
         show.seasons[1].episodes.push(NewEpisode { title: part(113, "Ep 3"), number: 3 });
+        show.seasons[1].episodes[0].title.release_date = Some("2011-04-17".into());
         let b = upsert_show(&pool, &show, TitleState::Wanted).await.unwrap();
         assert_eq!(a.id, b.id);
         let eps = episodes_of_show(&pool, a.id).await.unwrap();
         assert_eq!(eps.len(), 5);
         assert_eq!(eps[2].state(), TitleState::Searching);
+        assert_eq!(eps[2].release_date.as_deref(), Some("2011-04-17"), "air dates are refreshed");
         assert_eq!(shows(&pool).await.unwrap().len(), 1);
 
         let asked = NewShow {

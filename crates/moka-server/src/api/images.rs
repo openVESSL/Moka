@@ -122,6 +122,33 @@ pub(crate) async fn cover_bytes(state: &AppState, mbid: &str) -> ApiResult<Optio
     Ok(Some(bytes))
 }
 
+/// A TMDB image (`size` from `IMAGE_SIZES`, `name` checked by
+/// `safe_image_name`), from the cache or fetched and cached. `None` when TMDB
+/// has none.
+pub(crate) async fn tmdb_bytes(state: &AppState, size: &str, name: &str) -> ApiResult<Option<Vec<u8>>> {
+    let dir = state.config.cache_dir().join("images").join(size);
+    let path = dir.join(name);
+    if let Ok(b) = tokio::fs::read(&path).await {
+        return Ok(Some(b));
+    }
+    let url = format!("{IMAGE_BASE_URL}/{size}/{name}");
+    let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
+    if res.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    if !res.status().is_success() {
+        return Err(ApiError::Upstream(format!("image host returned {}", res.status())));
+    }
+    let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
+    // write to a temp file then rename, so a crash never leaves half an image
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
+    let tmp = dir.join(format!(".{name}.part"));
+    if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, &path).await;
+    }
+    Ok(Some(bytes))
+}
+
 pub async fn image(
     _user: CurrentUser,
     State(state): State<AppState>,
@@ -131,31 +158,7 @@ pub async fn image(
         return Err(ApiError::NotFound("image size"));
     }
     let name = safe_image_name(&name).ok_or(ApiError::NotFound("image"))?;
-    let dir = state.config.cache_dir().join("images").join(&size);
-    let path = dir.join(name);
-
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(b) => b,
-        Err(_) => {
-            let url = format!("{IMAGE_BASE_URL}/{size}/{name}");
-            let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
-            if res.status().as_u16() == 404 {
-                return Err(ApiError::NotFound("image"));
-            }
-            if !res.status().is_success() {
-                return Err(ApiError::Upstream(format!("image host returned {}", res.status())));
-            }
-            let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
-            // write to a temp file then rename, so a crash never leaves half an image
-            tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
-            let tmp = dir.join(format!(".{name}.part"));
-            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
-                let _ = tokio::fs::rename(&tmp, &path).await;
-            }
-            bytes
-        }
-    };
-
+    let bytes = tmdb_bytes(&state, &size, name).await?.ok_or(ApiError::NotFound("image"))?;
     let mime = mime_guess::from_path(name).first_or_octet_stream();
     Ok((
         [

@@ -83,18 +83,28 @@ pub async fn login(
     headers: HeaderMap,
     Json(body): Json<Credentials>,
 ) -> ApiResult<(CookieJar, Json<Me>)> {
-    let key = body.username.trim().to_lowercase();
-    if let Some(wait) = login_lockout(&state, &key) {
+    let user = check_credentials(&state, &body.username, &body.password).await?;
+    start_session(&state, jar, &headers, &user).await
+}
+
+/// The user these credentials belong to. Failures count towards the
+/// account's lockout; a success clears it.
+pub(crate) async fn check_credentials(
+    state: &AppState,
+    username: &str,
+    password: &str,
+) -> ApiResult<moka_db::users::User> {
+    let key = username.trim().to_lowercase();
+    if let Some(wait) = login_lockout(state, &key) {
         return Err(ApiError::TooManyRequests(format!(
             "too many failed attempts, try again in {} seconds",
             wait.as_secs().max(1)
         )));
     }
-    let user = moka_db::users::by_username(&state.db, body.username.trim()).await?;
-    match user {
-        Some(u) if verify_password(&body.password, &u.password_hash) => {
+    match moka_db::users::by_username(&state.db, username.trim()).await? {
+        Some(u) if verify_password(password, &u.password_hash) => {
             state.login_failures.lock().expect("login lock").remove(&key);
-            start_session(&state, jar, &headers, &u).await
+            Ok(u)
         }
         _ => {
             let mut f = state.login_failures.lock().expect("login lock");

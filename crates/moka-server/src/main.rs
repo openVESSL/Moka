@@ -79,6 +79,7 @@ pub fn app(state: AppState) -> axum::Router {
         SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value))
     };
     api::router()
+        .nest_service("/jellyfin", api::jf::service(state.clone()))
         .fallback(web::serve)
         .layer(set(header::CONTENT_SECURITY_POLICY, CSP))
         .layer(set(header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
@@ -583,6 +584,13 @@ mod tests {
             "GET /api/v1/images/cover/00000000-0000-0000-0000-000000000000",
             "GET /api/v1/images/book/1",
             "GET /api/v1/images/author/1",
+            "GET /jellyfin/Items",
+            "GET /jellyfin/UserViews",
+            "GET /jellyfin/Users/Me",
+            "GET /jellyfin/Shows/NextUp",
+            "GET /jellyfin/Videos/0000000100000000000000000000000a/stream",
+            "POST /jellyfin/Items/0000000100000000000000000000000a/PlaybackInfo",
+            "POST /jellyfin/Sessions/Playing/Progress",
             "GET /api/v1/files/1/stream",
             "GET /api/v1/hls/abc/index.m3u8",
             "GET /api/v3/system/status",

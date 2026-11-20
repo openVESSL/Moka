@@ -19,6 +19,7 @@ pub mod books;
 pub mod catalog;
 pub mod connectors;
 pub mod images;
+pub mod jf;
 pub mod keys;
 pub mod library;
 pub mod music;

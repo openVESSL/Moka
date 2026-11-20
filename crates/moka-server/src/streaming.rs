@@ -186,7 +186,7 @@ impl Decision {
     }
 }
 
-fn container_of(format: &str) -> &'static str {
+pub(crate) fn container_of(format: &str) -> &'static str {
     let f = format.to_ascii_lowercase();
     if f.contains("mp4") || f.contains("mov") {
         "mp4"

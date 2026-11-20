@@ -591,6 +591,13 @@ pub async fn books(pool: &Pool) -> Result<Vec<Title>, Error> {
         .await
 }
 
+/// Films, shows, seasons and episodes, for apps that browse the library.
+pub async fn video_titles(pool: &Pool) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind IN ('movie', 'show', 'season', 'episode') ORDER BY id"))
+        .fetch_all(pool)
+        .await
+}
+
 /// Albums, newest change first.
 pub async fn albums(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'album' ORDER BY updated_at DESC")).fetch_all(pool).await

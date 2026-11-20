@@ -198,10 +198,23 @@ pub async fn subtitle_track(
     axum::extract::Query(q): axum::extract::Query<SubtitleQuery>,
 ) -> ApiResult<Response> {
     user.require(Permissions::PLAY)?;
-    let (f, path) = media_path(&s, id).await?;
     let track = track.trim_end_matches(".vtt").trim_end_matches(".ass");
     let ass = q.format.as_deref() == Some("ass");
-    let probe = probe_cached(&s, id, &path).await?;
+    let text = subtitle_text(&s, id, track, ass).await?;
+    let (body, mime) = if ass {
+        // the player shifts styled subtitles itself
+        (text, "text/x-ssa; charset=utf-8")
+    } else {
+        (crate::subtitles::shift_vtt(&text, q.offset.unwrap_or(0.0)), "text/vtt; charset=utf-8")
+    };
+    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "no-cache")], body).into_response())
+}
+
+/// A subtitle track's text (`e<N>` inside the file, `x<N>` next to it), as
+/// WebVTT or, for styled tracks, ASS. Tracks read from inside a file are cached.
+pub(crate) async fn subtitle_text(s: &AppState, id: i64, track: &str, ass: bool) -> ApiResult<String> {
+    let (f, path) = media_path(s, id).await?;
+    let probe = probe_cached(s, id, &path).await?;
     let info = crate::subtitles::tracks(&path, &probe)
         .into_iter()
         .find(|t| t.id == track)
@@ -248,13 +261,7 @@ pub async fn subtitle_track(
             }
         }
     };
-    let (body, mime) = if ass {
-        // the player shifts styled subtitles itself
-        (text, "text/x-ssa; charset=utf-8")
-    } else {
-        (crate::subtitles::shift_vtt(&text, q.offset.unwrap_or(0.0)), "text/vtt; charset=utf-8")
-    };
-    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "no-cache")], body).into_response())
+    Ok(text)
 }
 
 /// Fonts attached to the file, for styled subtitles.

@@ -73,6 +73,52 @@ pub async fn files_for_title(pool: &Pool, title_id: i64) -> Result<Vec<MediaFile
     .await
 }
 
+/// Every file in the library, newest first.
+pub async fn all_files(pool: &Pool) -> Result<Vec<MediaFile>, Error> {
+    sqlx::query_as(
+        "SELECT id, title_id, path, size_bytes, quality, release_group, duration_seconds, added_at
+         FROM media_files ORDER BY id DESC",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// What one user did with one title.
+#[derive(Debug, Clone, Default, sqlx::FromRow)]
+pub struct UserData {
+    pub title_id: i64,
+    pub position_seconds: f64,
+    pub played: bool,
+    pub play_count: i64,
+    pub favorite: bool,
+    pub last_played_at: Option<i64>,
+}
+
+/// Everything a user has started, finished or marked, most recent first.
+pub async fn user_data(pool: &Pool, user_id: i64) -> Result<Vec<UserData>, Error> {
+    sqlx::query_as(
+        "SELECT title_id, position_seconds, played, play_count, favorite, last_played_at
+         FROM user_title_data WHERE user_id = ? ORDER BY last_played_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Marks or unmarks a title as a favorite for one user.
+pub async fn set_favorite(pool: &Pool, user_id: i64, title_id: i64, favorite: bool) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO user_title_data (user_id, title_id, favorite) VALUES (?1, ?2, ?3)
+         ON CONFLICT(user_id, title_id) DO UPDATE SET favorite = ?3",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(favorite)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn file(pool: &Pool, id: i64) -> Result<Option<MediaFile>, Error> {
     sqlx::query_as(
         "SELECT id, title_id, path, size_bytes, quality, release_group, duration_seconds, added_at
@@ -197,6 +243,9 @@ mod tests {
         super::set_bookmark(&pool, u.id, t.id, "epubcfi(/6/4!/4/2)").await.unwrap();
         super::set_progress(&pool, u.id, t.id, 10.0, false).await.unwrap();
         assert_eq!(super::bookmark(&pool, u.id, t.id).await.unwrap().as_deref(), Some("epubcfi(/6/4!/4/2)"));
+        super::set_favorite(&pool, u.id, t.id, true).await.unwrap();
+        let d = super::user_data(&pool, u.id).await.unwrap();
+        assert_eq!((d.len(), d[0].favorite, d[0].played, d[0].position_seconds), (1, true, false, 10.0));
     }
 
     #[tokio::test]

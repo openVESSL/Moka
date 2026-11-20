@@ -1,4 +1,4 @@
-//! Decides which releases are acceptable for a film or an episode, and which one is best.
+//! Decides which releases are acceptable for a film, an episode or an album, and which one is best.
 //!
 //! Pure functions: no I/O. Every rejection carries a plain-language reason,
 //! and the ranking keeps the criterion that separated the winner from the
@@ -7,10 +7,13 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use moka_core::{Modifier, Quality, Revision};
+use moka_core::{AudioQuality, Modifier, Quality, Revision};
 use moka_indexers::{Protocol, Release};
 use moka_parser::{ParsedEpisode, ParsedRelease, normalize_title, parse_episode, parse_movie};
 use serde::{Deserialize, Serialize};
+
+mod album;
+pub use album::{AlbumTarget, AudioProfile, evaluate_album};
 
 /// Runtime assumed when the catalog does not know it yet.
 pub const DEFAULT_RUNTIME_MINUTES: u32 = 110;
@@ -106,6 +109,8 @@ pub struct Evaluated {
     pub title: String,
     pub parsed: Option<ParsedRelease>,
     pub quality: Option<Quality>,
+    /// Audio quality, for an album.
+    pub audio: Option<AudioQuality>,
     pub score: i32,
     /// Episodes the release holds, for a show.
     pub covers: Vec<u32>,
@@ -117,6 +122,16 @@ pub struct Evaluated {
 impl Evaluated {
     pub fn accepted(&self) -> bool {
         self.rejections.is_empty()
+    }
+
+    /// The quality as stored with a grab: `webdl-1080p` for video, `flac` for audio.
+    pub fn quality_key(&self) -> Option<String> {
+        self.quality.map(|q| q.key()).or_else(|| self.audio.map(|a| a.to_string()))
+    }
+
+    /// The quality as shown to people.
+    pub fn quality_label(&self) -> Option<String> {
+        self.quality.map(|q| q.to_string()).or_else(|| self.audio.map(|a| a.label().to_owned()))
     }
 }
 
@@ -167,6 +182,7 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
                 candidate_index: i,
                 title: c.release.title.clone(),
                 quality: parsed.as_ref().map(|p| p.quality),
+                audio: None,
                 parsed,
                 score,
                 covers,

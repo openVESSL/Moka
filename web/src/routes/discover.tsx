@@ -1,38 +1,64 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ApiError, img, type CatalogItem } from "../api/client";
-import { DISCOVER_LISTS, discoverQuery, searchQuery, type DiscoverList } from "../api/queries";
+import {
+  DISCOVER_LISTS,
+  SHOW_LISTS,
+  discoverQuery,
+  searchQuery,
+  type DiscoverList,
+  type MediaKind,
+} from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
 import { Roll, RollSkeleton } from "../components/Roll";
 import { SlateFields } from "../components/SlateFields";
 
-export function DiscoverPage({ list }: { list: DiscoverList }) {
-  const { data, error, isPending } = useQuery(discoverQuery(list));
+const KINDS: { id: MediaKind; label: string }[] = [
+  { id: "movie", label: "Films" },
+  { id: "show", label: "Shows" },
+];
+
+export function DiscoverPage({ list, kind }: { list: DiscoverList; kind: MediaKind }) {
+  const { data, error, isPending } = useQuery(discoverQuery(list, 1, kind));
   const navigate = useNavigate();
 
   if (error) return <CatalogError error={error} />;
   const items = data?.results ?? [];
   const lead = items.find((m) => m.backdrop_path) ?? items[0];
+  const lists = DISCOVER_LISTS.filter((l) => kind === "movie" || SHOW_LISTS.includes(l.id));
 
   return (
     <main>
-      {lead ? <Hero film={lead} /> : <div className="h-[62vh] animate-pulse bg-slate-raised/50" />}
+      {lead ? <Hero film={lead} kind={kind} /> : <div className="h-[62vh] animate-pulse bg-slate-raised/50" />}
 
       <section aria-labelledby="roll-heading" className="mx-auto max-w-[110rem] px-4 sm:px-8">
         <div className="mt-10 mb-8 flex flex-wrap items-end gap-x-8 gap-y-4 border-b border-slate-line">
           <h2 id="roll-heading" className="sr-only">
             {DISCOVER_LISTS.find((l) => l.id === list)?.label}
           </h2>
+          <div role="tablist" aria-label="Films or shows" className="-mb-px flex gap-1">
+            {KINDS.map((k) => (
+              <button
+                key={k.id}
+                role="tab"
+                aria-selected={k.id === kind}
+                onClick={() => navigate({ to: "/", search: { list, kind: k.id } })}
+                className="shrink-0 border-b-[3px] border-transparent px-3 pb-3 font-slate text-lg font-bold tracking-[0.04em] text-chalk-faint uppercase transition-colors hover:text-chalk-dim aria-selected:border-grease aria-selected:text-chalk"
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
           <div role="tablist" aria-label="Lists" className="-mb-px flex gap-1 overflow-x-auto">
-            {DISCOVER_LISTS.map((l) => (
+            {lists.map((l) => (
               <button
                 key={l.id}
                 role="tab"
                 aria-selected={l.id === list}
-                onClick={() => navigate({ to: "/", search: { list: l.id } })}
+                onClick={() => navigate({ to: "/", search: { list: l.id, kind } })}
                 className="shrink-0 border-b-[3px] border-transparent px-3 pb-3 font-slate text-lg font-bold tracking-[0.04em] text-chalk-faint uppercase transition-colors hover:text-chalk-dim aria-selected:border-chalk aria-selected:text-chalk"
               >
-                {l.label}
+                {kind === "show" && l.id === "now_playing" ? "On the air" : l.label}
               </button>
             ))}
           </div>
@@ -48,6 +74,7 @@ export function DiscoverPage({ list }: { list: DiscoverList }) {
               year: m.year,
               posterPath: m.poster_path,
               state: m.local?.state,
+              kind,
             }))}
           />
         )}
@@ -57,7 +84,7 @@ export function DiscoverPage({ list }: { list: DiscoverList }) {
 }
 
 /** The lead film, full-bleed. The title is the loudest thing on the page. */
-function Hero({ film }: { film: CatalogItem }) {
+function Hero({ film, kind }: { film: CatalogItem; kind: MediaKind }) {
   return (
     <section className="relative isolate flex min-h-[min(78vh,52rem)] items-end overflow-hidden">
       <img
@@ -73,7 +100,7 @@ function Hero({ film }: { film: CatalogItem }) {
       />
       <div className="mx-auto w-full max-w-[110rem] px-4 pt-32 pb-10 sm:px-8 sm:pb-14">
         <Link
-          to="/movie/$tmdbId"
+          to={kind === "show" ? "/show/$tmdbId" : "/movie/$tmdbId"}
           params={{ tmdbId: String(film.tmdb_id) }}
           className="block max-w-[16ch] font-slate text-[clamp(3rem,9vw,6rem)] leading-[0.86] font-extrabold tracking-[-0.02em] uppercase hover:text-white"
         >
@@ -87,7 +114,7 @@ function Hero({ film }: { film: CatalogItem }) {
               { label: "Rating", value: film.vote_average ? film.vote_average.toFixed(1) : undefined, mono: true },
             ]}
           />
-          <RequestButton tmdbId={film.tmdb_id} local={film.local} />
+          <RequestButton tmdbId={film.tmdb_id} local={film.local} kind={kind} />
         </div>
         {film.overview && (
           <p className="mt-6 line-clamp-3 max-w-[60ch] text-[15px] leading-relaxed text-chalk-dim">
@@ -100,14 +127,33 @@ function Hero({ film }: { film: CatalogItem }) {
 }
 
 export function SearchPage({ q }: { q: string }) {
-  const { data, error, isFetching } = useQuery(searchQuery(q));
-  if (error) return <CatalogError error={error} />;
-  const items = data?.results ?? [];
   return (
     <main className="mx-auto max-w-[110rem] px-4 pt-12 sm:px-8">
       <h1 className="mb-10 font-slate text-5xl leading-none font-extrabold uppercase">
         {q ? <>“{q}”</> : "Search"}
       </h1>
+      {q ? (
+        KINDS.map((k) => (
+          <section key={k.id} aria-labelledby={`found-${k.id}`} className="mb-14">
+            <h2 id={`found-${k.id}`} className="mb-6 border-b border-slate-line pb-3 font-slate text-2xl font-extrabold uppercase">
+              {k.label}
+            </h2>
+            <Found q={q} kind={k.id} />
+          </section>
+        ))
+      ) : (
+        <p className="text-chalk-dim">Type a title in the search box above.</p>
+      )}
+    </main>
+  );
+}
+
+function Found({ q, kind }: { q: string; kind: MediaKind }) {
+  const { data, error, isFetching } = useQuery(searchQuery(q, kind));
+  if (error) return <CatalogError error={error} />;
+  const items = data?.results ?? [];
+  return (
+    <>
       {isFetching && !data ? (
         <RollSkeleton count={12} />
       ) : items.length ? (
@@ -120,14 +166,13 @@ export function SearchPage({ q }: { q: string }) {
             year: m.year,
             posterPath: m.poster_path,
             state: m.local?.state,
+            kind,
           }))}
         />
-      ) : q ? (
-        <p className="text-chalk-dim">No films match that. Try the original title or fewer words.</p>
       ) : (
-        <p className="text-chalk-dim">Type a title in the search box above.</p>
+        <p className="text-chalk-dim">Nothing matches that. Try the original title or fewer words.</p>
       )}
-    </main>
+    </>
   );
 }
 
@@ -140,7 +185,7 @@ export function CatalogError({ error }: { error: Error }) {
       </h1>
       <p className="mt-3 text-chalk-dim">
         {notConfigured
-          ? "Film listings come from TMDB. Add a free TMDB API key and the catalog fills in."
+          ? "Film and show listings come from TMDB. Add a free TMDB API key and the catalog fills in."
           : error.message}
       </p>
       {notConfigured && (

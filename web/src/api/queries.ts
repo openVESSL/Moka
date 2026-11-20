@@ -10,6 +10,11 @@ export const DISCOVER_LISTS = [
 ] as const;
 export type DiscoverList = (typeof DISCOVER_LISTS)[number]["id"];
 
+/** Films or shows: the catalog and the library are split by it. */
+export type MediaKind = "movie" | "show";
+
+export const SHOW_LISTS: readonly DiscoverList[] = ["trending", "popular", "now_playing", "top_rated"];
+
 export const authStatusQuery = queryOptions({
   queryKey: ["auth", "status"],
   queryFn: () => unwrap(api.GET("/api/v1/auth/status")),
@@ -23,18 +28,24 @@ export const meQuery = queryOptions({
   retry: false,
 });
 
-export const discoverQuery = (list: DiscoverList, page = 1) =>
+export const discoverQuery = (list: DiscoverList, page = 1, kind: MediaKind = "movie") =>
   queryOptions({
-    queryKey: ["catalog", "discover", list, page],
-    queryFn: () => unwrap(api.GET("/api/v1/catalog/discover/{list}", { params: { path: { list }, query: { page } } })),
+    queryKey: ["catalog", "discover", kind, list, page],
+    queryFn: () =>
+      kind === "show"
+        ? unwrap(api.GET("/api/v1/catalog/shows/discover/{list}", { params: { path: { list }, query: { page } } }))
+        : unwrap(api.GET("/api/v1/catalog/discover/{list}", { params: { path: { list }, query: { page } } })),
     staleTime: 10 * 60_000,
     retry: false,
   });
 
-export const searchQuery = (q: string) =>
+export const searchQuery = (q: string, kind: MediaKind = "movie") =>
   queryOptions({
-    queryKey: ["catalog", "search", q],
-    queryFn: () => unwrap(api.GET("/api/v1/catalog/search", { params: { query: { q } } })),
+    queryKey: ["catalog", "search", kind, q],
+    queryFn: () =>
+      kind === "show"
+        ? unwrap(api.GET("/api/v1/catalog/shows/search", { params: { query: { q } } }))
+        : unwrap(api.GET("/api/v1/catalog/search", { params: { query: { q } } })),
     enabled: q.trim().length > 0,
     staleTime: 5 * 60_000,
     retry: false,
@@ -48,6 +59,25 @@ export const movieQuery = (tmdbId: number) =>
     staleTime: 10 * 60_000,
     retry: false,
   });
+
+export const showQuery = (tmdbId: number) =>
+  queryOptions({
+    queryKey: ["catalog", "show", tmdbId],
+    queryFn: () => unwrap(api.GET("/api/v1/catalog/show/{tmdb_id}", { params: { path: { tmdb_id: tmdbId } } })),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+export const episodesQuery = (titleId: number) =>
+  queryOptions({
+    queryKey: ["titles", titleId, "episodes"],
+    queryFn: () => unwrap(api.GET("/api/v1/titles/{id}/episodes", { params: { path: { id: titleId } } })),
+  });
+
+export const showsQuery = queryOptions({
+  queryKey: ["titles", "shows"],
+  queryFn: () => unwrap(api.GET("/api/v1/titles", { params: { query: { kind: "show" } } })),
+});
 
 export const requestsQuery = (status?: "pending" | "approved" | "declined") =>
   queryOptions({
@@ -70,11 +100,12 @@ export const quotaQuery = queryOptions({
   queryFn: () => unwrap(api.GET("/api/v1/settings/requests")),
 });
 
-/** Requesting a film touches catalog annotations, the request list and titles. */
+/** Requesting a title touches catalog annotations, the request list and titles. */
 export function useRequestFilm() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (tmdbId: number) => unwrap(api.POST("/api/v1/requests", { body: { tmdb_id: tmdbId } })),
+    mutationFn: ({ tmdbId, kind = "movie" }: { tmdbId: number; kind?: MediaKind }) =>
+      unwrap(api.POST("/api/v1/requests", { body: { tmdb_id: tmdbId, kind } })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["catalog"] });
       qc.invalidateQueries({ queryKey: ["requests"] });

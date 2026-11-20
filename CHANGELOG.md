@@ -29,6 +29,9 @@ the steps to migrate.
   is remembered. ASS/SSA subtitles keep their styling (rendered in the
   browser), with the fonts attached to MKV files. Image subtitles (PGS, VobSub) are drawn into the picture, which
   converts the film while they are on.
+- Shows in the catalog: browse and search shows, see their seasons, and
+  request a whole show (specials are kept but not searched). Seasons and
+  episodes are stored under the show with their own state.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

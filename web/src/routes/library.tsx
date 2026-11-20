@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { titlesQuery } from "../api/queries";
+import { showsQuery, titlesQuery } from "../api/queries";
 import { Roll, RollSkeleton } from "../components/Roll";
 
 const GROUPS = [
@@ -12,7 +12,8 @@ const GROUPS = [
 
 export function LibraryPage() {
   const { data, isPending } = useQuery(titlesQuery);
-  const titles = data ?? [];
+  const { data: shows } = useQuery(showsQuery);
+  const titles = [...(data ?? []), ...(shows ?? [])];
 
   return (
     <main className="mx-auto max-w-[110rem] px-4 pt-12 sm:px-8">
@@ -24,7 +25,7 @@ export function LibraryPage() {
       ) : titles.length === 0 ? (
         <div className="mt-10 max-w-[52ch]">
           <p className="text-lg text-chalk-dim">
-            Nothing here yet. Films you request show up on this page as they move from wanted to ready.
+            Nothing here yet. Films and shows you request show up on this page as they move from wanted to ready.
           </p>
           <Link to="/" className="btn-grease mt-6">
             Find a film
@@ -52,6 +53,7 @@ export function LibraryPage() {
                   year: t.year,
                   posterPath: t.poster_path,
                   state: t.state,
+                  kind: t.kind === "show" ? "show" : "movie",
                 }))}
               />
             </section>

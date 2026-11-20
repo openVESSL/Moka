@@ -11,6 +11,7 @@ export type RollItem = {
   year?: number | null;
   posterPath?: string | null;
   state?: string | null;
+  kind?: "movie" | "show";
 };
 
 /**
@@ -70,7 +71,7 @@ function RollCell({ item, take }: { item: RollItem; take?: number }) {
   if (!item.tmdbId) return <div className="group">{inner}</div>;
   return (
     <Link
-      to="/movie/$tmdbId"
+      to={item.kind === "show" ? "/show/$tmdbId" : "/movie/$tmdbId"}
       params={{ tmdbId: String(item.tmdbId) }}
       className="group block rounded-[3px] focus-visible:outline-offset-4"
       aria-label={item.year ? `${item.title} (${item.year})` : item.title}

@@ -1,10 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
-import { DISCOVER_LISTS, authStatusQuery, meQuery, type DiscoverList } from "./api/queries";
+import { DISCOVER_LISTS, authStatusQuery, meQuery, type DiscoverList, type MediaKind } from "./api/queries";
 import { LoginPage, SetupPage } from "./routes/auth";
 import { DiscoverPage, SearchPage } from "./routes/discover";
 import { LibraryPage } from "./routes/library";
 import { MoviePage } from "./routes/movie";
+import { ShowPage } from "./routes/show";
 import { RequestsPage } from "./routes/requests";
 import { SettingsPage } from "./routes/settings";
 import { Shell } from "./routes/Shell";
@@ -52,10 +53,13 @@ const isList = (v: unknown): v is DiscoverList => DISCOVER_LISTS.some((l) => l.i
 const discover = createRoute({
   getParentRoute: () => app,
   path: "/",
-  validateSearch: (s: Record<string, unknown>): { list?: DiscoverList } => (isList(s.list) ? { list: s.list } : {}),
+  validateSearch: (s: Record<string, unknown>): { list?: DiscoverList; kind?: MediaKind } => ({
+    ...(isList(s.list) ? { list: s.list } : {}),
+    ...(s.kind === "show" ? { kind: "show" as const } : {}),
+  }),
   component: function Discover() {
-    const { list } = discover.useSearch();
-    return <DiscoverPage list={list ?? "trending"} />;
+    const { list, kind } = discover.useSearch();
+    return <DiscoverPage list={list ?? "trending"} kind={kind ?? "movie"} />;
   },
 });
 
@@ -75,6 +79,15 @@ const movie = createRoute({
   component: function Movie() {
     const { tmdbId } = movie.useParams();
     return <MoviePage key={tmdbId} tmdbId={Number(tmdbId)} />;
+  },
+});
+
+const show = createRoute({
+  getParentRoute: () => app,
+  path: "/show/$tmdbId",
+  component: function Show() {
+    const { tmdbId } = show.useParams();
+    return <ShowPage key={tmdbId} tmdbId={Number(tmdbId)} />;
   },
 });
 
@@ -100,7 +113,7 @@ const watch = createRoute({
 });
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: SettingsPage });
 
-const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, requests, library, settings, watch])]);
+const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, show, requests, library, settings, watch])]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({

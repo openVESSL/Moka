@@ -1,19 +1,21 @@
 import { Check, Plus } from "lucide-react";
 import type { Schemas } from "../api/client";
-import { useRequestFilm } from "../api/queries";
+import { useRequestFilm, type MediaKind } from "../api/queries";
 import { STATE_HINT, isTitleState } from "../lib/states";
 import { Tape } from "./Tape";
 
 /**
- * The one action on a film. Unknown films get the grease button; known ones
+ * The one action on a film or show. Unknown films get the grease button; known ones
  * show their tape and what happens next.
  */
 export function RequestButton({
   tmdbId,
   local,
+  kind = "movie",
 }: {
   tmdbId: number;
   local?: Schemas["LocalState"] | null;
+  kind?: MediaKind;
 }) {
   const request = useRequestFilm();
   const state = request.data?.title_state ?? local?.state;
@@ -41,7 +43,7 @@ export function RequestButton({
         type="button"
         className="btn-grease"
         disabled={request.isPending}
-        onClick={() => request.mutate(tmdbId)}
+        onClick={() => request.mutate({ tmdbId, kind })}
       >
         <Plus aria-hidden className="size-4" strokeWidth={2.5} />
         {request.isPending ? "Requesting…" : "Request"}

@@ -114,12 +114,12 @@ function SearchBox() {
     <form role="search" onSubmit={submit} className="ml-auto flex min-w-0 items-center">
       <label className="flex min-w-0 items-center gap-2 border-b border-slate-line px-1 focus-within:border-grease">
         <Search aria-hidden className="size-4 shrink-0 text-chalk-faint" strokeWidth={2} />
-        <span className="sr-only">Search films</span>
+        <span className="sr-only">Search films and shows</span>
         <input
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search films"
+          placeholder="Search films and shows"
           className="h-9 w-36 min-w-0 bg-transparent text-[15px] placeholder:text-chalk-faint focus:outline-none sm:w-56"
         />
       </label>

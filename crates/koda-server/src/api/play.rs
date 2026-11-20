@@ -20,6 +20,8 @@ pub fn router() -> Router<AppState> {
         .route("/hls/{session}", axum::routing::delete(stop))
         .route("/files/{id}/subtitles", get(subtitles))
         .route("/files/{id}/subtitles/{track}", get(subtitle_track))
+        .route("/files/{id}/fonts", get(fonts))
+        .route("/files/{id}/fonts/{n}", get(font))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -50,7 +52,7 @@ pub(crate) async fn probe_cached(s: &AppState, file_id: i64, path: &std::path::P
     if let Some(p) = koda_db::library::probe_json(&s.db, file_id)
         .await?
         .and_then(|j| serde_json::from_str::<Probe>(&j).ok())
-        .filter(|p| p.duration_seconds > 0.0)
+        .filter(|p| p.duration_seconds > 0.0 && p.fonts.is_some())
     {
         return Ok(p);
     }
@@ -253,4 +255,62 @@ pub async fn subtitle_track(
         (crate::subtitles::shift_vtt(&text, q.offset.unwrap_or(0.0)), "text/vtt; charset=utf-8")
     };
     Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "no-cache")], body).into_response())
+}
+
+/// Fonts attached to the file, for styled subtitles.
+#[utoipa::path(get, path = "/api/v1/files/{id}/fonts", tag = "play", params(("id" = i64, Path)),
+    responses((status = 200, body = [crate::streaming::Font])))]
+pub async fn fonts(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Vec<crate::streaming::Font>>> {
+    user.require(Permissions::PLAY)?;
+    let (_, path) = media_path(&s, id).await?;
+    Ok(Json(probe_cached(&s, id, &path).await?.fonts.unwrap_or_default()))
+}
+
+/// One attached font file (`n` from the font list).
+#[utoipa::path(get, path = "/api/v1/files/{id}/fonts/{n}", tag = "play",
+    params(("id" = i64, Path), ("n" = usize, Path)),
+    responses((status = 200, content_type = "font/ttf", body = Vec<u8>)))]
+pub async fn font(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Path((id, n)): Path<(i64, usize)>,
+) -> ApiResult<Response> {
+    user.require(Permissions::PLAY)?;
+    let (f, path) = media_path(&s, id).await?;
+    let probe = probe_cached(&s, id, &path).await?;
+    let font = probe
+        .fonts
+        .unwrap_or_default()
+        .into_iter()
+        .find(|x| x.index == n)
+        .ok_or(ApiError::NotFound("font"))?;
+    // reading an attachment means reading the whole film: keep the result
+    let cache = s.config.cache_dir().join("fonts").join(format!("{id}-{}-{n}.font", f.size_bytes));
+    let bytes = match tokio::fs::read(&cache).await {
+        Ok(b) => b,
+        Err(_) => {
+            let b = crate::subtitles::attachment(&path, n)
+                .await
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+            if let Some(dir) = cache.parent() {
+                let _ = tokio::fs::create_dir_all(dir).await;
+            }
+            let _ = tokio::fs::write(&cache, &b).await;
+            b
+        }
+    };
+    let ext = font.name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "otf" => "font/otf",
+        "ttc" => "font/collection",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        _ => "font/ttf",
+    };
+    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=86400")], bytes)
+        .into_response())
 }

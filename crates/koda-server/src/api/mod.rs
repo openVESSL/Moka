@@ -78,6 +78,8 @@ pub mod webhooks;
         play::stop,
         play::subtitles,
         play::subtitle_track,
+        play::fonts,
+        play::font,
         library::status,
         library::start,
         profiles::qualities,

@@ -199,6 +199,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/fonts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fonts attached to the file, for styled subtitles. */
+        get: operations["fonts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/fonts/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One attached font file (`n` from the font list). */
+        get: operations["font"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/play": {
         parameters: {
             query?: never;
@@ -922,6 +956,11 @@ export interface components {
         ErrorBody: {
             error: string;
             message: string;
+        };
+        Font: {
+            /** @description Index among attachments (for `-dump_attachment:t:N`). */
+            index: number;
+            name: string;
         };
         GrabBody: {
             /** @description `index` from the release list. */
@@ -1655,6 +1694,49 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    fonts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Font"][];
+                };
+            };
+        };
+    };
+    font: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "font/ttf": number[];
+                };
             };
         };
     };

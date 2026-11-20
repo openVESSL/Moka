@@ -106,11 +106,17 @@ export function WatchPage({ fileId }: { fileId: number }) {
 
   const current = tracks?.find((t) => t.id === subTrack);
   const styled = current?.styled ? current.id : null;
+  // styled subtitles often use fonts that come inside the file
+  const { data: fonts } = useQuery({
+    queryKey: ["fonts", fileId],
+    queryFn: () => unwrap(api.GET("/api/v1/files/{id}/fonts", { params: { path: { id: fileId } } })),
+    enabled: !!styled,
+  });
 
   // styled (ASS/SSA) subtitles are drawn by libass in the browser, with their styling
   useEffect(() => {
     const v = video.current;
-    if (!styled || !v) return;
+    if (!styled || !v || !fonts) return;
     let gone = false;
     import("jassub").then(({ default: JASSUB }) => {
       if (gone) return;
@@ -118,6 +124,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
         video: v,
         subUrl: `/api/v1/files/${fileId}/subtitles/${styled}?format=ass`,
         timeOffset: offsetRef.current,
+        fonts: fonts.map((f) => `/api/v1/files/${fileId}/fonts/${f.index}`),
       });
     });
     return () => {
@@ -125,7 +132,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
       styledRenderer.current?.destroy();
       styledRenderer.current = null;
     };
-  }, [styled, fileId]);
+  }, [styled, fileId, fonts]);
 
   const offset = stream?.start_seconds ?? 0;
   const offsetRef = useRef(0);

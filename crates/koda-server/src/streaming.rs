@@ -24,6 +24,17 @@ pub struct Probe {
     pub video: Option<VideoStream>,
     pub audio: Vec<AudioStream>,
     pub subtitles: Vec<SubtitleStream>,
+    /// Fonts attached to the file (MKV), used by styled subtitles.
+    /// `None` in probes saved before fonts were read: probe again.
+    #[serde(default)]
+    pub fonts: Option<Vec<Font>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct Font {
+    /// Index among attachments (for `-dump_attachment:t:N`).
+    pub index: usize,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -81,6 +92,8 @@ pub fn parse_probe(json: &str) -> anyhow::Result<Probe> {
         ..Default::default()
     };
     let streams = v["streams"].as_array().cloned().unwrap_or_default();
+    let mut fonts = Vec::new();
+    let mut attachments = 0;
     for st in &streams {
         let codec = s(st, "codec_name").unwrap_or_default();
         let lang = st["tags"]["language"].as_str().map(str::to_owned).filter(|l| l != "und");
@@ -110,9 +123,21 @@ pub fn parse_probe(json: &str) -> anyhow::Result<Probe> {
                 default: st["disposition"]["default"].as_i64() == Some(1),
                 forced: st["disposition"]["forced"].as_i64() == Some(1),
             }),
+            Some("attachment") => {
+                let name = s(&st["tags"], "filename").unwrap_or_default();
+                let mime = s(&st["tags"], "mimetype").unwrap_or_default().to_ascii_lowercase();
+                let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+                if ["font", "truetype", "opentype"].iter().any(|m| mime.contains(m))
+                    || ["ttf", "otf", "ttc", "woff", "woff2"].contains(&ext.as_str())
+                {
+                    fonts.push(Font { index: attachments, name });
+                }
+                attachments += 1;
+            }
             _ => {}
         }
     }
+    p.fonts = Some(fonts);
     Ok(p)
 }
 
@@ -495,7 +520,9 @@ mod tests {
         {"codec_type":"audio","codec_name":"dts","channels":6,"tags":{"language":"eng"},"disposition":{"default":1}},
         {"codec_type":"audio","codec_name":"aac","channels":2,"tags":{"language":"fre"},"disposition":{"default":0}},
         {"codec_type":"subtitle","codec_name":"subrip","tags":{"language":"rum"}},
-        {"codec_type":"video","codec_name":"mjpeg","disposition":{"attached_pic":1}}
+        {"codec_type":"video","codec_name":"mjpeg","disposition":{"attached_pic":1}},
+        {"codec_type":"attachment","codec_name":"ttf","tags":{"filename":"Cover.jpg","mimetype":"image/jpeg"}},
+        {"codec_type":"attachment","codec_name":"ttf","tags":{"filename":"Gandhi.TTF","mimetype":"application/x-truetype-font"}}
       ],
       "format": {"format_name":"matroska,webm","duration":"7260.5"}
     }"#;
@@ -518,6 +545,7 @@ mod tests {
         assert_eq!(p.audio.len(), 2);
         assert!(p.audio[0].default);
         assert_eq!(p.subtitles[0].language.as_deref(), Some("rum"));
+        assert_eq!(p.fonts, Some(vec![Font { index: 1, name: "Gandhi.TTF".into() }]));
     }
 
     #[test]

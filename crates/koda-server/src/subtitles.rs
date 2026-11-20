@@ -157,6 +157,30 @@ async fn extract(input: &Path, stream: Option<usize>, output: &[&str]) -> anyhow
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// The `n`-th attachment of `input` (a font, for MKV), as bytes.
+pub async fn attachment(input: &Path, n: usize) -> anyhow::Result<Vec<u8>> {
+    let stamp =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let out = std::env::temp_dir().join(format!("koda-attachment-{}-{n}-{stamp}", std::process::id()));
+    // FFmpeg dumps the attachment, then complains that no output was given
+    let run = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"])
+        .arg(format!("-dump_attachment:t:{n}"))
+        .arg(&out)
+        .arg("-i")
+        .arg(input)
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("could not run ffmpeg (is FFmpeg installed?): {e}"))?;
+    let bytes = tokio::fs::read(&out).await;
+    let _ = tokio::fs::remove_file(&out).await;
+    match bytes {
+        Ok(b) if !b.is_empty() => Ok(b),
+        _ => anyhow::bail!("could not read the attachment: {}", String::from_utf8_lossy(&run.stderr).trim()),
+    }
+}
+
 fn parse_time(t: &str) -> Option<f64> {
     let parts: Vec<&str> = t.trim().split(':').collect();
     let (h, m, s) = match parts.as_slice() {
@@ -335,6 +359,26 @@ mod ffmpeg_tests {
         assert_eq!((t[0].styled, t[0].text), (true, true));
         let styled = to_ass(&styled_mkv, Some(0)).await.unwrap();
         assert!(styled.contains("[Script Info]") && styled.contains("Hello"), "{styled}");
+
+        // a font attached to the film comes back byte for byte
+        let font = dir.join("Fancy.ttf");
+        tokio::fs::write(&font, b"not really a font").await.unwrap();
+        let with_font = dir.join("Font.mkv");
+        let ok = Command::new("ffmpeg")
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&styled_mkv)
+            .arg("-attach")
+            .arg(&font)
+            .args(["-metadata:s:t", "mimetype=application/x-truetype-font", "-c", "copy"])
+            .arg(&with_font)
+            .status()
+            .await
+            .unwrap();
+        assert!(ok.success(), "could not attach a font");
+        let probe = crate::streaming::probe(&with_font).await.unwrap();
+        let fonts = probe.fonts.unwrap();
+        assert_eq!((fonts.len(), fonts[0].name.as_str()), (1, "Fancy.ttf"));
+        assert_eq!(attachment(&with_font, 0).await.unwrap(), b"not really a font");
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 }

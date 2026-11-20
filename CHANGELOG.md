@@ -27,13 +27,15 @@ the steps to migrate.
 - Subtitles in the player: tracks inside the file and subtitle files next
   to it, shown as WebVTT and kept in step when seeking; the chosen language
   is remembered. ASS/SSA subtitles keep their styling (rendered in the
-  browser). Image subtitles (PGS, VobSub) are drawn into the picture, which
+  browser), with the fonts attached to MKV files. Image subtitles (PGS, VobSub) are drawn into the picture, which
   converts the film while they are on.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.
+- Web install no longer fails on a dependency's install script, which is
+  now skipped (it only downloads a font list).
 
 ## [0.1.0] - 2026-11-20
 

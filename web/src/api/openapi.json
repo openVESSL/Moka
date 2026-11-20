@@ -435,6 +435,85 @@
         }
       }
     },
+    "/api/v1/files/{id}/fonts": {
+      "get": {
+        "tags": [
+          "play"
+        ],
+        "summary": "Fonts attached to the file, for styled subtitles.",
+        "operationId": "fonts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Font"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/{id}/fonts/{n}": {
+      "get": {
+        "tags": [
+          "play"
+        ],
+        "summary": "One attached font file (`n` from the font list).",
+        "operationId": "font",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "n",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "font/ttf": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/{id}/play": {
       "post": {
         "tags": [
@@ -2377,6 +2456,23 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Font": {
+        "type": "object",
+        "required": [
+          "index",
+          "name"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "Index among attachments (for `-dump_attachment:t:N`).",
+            "minimum": 0
+          },
+          "name": {
             "type": "string"
           }
         }

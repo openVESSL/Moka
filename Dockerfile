@@ -18,21 +18,21 @@ COPY crates crates
 COPY --from=web /src/web/dist web/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p koda-server && cp target/release/koda /koda
+    cargo build --release -p moka-server && cp target/release/moka /moka
 
 # --- runtime ---
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg tini \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 1000 --create-home koda \
-    && mkdir -p /config /data && chown koda:koda /config /data
-COPY --from=server /koda /usr/local/bin/koda
+    && useradd --uid 1000 --create-home moka \
+    && mkdir -p /config /data && chown moka:moka /config /data
+COPY --from=server /moka /usr/local/bin/moka
 
-ENV KODA_CONFIG_DIR=/config \
-    KODA_PORT=8484 \
+ENV MOKA_CONFIG_DIR=/config \
+    MOKA_PORT=8484 \
     RUST_LOG=info,sqlx=warn
 VOLUME ["/config"]
 EXPOSE 8484
-USER koda
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/koda"]
+USER moka
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/moka"]

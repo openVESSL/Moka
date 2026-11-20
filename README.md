@@ -1,8 +1,8 @@
-# Koda
+# Moka
 
 Self-hosted media library manager. One program for films, shows and music: browse a catalog, request a title, let it be fetched through the download client and indexers you configure, imported into your library, and played in the browser.
 
-Koda ships with no content sources. You connect your own download clients and indexers.
+Moka ships with no content sources. You connect your own download clients and indexers.
 
 > Early development. Nothing to install yet.
 
@@ -32,7 +32,7 @@ pnpm --dir web install
 pnpm --dir web build
 
 # server on http://localhost:8484
-cargo run -p koda-server
+cargo run -p moka-server
 
 # web dev server with hot reload on http://localhost:5173 (proxies /api to :8484)
 pnpm --dir web dev
@@ -57,11 +57,11 @@ Configuration is read from environment variables:
 
 | Variable | Default | |
 |---|---|---|
-| `KODA_CONFIG_DIR` | `./config` | database, caches, logs |
-| `KODA_PORT` | `8484` | |
-| `KODA_HOST` | `0.0.0.0` | |
-| `KODA_DATABASE_URL` | SQLite in the config dir | |
-| `KODA_SECRET_KEY` | `secret.key` in the config dir | base64, 32 bytes; encrypts stored passwords and API keys |
+| `MOKA_CONFIG_DIR` | `./config` | database, caches, logs |
+| `MOKA_PORT` | `8484` | |
+| `MOKA_HOST` | `0.0.0.0` | |
+| `MOKA_DATABASE_URL` | SQLite in the config dir | |
+| `MOKA_SECRET_KEY` | `secret.key` in the config dir | base64, 32 bytes; encrypts stored passwords and API keys |
 
 Back up `secret.key` together with the database: without it, stored indexer keys and passwords cannot be read and must be entered again.
 

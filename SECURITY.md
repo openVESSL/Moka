@@ -1,6 +1,6 @@
 # Security policy
 
-Koda stores credentials for your indexers and download client and has
+Moka stores credentials for your indexers and download client and has
 access to your media folders, so security reports are taken seriously.
 
 ## Reporting a vulnerability
@@ -14,13 +14,13 @@ advisory is published with credit to the reporter unless you prefer otherwise.
 
 ## Supported versions
 
-Koda is in early development (0.x). Only the latest release receives fixes.
+Moka is in early development (0.x). Only the latest release receives fixes.
 
 ## Scope
 
 In scope: the server, its HTTP API, the web app, the Docker image.
-Out of scope: vulnerabilities in third-party services Koda connects to
+Out of scope: vulnerabilities in third-party services Moka connects to
 (download clients, indexers, metadata providers), and attacks that require
 an attacker who already has an admin account.
 
-See [docs/threat-model.md](docs/threat-model.md) for what Koda protects and how.
+See [docs/threat-model.md](docs/threat-model.md) for what Moka protects and how.

@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Koda API",
-    "description": "The koda binary: HTTP API, background loop, web app",
+    "title": "Moka API",
+    "description": "The moka binary: HTTP API, background loop, web app",
     "license": {
       "name": "GPL-3.0-only",
       "identifier": "GPL-3.0-only"
@@ -1687,7 +1687,7 @@
         "tags": [
           "settings"
         ],
-        "summary": "Saves the Radarr connection after checking it answers. While enabled,\napproved films go to Radarr instead of Koda's own search.",
+        "summary": "Saves the Radarr connection after checking it answers. While enabled,\napproved films go to Radarr instead of Moka's own search.",
         "operationId": "put_radarr",
         "requestBody": {
           "content": {
@@ -2775,7 +2775,7 @@
             "properties": {
               "key": {
                 "type": "string",
-                "description": "Shown only now. Koda keeps just a hash of it."
+                "description": "Shown only now. Moka keeps just a hash of it."
               }
             }
           }

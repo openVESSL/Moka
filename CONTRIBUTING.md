@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for wanting to help. Koda is young, so issues describing real setups
+Thanks for wanting to help. Moka is young, so issues describing real setups
 (what you tried, what you expected, what happened) are as valuable as code.
 
 ## Before you start
@@ -29,7 +29,7 @@ regenerated files; CI fails when they are out of date.
 - Keep pull requests focused: one change, with tests for new behavior.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)
   (`feat:`, `fix:`, `docs:` ...).
-- New outgoing HTTP goes through `koda-net`; new routes require sign-in unless
+- New outgoing HTTP goes through `moka-net`; new routes require sign-in unless
   there is a reason they cannot (the route test will remind you).
 - Never log secrets or full URLs that may contain API keys.
 

@@ -714,7 +714,7 @@ export interface paths {
         get: operations["get_radarr"];
         /**
          * Saves the Radarr connection after checking it answers. While enabled,
-         *     approved films go to Radarr instead of Koda's own search.
+         *     approved films go to Radarr instead of Moka's own search.
          */
         put: operations["put_radarr"];
         post?: never;
@@ -1085,7 +1085,7 @@ export interface components {
             video_codecs: string[];
         };
         CreatedApiKey: components["schemas"]["ApiKeyView"] & {
-            /** @description Shown only now. Koda keeps just a hash of it. */
+            /** @description Shown only now. Moka keeps just a hash of it. */
             key: string;
         };
         Credentials: {

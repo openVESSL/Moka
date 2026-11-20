@@ -1,0 +1,15 @@
+[package]
+name = "moka-decision"
+description = "Accept, reject and rank releases for a film"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+moka-core.workspace = true
+moka-indexers.workspace = true
+moka-parser.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

@@ -10,7 +10,7 @@ type Jassub = InstanceType<typeof import("jassub").default>;
 type PlayResponse = Schemas["PlayResponse"];
 
 const SAVE_EVERY_MS = 10_000;
-const SUB_LANG_KEY = "koda.subtitle-language";
+const SUB_LANG_KEY = "moka.subtitle-language";
 
 function storedLanguage(): string | null {
   try {

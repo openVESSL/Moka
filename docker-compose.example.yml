@@ -8,11 +8,11 @@
 #     movies/      <- library folder you choose in Settings
 
 services:
-  koda:
-    image: ghcr.io/openvessl/koda:latest
+  moka:
+    image: ghcr.io/openvessl/moka:latest
     # or build it yourself:
     # build: .
-    container_name: koda
+    container_name: moka
     user: "1000:1000"
     ports:
       - "8484:8484"

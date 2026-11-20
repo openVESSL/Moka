@@ -21,7 +21,7 @@ Status: describes the code as it is (films, shows, the start of music) and the d
 ## 1. Big picture
 
 ```
-                      ┌──────────────────────────── koda (single binary) ────────────────────────────┐
+                      ┌──────────────────────────── moka (single binary) ────────────────────────────┐
  Browser (React SPA) ─┤ /api/v1 (native, OpenAPI) · SSE /api/v1/events · embedded web assets         │
  Other apps ──────────┤ /api/v3 compatibility layer (indexer managers, request and subtitle apps)     │
                       │                                                                               │
@@ -119,23 +119,23 @@ Secrets are write-only through the API and encrypted at rest.
 
 | Crate | Responsibility |
 |---|---|
-| `koda-core` | shared types: title kinds and states, video and audio quality, permissions |
-| `koda-db` | SQLx pool, migrations (with a backup before each upgrade), every SQL query, secret sealing |
-| `koda-parser` | release names: films, episodes (`S01E02`, `1x02`, season packs, air dates, absolute numbers), albums |
-| `koda-metadata` | TMDB (films, shows, seasons) and MusicBrainz (artists, albums, tracks) clients |
-| `koda-indexers` | Torznab/Newznab: capabilities, film and TV search, feeds, `.torrent`/magnet fetching, backoff |
-| `koda-download` | qBittorrent, Transmission, SABnzbd behind one client type |
-| `koda-decision` | accept/reject rules and ranking, for films, episodes and season packs |
-| `koda-net` | outgoing HTTP guard: blocks link-local, metadata and other forbidden addresses on every hop |
-| `koda-server` | the binary: API, auth, background loop, import, playback, compatibility layer, embedded web app |
+| `moka-core` | shared types: title kinds and states, video and audio quality, permissions |
+| `moka-db` | SQLx pool, migrations (with a backup before each upgrade), every SQL query, secret sealing |
+| `moka-parser` | release names: films, episodes (`S01E02`, `1x02`, season packs, air dates, absolute numbers), albums |
+| `moka-metadata` | TMDB (films, shows, seasons) and MusicBrainz (artists, albums, tracks) clients |
+| `moka-indexers` | Torznab/Newznab: capabilities, film and TV search, feeds, `.torrent`/magnet fetching, backoff |
+| `moka-download` | qBittorrent, Transmission, SABnzbd behind one client type |
+| `moka-decision` | accept/reject rules and ranking, for films, episodes and season packs |
+| `moka-net` | outgoing HTTP guard: blocks link-local, metadata and other forbidden addresses on every hop |
+| `moka-server` | the binary: API, auth, background loop, import, playback, compatibility layer, embedded web app |
 | `web/` | React app |
 
 Crate names carry the working project name and will be renamed together with the product.
 
 - Leaf crates know nothing about the database; they take inputs and return plain data, and are tested alone against local mock servers.
-- Only `koda-db` writes SQL. Only `koda-server` wires things together.
+- Only `moka-db` writes SQL. Only `moka-server` wires things together.
 
-Main modules in `koda-server`: `pipeline` (film loop, tracking, film import), `series` (episode search, season packs, episode import, show refresh), `scan` (bringing existing folders in), `streaming` and `subtitles` (playback), `notify` (webhooks), `jellyfin` and `radarr` (working next to those servers), `api/*` (routes).
+Main modules in `moka-server`: `pipeline` (film loop, tracking, film import), `series` (episode search, season packs, episode import, show refresh), `scan` (bringing existing folders in), `streaming` and `subtitles` (playback), `notify` (webhooks), `jellyfin` and `radarr` (working next to those servers), `api/*` (routes).
 
 ---
 
@@ -191,12 +191,12 @@ The browser posts what it can decode; the server answers with one method and the
 - **Auth**: session cookie for the browser; API keys for other apps (`Authorization: Bearer`, `X-Api-Key` or `?apikey=`). Permissions are a bitmask: `admin`, `manage_requests`, `request`, `auto_approve`, `manage_library`, `play`. A test checks every route needs sign-in.
 - **Main groups**: `auth`, `me`, `catalog` (films, shows, music), `requests`, `titles` (state, releases, grab, files, episodes/tracks, follow), `files` (stream, play, subtitles, fonts, progress), `hls`, `indexers`, `download-clients`, `quality-profiles`, `settings`, `webhooks`, `api-keys`, `library/scan`, `images` (TMDB artwork and album covers through a disk cache).
 - **Compatibility** `/api/v3`: the routes that indexer managers, request apps and subtitle apps already speak for films and shows (indexers, profiles, root folders, movie/series lookup and add, episodes, episode files, queue, history, commands). Outgoing webhooks can also take the import formats those subtitle apps listen for.
-- **Next**: a media-server compatible API so existing phone and TV apps can browse and play from Koda.
+- **Next**: a media-server compatible API so existing phone and TV apps can browse and play from Moka.
 
 ## 9. Configuration and files
 
-- `KODA_CONFIG_DIR` (default `./config`, `/config` in Docker): `koda.db`, `secret.key`, `cache/` (images, covers, probes, subtitles, fonts), transcode segments.
-- `KODA_PORT` (default `8484`), `KODA_DATABASE_URL` (SQLite in the config dir by default).
+- `MOKA_CONFIG_DIR` (default `./config`, `/config` in Docker): `moka.db`, `secret.key`, `cache/` (images, covers, probes, subtitles, fonts), transcode segments.
+- `MOKA_PORT` (default `8484`), `MOKA_DATABASE_URL` (SQLite in the config dir by default).
 - Everything else is set in the UI and stored in the database.
 - Recommended Docker layout: one volume `/data` with downloads and library folders inside it, so hardlinks work. GPU passthrough examples are in `docker-compose.example.yml`.
 

@@ -1,0 +1,21 @@
+[package]
+name = "moka-download"
+description = "Download client connectors (qBittorrent)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+moka-net.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.23.1"
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+axum = "0.8.9"
+
+[lints]
+workspace = true

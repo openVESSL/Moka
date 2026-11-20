@@ -51,10 +51,10 @@ jobs:
       - name: Streaming with real FFmpeg
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
-          cargo test -p koda-server -- --ignored ffmpeg
+          cargo test -p moka-server -- --ignored ffmpeg
       - name: API types are up to date
         run: |
-          cargo run -q -p koda-server -- openapi > /tmp/openapi.json
+          cargo run -q -p moka-server -- openapi > /tmp/openapi.json
           diff -u web/src/api/openapi.json /tmp/openapi.json
 
   audit:

@@ -79,7 +79,7 @@ export function LibrarySection() {
   );
 }
 
-const EMPTY_CLIENT = { kind: "qbittorrent", base_url: "", username: "", password: "", category: "koda" };
+const EMPTY_CLIENT = { kind: "qbittorrent", base_url: "", username: "", password: "", category: "moka" };
 const KIND_LABEL: Record<string, string> = { qbittorrent: "qBittorrent", transmission: "Transmission", sabnzbd: "SABnzbd" };
 
 /** Download clients: a torrent client, a Usenet client, or both. */

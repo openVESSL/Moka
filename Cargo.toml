@@ -8,14 +8,14 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
-koda-core = { path = "crates/koda-core" }
-koda-db = { path = "crates/koda-db" }
-koda-decision = { path = "crates/koda-decision" }
-koda-download = { path = "crates/koda-download" }
-koda-indexers = { path = "crates/koda-indexers" }
-koda-metadata = { path = "crates/koda-metadata" }
-koda-net = { path = "crates/koda-net" }
-koda-parser = { path = "crates/koda-parser" }
+moka-core = { path = "crates/moka-core" }
+moka-db = { path = "crates/moka-db" }
+moka-decision = { path = "crates/moka-decision" }
+moka-download = { path = "crates/moka-download" }
+moka-indexers = { path = "crates/moka-indexers" }
+moka-metadata = { path = "crates/moka-metadata" }
+moka-net = { path = "crates/moka-net" }
+moka-parser = { path = "crates/moka-parser" }
 
 reqwest = { version = "0.13", features = ["json", "gzip", "query", "form", "multipart", "cookies", "stream"] }
 anyhow = "1"

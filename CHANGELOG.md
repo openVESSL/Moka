@@ -9,14 +9,14 @@ the steps to migrate.
 ## [Unreleased]
 
 ### Added
-- Jellyfin alongside Koda: targeted library refresh after each import (with
+- Jellyfin alongside Moka: targeted library refresh after each import (with
   optional path mapping) and watched status synced back for matching user names.
 - Import of indexers from Prowlarr, torrent and Usenet, searched through Prowlarr.
 - Transmission and SABnzbd download clients; Usenet releases from Newznab
   indexers are sent to SABnzbd and tracked to import.
 - API keys for other apps, sent as `X-Api-Key` or `?apikey=`.
 - A `/api/v3` API compatible with Radarr: indexer managers can sync
-  Torznab/Newznab indexers into Koda, and request apps can add films,
+  Torznab/Newznab indexers into Moka, and request apps can add films,
   follow their status and see the download queue.
 - Subtitle apps that work with Radarr can read films with their file paths
   and release names from `/api/v3`, and webhooks pointed at their
@@ -27,9 +27,9 @@ the steps to migrate.
   TheTVDB id, add them with the seasons asked for, follow episodes and the
   queue; subtitle apps can list episode files with their release names, and
   webhooks at `/api/webhooks/sonarr` are told about each episode import.
-- Koda in front of an existing Radarr: approved films are sent to Radarr,
+- Moka in front of an existing Radarr: approved films are sent to Radarr,
   followed until they have a file, and Radarr's downloaded films are listed
-  in Koda's library (with optional path mapping).
+  in Moka's library (with optional path mapping).
 - Subtitles in the player: tracks inside the file and subtitle files next
   to it, shown as WebVTT and kept in step when seeking; the chosen language
   is remembered. ASS/SSA subtitles keep their styling (rendered in the

@@ -1,6 +1,6 @@
 # Threat model
 
-What Koda protects, from whom, and what it does not cover. Each mitigation
+What Moka protects, from whom, and what it does not cover. Each mitigation
 listed as "tested" has an automated test that runs in CI.
 
 ## Assets
@@ -9,8 +9,8 @@ listed as "tested" has an automated test that runs in CI.
   passwords, webhook addresses (which can embed tokens), an admin's own TMDB
   key (the built-in one ships in every binary and is not a secret).
 - **Accounts**: passwords and sessions of the people using the server.
-- **Files**: the media library and the download folder Koda can read and write.
-- **The host network**: Koda makes outgoing requests to addresses users type in.
+- **Files**: the media library and the download folder Moka can read and write.
+- **The host network**: Moka makes outgoing requests to addresses users type in.
 
 ## Who might attack
 
@@ -27,7 +27,7 @@ listed as "tested" has an automated test that runs in CI.
 |---|---|---|
 | Anonymous access to the API | Every route requires a session or API key, except health, sign-in, first-run setup and logout. | yes |
 | Credentials leaking through the API | Secrets are write-only: the API reports whether one is set, never its value. Webhook addresses are shown as scheme and host only. | yes |
-| Database copy reveals credentials | Secrets are encrypted at rest (XChaCha20-Poly1305) with a key kept in `secret.key` or `KODA_SECRET_KEY`, not in the database. | yes |
+| Database copy reveals credentials | Secrets are encrypted at rest (XChaCha20-Poly1305) with a key kept in `secret.key` or `MOKA_SECRET_KEY`, not in the database. | yes |
 | Password guessing | Passwords hashed with Argon2id. After five failures an account name is locked for a minute, doubling up to 30 minutes. | yes |
 | Stolen session tokens in the database | Session and API tokens are stored as SHA-256 hashes. Changing a password ends all sessions of that account. | yes |
 | Members reaching admin functions | Each endpoint checks a permission bit (admin, manage requests, request, auto-approve, manage library, play). | partly |

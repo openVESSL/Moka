@@ -25,7 +25,7 @@ export const STATE_HINT: Record<TitleState, string> = {
   searching: "Asking your indexers right now.",
   grabbed: "A release was picked and handed to your download client.",
   downloading: "Your download client is fetching it.",
-  importing: "Download finished. Moving it into your library.",
+  importing: "Download finished. Adding it to your library.",
   available: "Ready to play.",
 };
 

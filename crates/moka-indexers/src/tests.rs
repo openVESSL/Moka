@@ -10,6 +10,7 @@ const CAPS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <search available="yes" supportedParams="q"/>
     <movie-search available="yes" supportedParams="q,imdbid,tmdbid"/>
     <tv-search available="yes" supportedParams="q,season,ep,tvdbid"/>
+    <audio-search available="yes" supportedParams="q,artist,album"/>
   </searching>
   <categories>
     <category id="2000" name="Movies">
@@ -71,7 +72,20 @@ async fn mock() -> String {
                     }
                     Some("search") => {
                         let text = q.get("q").map(String::as_str).unwrap_or("");
-                        assert!(["Thrones S01", "Thrones 13"].contains(&text), "{text}");
+                        assert!(["Thrones S01", "Thrones 13", "Band First Light"].contains(&text), "{text}");
+                        if text == "Band First Light" {
+                            assert_eq!(
+                                q.get("cat").map(String::as_str),
+                                Some("3000"),
+                                "all of audio by default"
+                            );
+                        }
+                        FEED.into_response()
+                    }
+                    Some("music") => {
+                        assert_eq!(q.get("artist").map(String::as_str), Some("Band"));
+                        assert_eq!(q.get("album").map(String::as_str), Some("First Light"));
+                        assert_eq!(q.get("cat").map(String::as_str), Some("3010"), "audio categories only");
                         FEED.into_response()
                     }
                     Some("movie") => {
@@ -250,4 +264,38 @@ async fn tv_search_by_id_or_text() {
     let plain = Capabilities { search: true, ..Default::default() };
     let q = TvQuery { title: "Thrones".into(), season: 1, ..Default::default() };
     assert_eq!(c.search_tv(&cfg, &plain, &q).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn music_search_by_artist_or_text() {
+    let base = mock().await;
+    let c = Client::new();
+    let mut cfg = cfg(&base, "good");
+    cfg.categories = vec![2000, 3010, 5000];
+    let caps = c.capabilities(&cfg).await.unwrap();
+    assert!(caps.music_search, "audio-search counts as music search");
+    assert_eq!(caps.music_params, vec!["q", "artist", "album"]);
+    let q = MusicQuery { artist: "Band".into(), album: "First: Light".into(), year: Some(2001) };
+    assert_eq!(c.search_music(&cfg, &caps, &q).await.unwrap().len(), 2);
+
+    // without music search: "Artist Album" as text, in every audio category
+    let plain = Capabilities { search: true, ..Default::default() };
+    cfg.categories = vec![2000];
+    assert_eq!(c.search_music(&cfg, &plain, &q).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn film_search_leaves_out_audio() {
+    let base = mock().await;
+    let c = Client::new();
+    let mut cfg = cfg(&base, "good");
+    cfg.categories = vec![2000, 3000, 3040];
+    let caps = c.capabilities(&cfg).await.unwrap();
+    let q = MovieQuery {
+        title: "The Matrix".into(),
+        tmdb_id: Some(603),
+        imdb_id: Some("tt0133093".into()),
+        ..Default::default()
+    };
+    assert_eq!(c.search_movie(&cfg, &caps, &q).await.unwrap().len(), 2);
 }

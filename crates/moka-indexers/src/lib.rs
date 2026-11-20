@@ -54,6 +54,12 @@ pub struct Capabilities {
     /// Parameters accepted by TV search, e.g. `q`, `season`, `ep`, `tvdbid`.
     #[serde(default)]
     pub tv_params: Vec<String>,
+    /// Music search (`t=music`), from `music-search` or `audio-search`.
+    #[serde(default)]
+    pub music_search: bool,
+    /// Parameters accepted by music search, e.g. `q`, `artist`, `album`.
+    #[serde(default)]
+    pub music_params: Vec<String>,
     pub limit_max: Option<u32>,
     pub categories: Vec<Category>,
 }
@@ -113,9 +119,29 @@ pub struct TvQuery {
     pub absolute: Option<u32>,
 }
 
-/// Newznab TV categories are 5000-5999; films are everything else.
+/// An album to look for.
+#[derive(Debug, Clone, Default)]
+pub struct MusicQuery {
+    pub artist: String,
+    pub album: String,
+    pub year: Option<u16>,
+}
+
+/// Newznab TV categories are 5000-5999.
 fn is_tv_category(c: u32) -> bool {
     (5000..6000).contains(&c)
+}
+
+/// Newznab audio categories are 3000-3999.
+fn is_audio_category(c: u32) -> bool {
+    (3000..4000).contains(&c)
+}
+
+/// The indexer's audio categories, or all of audio.
+fn audio_categories(cfg: &IndexerConfig) -> String {
+    let cats: Vec<String> =
+        cfg.categories.iter().copied().filter(|c| is_audio_category(*c)).map(|c| c.to_string()).collect();
+    if cats.is_empty() { "3000".into() } else { cats.join(",") }
 }
 
 /// The indexer's TV categories, or all of TV.
@@ -247,7 +273,12 @@ impl Client {
             };
             params.push(("q", search_text(&text)));
         }
-        let cats: Vec<u32> = cfg.categories.iter().copied().filter(|c| !is_tv_category(*c)).collect();
+        let cats: Vec<u32> = cfg
+            .categories
+            .iter()
+            .copied()
+            .filter(|c| !is_tv_category(*c) && !is_audio_category(*c))
+            .collect();
         if !cats.is_empty() {
             let cats: Vec<String> = cats.iter().map(u32::to_string).collect();
             params.push(("cat", cats.join(",")));
@@ -351,6 +382,35 @@ impl Client {
         parse_feed(&body, cfg.kind.protocol())
     }
 
+    /// Searches for an album by artist and album when the indexer supports
+    /// music search, else by "Artist Album" text, in audio categories only.
+    pub async fn search_music(
+        &self,
+        cfg: &IndexerConfig,
+        caps: &Capabilities,
+        q: &MusicQuery,
+    ) -> Result<Vec<Release>, Error> {
+        let has = |p: &str| caps.music_params.iter().any(|x| x == p);
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if caps.music_search && has("artist") {
+            params.push(("t", "music".into()));
+            params.push(("artist", search_text(&q.artist)));
+            if has("album") {
+                params.push(("album", search_text(&q.album)));
+            } else {
+                params.push(("q", search_text(&q.album)));
+            }
+        } else {
+            params.push(("t", "search".into()));
+            params.push(("q", search_text(&format!("{} {}", q.artist, q.album))));
+        }
+        params.push(("cat", audio_categories(cfg)));
+        params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
+        params.push(("extended", "1".into()));
+        let body = self.get_xml(self.url(cfg, &params)?).await?;
+        parse_feed(&body, cfg.kind.protocol())
+    }
+
     /// Downloads what a release's link points at: a `.torrent` file, or the
     /// magnet link the indexer redirects to.
     pub async fn fetch(&self, url: &str) -> Result<torrent::Payload, Error> {
@@ -445,6 +505,10 @@ pub fn parse_caps(body: &str) -> Result<Capabilities, Error> {
             "tv-search" if available => {
                 caps.tv_search = true;
                 caps.tv_params = params();
+            }
+            "music-search" | "audio-search" if available => {
+                caps.music_search = true;
+                caps.music_params = params();
             }
             "category" | "subcat" => {
                 if let (Some(id), Some(name)) =

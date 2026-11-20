@@ -584,7 +584,7 @@
         "tags": [
           "play"
         ],
-        "summary": "One subtitle track as WebVTT.",
+        "summary": "One subtitle track as WebVTT, or as ASS for styled tracks.",
         "operationId": "subtitle_track",
         "parameters": [
           {
@@ -607,7 +607,7 @@
           {
             "name": "offset",
             "in": "query",
-            "description": "Where the stream starts, in seconds; cues are moved to match.",
+            "description": "Where the stream starts, in seconds; WebVTT cues are moved to match.",
             "required": false,
             "schema": {
               "type": [
@@ -615,6 +615,18 @@
                 "null"
               ],
               "format": "double"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`vtt` (default) or `ass` for styled tracks, sent with their styling.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -2819,6 +2831,13 @@
           "caps"
         ],
         "properties": {
+          "burn_subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Image subtitle track to draw into the picture (`e<N>` from the\nsubtitle list). Forces conversion."
+          },
           "caps": {
             "$ref": "#/components/schemas/ClientCaps"
           },
@@ -3503,7 +3522,8 @@
           "external",
           "default",
           "forced",
-          "text"
+          "text",
+          "styled"
         ],
         "properties": {
           "codec": {
@@ -3532,9 +3552,13 @@
             ],
             "description": "ISO language code when known, e.g. `en`, `eng`, `rum`."
           },
+          "styled": {
+            "type": "boolean",
+            "description": "Styled subtitles (ASS/SSA), which the player can show with their styling."
+          },
           "text": {
             "type": "boolean",
-            "description": "False for image subtitles, which the player cannot show yet."
+            "description": "False for image subtitles: they are drawn into the picture instead,\nwhich needs converting the video."
           }
         }
       },

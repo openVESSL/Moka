@@ -5,6 +5,8 @@ import { ArrowLeft, Captions, Maximize, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, unwrap, type Schemas } from "../api/client";
 
+type Jassub = InstanceType<typeof import("jassub").default>;
+
 type PlayResponse = Schemas["PlayResponse"];
 
 const SAVE_EVERY_MS = 10_000;
@@ -74,6 +76,9 @@ export function WatchPage({ fileId }: { fileId: number }) {
   const video = useRef<HTMLVideoElement>(null);
   const hls = useRef<Hls | null>(null);
   const session = useRef<string | null>(null);
+  /** Image subtitle track drawn into the picture by the server, kept across seeks. */
+  const burn = useRef<string | null>(null);
+  const styledRenderer = useRef<Jassub | null>(null);
   const lastSave = useRef(0);
   const [stream, setStream] = useState<PlayResponse>();
   const [error, setError] = useState<string>();
@@ -99,7 +104,35 @@ export function WatchPage({ fileId }: { fileId: number }) {
     setSubTrack(pick ? pick.id : null);
   }, [tracks]);
 
+  const current = tracks?.find((t) => t.id === subTrack);
+  const styled = current?.styled ? current.id : null;
+
+  // styled (ASS/SSA) subtitles are drawn by libass in the browser, with their styling
+  useEffect(() => {
+    const v = video.current;
+    if (!styled || !v) return;
+    let gone = false;
+    import("jassub").then(({ default: JASSUB }) => {
+      if (gone) return;
+      styledRenderer.current = new JASSUB({
+        video: v,
+        subUrl: `/api/v1/files/${fileId}/subtitles/${styled}?format=ass`,
+        timeOffset: offsetRef.current,
+      });
+    });
+    return () => {
+      gone = true;
+      styledRenderer.current?.destroy();
+      styledRenderer.current = null;
+    };
+  }, [styled, fileId]);
+
   const offset = stream?.start_seconds ?? 0;
+  const offsetRef = useRef(0);
+  offsetRef.current = offset;
+  useEffect(() => {
+    if (styledRenderer.current) styledRenderer.current.timeOffset = offset;
+  }, [offset]);
   const duration = stream?.duration_seconds ?? 0;
 
   const stopSession = useCallback(() => {
@@ -120,7 +153,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
         const res = await unwrap(
           api.POST("/api/v1/files/{id}/play", {
             params: { path: { id: fileId } },
-            body: { caps: detectCaps(), start_seconds: start },
+            body: { caps: detectCaps(), start_seconds: start, burn_subtitle: burn.current },
           }),
         );
         session.current = res.session ?? null;
@@ -210,7 +243,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
         onPlaying={() => setLoading(false)}
         onError={() => stream?.method === "direct" && setError("This file could not be played.")}
       >
-        {subTrack && stream && (
+        {current && current.text && !current.styled && stream && (
           <track
             key={`${subTrack}-${offset}`}
             kind="subtitles"
@@ -295,14 +328,19 @@ export function WatchPage({ fileId }: { fileId: number }) {
                   <li key={t.id}>
                     <button
                       type="button"
-                      disabled={!t.text}
-                      title={t.text ? undefined : "Image subtitles cannot be shown yet"}
+                      title={t.text ? undefined : "Drawn into the picture: the film is converted while it is on"}
                       onClick={() => {
                         setSubTrack(t.id || null);
                         storeLanguage(t.id ? (t.language ?? null) : null);
                         setSubMenu(false);
+                        // image subtitles need a stream with them drawn in; leaving one needs a clean stream
+                        const wantBurn = t.text ? null : t.id;
+                        if (wantBurn !== burn.current) {
+                          burn.current = wantBurn;
+                          open(now);
+                        }
                       }}
-                      className={`w-full px-3 py-1.5 text-left hover:bg-white/10 disabled:opacity-40 ${
+                      className={`w-full px-3 py-1.5 text-left hover:bg-white/10 ${
                         (subTrack ?? "") === t.id ? "text-grease" : ""
                       }`}
                     >

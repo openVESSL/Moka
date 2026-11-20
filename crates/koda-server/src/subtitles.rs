@@ -25,8 +25,15 @@ pub struct Track {
     pub external: bool,
     pub default: bool,
     pub forced: bool,
-    /// False for image subtitles, which the player cannot show yet.
+    /// False for image subtitles: they are drawn into the picture instead,
+    /// which needs converting the video.
     pub text: bool,
+    /// Styled subtitles (ASS/SSA), which the player can show with their styling.
+    pub styled: bool,
+}
+
+fn is_styled(codec: &str) -> bool {
+    matches!(codec, "ass" | "ssa")
 }
 
 fn is_text_codec(codec: &str) -> bool {
@@ -75,6 +82,7 @@ pub fn external(video: &Path) -> Vec<(PathBuf, Track)> {
                 id: format!("x{n}"),
                 language,
                 label,
+                styled: is_styled(&ext),
                 codec: ext,
                 external: true,
                 default: false,
@@ -111,6 +119,7 @@ pub fn tracks(video: &Path, probe: &Probe) -> Vec<Track> {
                 default: s.default,
                 forced: s.forced,
                 text: is_text_codec(&s.codec),
+                styled: is_styled(&s.codec),
             }
         })
         .collect();
@@ -121,13 +130,23 @@ pub fn tracks(video: &Path, probe: &Probe) -> Vec<Track> {
 /// Converts one track to WebVTT with FFmpeg: `stream` is the subtitle index
 /// inside `input`, or `None` when `input` is a subtitle file.
 pub async fn to_vtt(input: &Path, stream: Option<usize>) -> anyhow::Result<String> {
+    extract(input, stream, &["-f", "webvtt"]).await
+}
+
+/// One ASS/SSA track as is, styling included.
+pub async fn to_ass(input: &Path, stream: Option<usize>) -> anyhow::Result<String> {
+    extract(input, stream, &["-c:s", "copy", "-f", "ass"]).await
+}
+
+async fn extract(input: &Path, stream: Option<usize>, output: &[&str]) -> anyhow::Result<String> {
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-i"]).arg(input);
     if let Some(i) = stream {
         cmd.args(["-map", &format!("0:s:{i}")]);
     }
     let out = cmd
-        .args(["-f", "webvtt", "-"])
+        .args(output)
+        .arg("-")
         .stdin(Stdio::null())
         .output()
         .await
@@ -296,6 +315,26 @@ mod ffmpeg_tests {
         assert!(inside.starts_with("WEBVTT") && inside.contains("Hello"), "{inside}");
         let file = to_vtt(&srt, None).await.unwrap();
         assert!(shift_vtt(&file, 3.0).contains("00:00:01.000 --> 00:00:02.000\nWorld"), "{file}");
+
+        // a styled track inside the film; FFmpeg cannot make image subtitles from text,
+        // so drawing those in is covered by the argument test only
+        let styled_mkv = dir.join("Styled.mkv");
+        let ok = Command::new("ffmpeg")
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i"])
+            .arg("testsrc=duration=6:size=320x180:rate=24")
+            .arg("-i")
+            .arg(&srt)
+            .args(["-c:v", "libx264", "-c:s", "ass"])
+            .arg(&styled_mkv)
+            .status()
+            .await
+            .unwrap();
+        assert!(ok.success(), "could not create styled clip");
+        let probe = crate::streaming::probe(&styled_mkv).await.unwrap();
+        let t = tracks(&styled_mkv, &probe);
+        assert_eq!((t[0].styled, t[0].text), (true, true));
+        let styled = to_ass(&styled_mkv, Some(0)).await.unwrap();
+        assert!(styled.contains("[Script Info]") && styled.contains("Hello"), "{styled}");
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 }

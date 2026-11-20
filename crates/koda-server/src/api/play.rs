@@ -27,6 +27,9 @@ pub struct PlayRequest {
     pub caps: ClientCaps,
     /// Where to start, in seconds from the beginning of the film.
     pub start_seconds: Option<f64>,
+    /// Image subtitle track to draw into the picture (`e<N>` from the
+    /// subtitle list). Forces conversion.
+    pub burn_subtitle: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -74,7 +77,15 @@ pub async fn play(
         return Err(ApiError::NotFound("file on disk"));
     }
     let probe = probe_cached(&s, id, &path).await?;
-    let decision = crate::streaming::decide(&probe, &req.caps);
+    let mut decision = crate::streaming::decide(&probe, &req.caps);
+    if let Some(track) = req.burn_subtitle.as_deref() {
+        let n = track
+            .strip_prefix('e')
+            .and_then(|n| n.parse::<usize>().ok())
+            .filter(|n| *n < probe.subtitles.len())
+            .ok_or(ApiError::NotFound("subtitle track"))?;
+        decision = decision.burn(n);
+    }
     let start = req.start_seconds.unwrap_or(0.0).clamp(0.0, (probe.duration_seconds - 5.0).max(0.0));
 
     if decision.method == Method::Direct {
@@ -168,11 +179,13 @@ pub async fn subtitles(
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct SubtitleQuery {
-    /// Where the stream starts, in seconds; cues are moved to match.
+    /// Where the stream starts, in seconds; WebVTT cues are moved to match.
     pub offset: Option<f64>,
+    /// `vtt` (default) or `ass` for styled tracks, sent with their styling.
+    pub format: Option<String>,
 }
 
-/// One subtitle track as WebVTT.
+/// One subtitle track as WebVTT, or as ASS for styled tracks.
 #[utoipa::path(get, path = "/api/v1/files/{id}/subtitles/{track}", tag = "play",
     params(("id" = i64, Path), ("track" = String, Path), SubtitleQuery),
     responses((status = 200, content_type = "text/vtt", body = String)))]
@@ -184,44 +197,60 @@ pub async fn subtitle_track(
 ) -> ApiResult<Response> {
     user.require(Permissions::PLAY)?;
     let (f, path) = media_path(&s, id).await?;
-    let track = track.trim_end_matches(".vtt");
-    let bad = || ApiError::NotFound("subtitle track");
-    let n: usize = track.get(1..).and_then(|n| n.parse().ok()).ok_or_else(bad)?;
-    let vtt = match track.as_bytes().first() {
-        Some(b'x') => {
-            let files = crate::subtitles::external(&path);
-            let (file, _) = files.get(n).ok_or_else(bad)?;
-            crate::subtitles::to_vtt(file, None).await.map_err(|e| ApiError::BadRequest(e.to_string()))?
+    let track = track.trim_end_matches(".vtt").trim_end_matches(".ass");
+    let ass = q.format.as_deref() == Some("ass");
+    let probe = probe_cached(&s, id, &path).await?;
+    let info = crate::subtitles::tracks(&path, &probe)
+        .into_iter()
+        .find(|t| t.id == track)
+        .ok_or(ApiError::NotFound("subtitle track"))?;
+    if !info.text {
+        return Err(ApiError::BadRequest(format!(
+            "{} subtitles are images: they are drawn into the picture instead",
+            info.codec
+        )));
+    }
+    if ass && !info.styled {
+        return Err(ApiError::BadRequest("this track has no styling; ask for WebVTT".into()));
+    }
+    let n: usize = track.get(1..).and_then(|n| n.parse().ok()).unwrap_or(0);
+    let fail = |e: anyhow::Error| ApiError::BadRequest(e.to_string());
+    let text = if info.external {
+        let files = crate::subtitles::external(&path);
+        let (file, _) = files.get(n).ok_or(ApiError::NotFound("subtitle track"))?;
+        if ass {
+            crate::subtitles::to_ass(file, None).await
+        } else {
+            crate::subtitles::to_vtt(file, None).await
         }
-        Some(b'e') => {
-            let probe = probe_cached(&s, id, &path).await?;
-            let st = probe.subtitles.get(n).ok_or_else(bad)?;
-            if !crate::subtitles::tracks(&path, &probe).iter().any(|t| t.id == track && t.text) {
-                return Err(ApiError::BadRequest(format!(
-                    "{} subtitles are images and cannot be shown yet",
-                    st.codec
-                )));
-            }
-            // reading a track means reading the whole film: keep the result
-            let cache =
-                s.config.cache_dir().join("subtitles").join(format!("{id}-{}-{track}.vtt", f.size_bytes));
-            match tokio::fs::read_to_string(&cache).await {
-                Ok(v) => v,
-                Err(_) => {
-                    let v = crate::subtitles::to_vtt(&path, Some(n))
-                        .await
-                        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-                    if let Some(dir) = cache.parent() {
-                        let _ = tokio::fs::create_dir_all(dir).await;
-                    }
-                    let _ = tokio::fs::write(&cache, &v).await;
-                    v
+        .map_err(fail)?
+    } else {
+        // reading a track means reading the whole film: keep the result
+        let ext = if ass { "ass" } else { "vtt" };
+        let cache =
+            s.config.cache_dir().join("subtitles").join(format!("{id}-{}-{track}.{ext}", f.size_bytes));
+        match tokio::fs::read_to_string(&cache).await {
+            Ok(v) => v,
+            Err(_) => {
+                let v = if ass {
+                    crate::subtitles::to_ass(&path, Some(n)).await
+                } else {
+                    crate::subtitles::to_vtt(&path, Some(n)).await
                 }
+                .map_err(fail)?;
+                if let Some(dir) = cache.parent() {
+                    let _ = tokio::fs::create_dir_all(dir).await;
+                }
+                let _ = tokio::fs::write(&cache, &v).await;
+                v
             }
         }
-        _ => return Err(bad()),
     };
-    let body = crate::subtitles::shift_vtt(&vtt, q.offset.unwrap_or(0.0));
-    Ok(([(header::CONTENT_TYPE, "text/vtt; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], body)
-        .into_response())
+    let (body, mime) = if ass {
+        // the player shifts styled subtitles itself
+        (text, "text/x-ssa; charset=utf-8")
+    } else {
+        (crate::subtitles::shift_vtt(&text, q.offset.unwrap_or(0.0)), "text/vtt; charset=utf-8")
+    };
+    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "no-cache")], body).into_response())
 }

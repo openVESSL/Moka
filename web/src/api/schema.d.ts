@@ -257,7 +257,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One subtitle track as WebVTT. */
+        /** One subtitle track as WebVTT, or as ASS for styled tracks. */
         get: operations["subtitle_track"];
         put?: never;
         post?: never;
@@ -1053,6 +1053,11 @@ export interface components {
             role?: string | null;
         };
         PlayRequest: {
+            /**
+             * @description Image subtitle track to draw into the picture (`e<N>` from the
+             *     subtitle list). Forces conversion.
+             */
+            burn_subtitle?: string | null;
             caps: components["schemas"]["ClientCaps"];
             /**
              * Format: double
@@ -1263,7 +1268,12 @@ export interface components {
             label: string;
             /** @description ISO language code when known, e.g. `en`, `eng`, `rum`. */
             language?: string | null;
-            /** @description False for image subtitles, which the player cannot show yet. */
+            /** @description Styled subtitles (ASS/SSA), which the player can show with their styling. */
+            styled: boolean;
+            /**
+             * @description False for image subtitles: they are drawn into the picture instead,
+             *     which needs converting the video.
+             */
             text: boolean;
         };
         UserUpdate: {
@@ -1743,8 +1753,10 @@ export interface operations {
     subtitle_track: {
         parameters: {
             query?: {
-                /** @description Where the stream starts, in seconds; cues are moved to match. */
+                /** @description Where the stream starts, in seconds; WebVTT cues are moved to match. */
                 offset?: number | null;
+                /** @description `vtt` (default) or `ass` for styled tracks, sent with their styling. */
+                format?: string | null;
             };
             header?: never;
             path: {

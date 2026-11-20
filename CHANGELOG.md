@@ -26,7 +26,9 @@ the steps to migrate.
   in Koda's library (with optional path mapping).
 - Subtitles in the player: tracks inside the file and subtitle files next
   to it, shown as WebVTT and kept in step when seeking; the chosen language
-  is remembered. Image subtitles (PGS, VobSub) are listed but not shown yet.
+  is remembered. ASS/SSA subtitles keep their styling (rendered in the
+  browser). Image subtitles (PGS, VobSub) are drawn into the picture, which
+  converts the film while they are on.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

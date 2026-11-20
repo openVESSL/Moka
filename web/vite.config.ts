@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // the subtitle renderer finds its worker and wasm next to itself
+  optimizeDeps: { exclude: ["jassub"] },
   server: {
     port: 5173,
     proxy: {

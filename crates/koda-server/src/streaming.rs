@@ -143,8 +143,22 @@ pub struct Decision {
     pub copy_video: bool,
     pub copy_audio: bool,
     pub audio_index: Option<usize>,
+    /// Image subtitle track (index among subtitles) drawn into the picture.
+    pub burn_subtitle: Option<usize>,
     /// Plain-language reasons the file is not sent as is.
     pub reasons: Vec<String>,
+}
+
+impl Decision {
+    /// Image subtitles cannot be sent as text: draw them into the video,
+    /// which means converting it.
+    pub fn burn(mut self, subtitle: usize) -> Self {
+        self.method = Method::Transcode;
+        self.copy_video = false;
+        self.burn_subtitle = Some(subtitle);
+        self.reasons.push("image subtitles are drawn into the picture".into());
+        self
+    }
 }
 
 fn container_of(format: &str) -> &'static str {
@@ -208,6 +222,7 @@ pub fn decide(p: &Probe, caps: &ClientCaps) -> Decision {
         copy_video: method != Method::Transcode,
         copy_audio: audio_ok,
         audio_index: audio.map(|a| a.index),
+        burn_subtitle: None,
         reasons,
     }
 }
@@ -254,13 +269,30 @@ pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32, hw: 
         a.extend(["-ss".into(), format!("{start:.3}")]);
     }
     a.extend(["-i".into(), input.to_string_lossy().into_owned()]);
-    a.extend(["-map".into(), "0:v:0".into()]);
+    let scale = format!("scale=-2:'min({max_height},ih)'");
+    let filters = match encoder {
+        Encoder::Nvenc => format!("{scale},format=yuv420p"),
+        Encoder::Vaapi => format!("{scale},format=nv12,hwupload"),
+        Encoder::Qsv => format!("{scale},format=nv12"),
+        Encoder::Software => scale,
+    };
+    match d.burn_subtitle.filter(|_| !d.copy_video) {
+        Some(n) => {
+            a.extend(["-filter_complex".into(), format!("[0:v:0][0:s:{n}]overlay,{filters}[v]")]);
+            a.extend(["-map".into(), "[v]".into()]);
+        }
+        None => {
+            a.extend(["-map".into(), "0:v:0".into()]);
+            if !d.copy_video {
+                a.extend(["-vf".into(), filters]);
+            }
+        }
+    }
     if let Some(i) = d.audio_index {
         a.extend(["-map".into(), format!("0:a:{i}")]);
     }
     // same keyframe spacing for every encoder: 4-second segments at 24 fps
     let gop = ["-g", "96", "-keyint_min", "96"].map(String::from);
-    let scale = format!("scale=-2:'min({max_height},ih)'");
     if d.copy_video {
         a.extend(["-c:v".into(), "copy".into()]);
     } else if encoder == Encoder::Nvenc {
@@ -269,15 +301,12 @@ pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32, hw: 
                 .map(String::from),
         );
         a.extend(gop);
-        a.extend(["-vf".into(), format!("{scale},format=yuv420p")]);
     } else if encoder == Encoder::Vaapi {
         a.extend(["-c:v", "h264_vaapi", "-qp", "23"].map(String::from));
         a.extend(gop);
-        a.extend(["-vf".into(), format!("{scale},format=nv12,hwupload")]);
     } else if encoder == Encoder::Qsv {
         a.extend(["-c:v", "h264_qsv", "-global_quality", "23", "-profile:v", "high"].map(String::from));
         a.extend(gop);
-        a.extend(["-vf".into(), format!("{scale},format=nv12")]);
     } else {
         a.extend(
             [
@@ -300,7 +329,6 @@ pub fn ffmpeg_args(input: &Path, d: &Decision, start: f64, max_height: u32, hw: 
             ]
             .map(String::from),
         );
-        a.extend(["-vf".into(), scale]);
     }
     if d.audio_index.is_some() {
         if d.copy_audio {
@@ -550,6 +578,15 @@ mod tests {
         let copy = decide(&p, &caps);
         let a = ffmpeg_args(Path::new("f.mkv"), &copy, 0.0, 720, &hw(Encoder::Qsv)).join(" ");
         assert!(!a.contains("qsv") && a.contains("-c:v copy"));
+
+        let burn = decide(&p, &caps).burn(1);
+        assert_eq!((burn.method, burn.copy_video), (Method::Transcode, false));
+        let a = ffmpeg_args(Path::new("f.mkv"), &burn, 0.0, 720, &HwAccel::default()).join(" ");
+        assert!(
+            a.contains("-filter_complex [0:v:0][0:s:1]overlay,scale=-2:'min(720,ih)'[v] -map [v]"),
+            "{a}"
+        );
+        assert!(!a.contains("-vf") && a.contains("-c:v libx264"), "{a}");
     }
 
     #[test]

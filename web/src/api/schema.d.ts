@@ -1553,11 +1553,12 @@ export interface components {
         RequestKind: "movie" | "show" | "album";
         ScanRequest: {
             /**
-             * @description `movie` (default) or `show`. Episodes of a new show that aired but
-             *     are not on disk are not searched; new episodes are.
+             * @description `movie` (default), `show` or `album`. Episodes of a new show that
+             *     aired but are not on disk are not searched; new episodes are. Albums
+             *     are read as `Artist/Album (Year)`.
              */
             kind?: components["schemas"]["RequestKind"];
-            /** @description Folder to scan. Defaults to the library's films or shows folder. */
+            /** @description Folder to scan. Defaults to the library's films, shows or music folder. */
             path?: string | null;
         };
         ScanStatus: {

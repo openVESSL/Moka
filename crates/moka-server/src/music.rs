@@ -60,7 +60,7 @@ pub async fn search_album(state: &AppState, album: &Title) -> anyhow::Result<Sea
 }
 
 /// Every audio file in a download, in name order.
-fn audio_files(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn audio_files(path: &Path) -> Vec<PathBuf> {
     let is_audio = |p: &Path| {
         p.extension()
             .and_then(|e| e.to_str())
@@ -117,7 +117,7 @@ fn track_number(path: &Path) -> (Option<u32>, Option<u32>) {
 /// Pairs audio files with the album's tracks: by number first, then by title.
 /// Tracks hold their disc in `season_number` and their position across the
 /// album in `episode_number`; releases number tracks per disc.
-fn match_tracks<'a>(files: &[PathBuf], tracks: &'a [Title]) -> Vec<(PathBuf, &'a Title)> {
+pub(crate) fn match_tracks<'a>(files: &[PathBuf], tracks: &'a [Title]) -> Vec<(PathBuf, &'a Title)> {
     let mut sorted: Vec<&Title> = tracks.iter().collect();
     sorted.sort_by_key(|t| (t.season_number.unwrap_or(1), t.episode_number.unwrap_or(0)));
     let discs: HashSet<i64> = sorted.iter().map(|t| t.season_number.unwrap_or(1)).collect();

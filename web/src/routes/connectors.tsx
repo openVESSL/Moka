@@ -319,7 +319,7 @@ export function IndexersSection() {
   );
 }
 
-/** Adds films already in the films folder. Shows progress while it runs. */
+/** Adds films, shows and albums already on disk. Shows progress while it runs. */
 export function ScanPanel() {
   const qc = useQueryClient();
   const { data: s } = useQuery({
@@ -328,7 +328,7 @@ export function ScanPanel() {
     refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
   });
   const start = useMutation({
-    mutationFn: (kind: "movie" | "show") => unwrap(api.POST("/api/v1/library/scan", { body: { kind } })),
+    mutationFn: (kind: "movie" | "show" | "album") => unwrap(api.POST("/api/v1/library/scan", { body: { kind } })),
     onSuccess: (v) => qc.setQueryData(["library", "scan"], v),
   });
   useEffect(() => {
@@ -344,6 +344,9 @@ export function ScanPanel() {
         <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("show")}>
           Find shows already on disk
         </button>
+        <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("album")}>
+          Find music already on disk
+        </button>
         {s && (s.running || s.done > 0) && (
           <span className="data text-sm text-muted">
             {s.done}/{s.total} checked · {s.added} added · {s.already_known} known · {s.unmatched.length} not recognized
@@ -356,8 +359,9 @@ export function ScanPanel() {
         <details className="mt-3 text-sm text-muted">
           <summary className="cursor-pointer">Not recognized ({s.unmatched.length})</summary>
           <p className="mt-2 max-w-[65ch]">
-            Rename these folders to <span className="data">Title (Year)</span>, or add{" "}
-            <span className="data">{"{tmdb-ID}"}</span>, then scan again.
+            Rename films and shows to <span className="data">Title (Year)</span>, or add{" "}
+            <span className="data">{"{tmdb-ID}"}</span>. Albums go in{" "}
+            <span className="data">Artist/Album (Year)</span>, named as on MusicBrainz. Then scan again.
           </p>
           <ul className="mt-2 data text-xs">
             {s.unmatched.map((n) => (

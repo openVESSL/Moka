@@ -258,6 +258,49 @@ pub async fn approve_show_parts(pool: &Pool, show_id: i64) -> Result<(), Error> 
     Ok(())
 }
 
+/// How far a show's episodes have come.
+#[derive(Debug, Clone, Copy, Default, PartialEq, sqlx::FromRow)]
+pub struct ShowProgress {
+    pub show_id: i64,
+    /// Monitored episodes that have aired.
+    pub aired: i64,
+    /// Of those, the ones in the library.
+    pub available: i64,
+    /// Episodes being searched, downloaded or imported.
+    pub busy: i64,
+}
+
+impl ShowProgress {
+    /// The show's state as its episodes make it: available once every aired
+    /// episode is, on the way while any is, else its own (requested, wanted).
+    pub fn state(&self, own: TitleState) -> TitleState {
+        if own == TitleState::Requested {
+            own
+        } else if self.aired > 0 && self.available >= self.aired {
+            TitleState::Available
+        } else if self.busy > 0 {
+            TitleState::Downloading
+        } else {
+            own
+        }
+    }
+}
+
+/// Progress of every show that has episodes.
+pub async fn show_progress(pool: &Pool) -> Result<Vec<ShowProgress>, Error> {
+    sqlx::query_as(
+        "SELECT s.parent_id AS show_id,
+            COALESCE(SUM(e.monitored = 1 AND e.release_date <= date('now')), 0) AS aired,
+            COALESCE(SUM(e.monitored = 1 AND e.release_date <= date('now') AND e.state = 'available'), 0) AS available,
+            COALESCE(SUM(e.state IN ('searching', 'grabbed', 'downloading', 'importing')), 0) AS busy
+         FROM titles e JOIN titles s ON s.id = e.parent_id
+         WHERE e.kind = 'episode' AND s.parent_id IS NOT NULL
+         GROUP BY s.parent_id",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Shows, newest change first.
 pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await
@@ -514,6 +557,10 @@ mod tests {
         assert!(eps.iter().all(|e| e.state() == TitleState::Wanted && e.next_search_at.is_some()));
         assert_eq!(children(&pool, t.id).await.unwrap()[0].state(), TitleState::Wanted);
         assert!(due_episodes(&pool, 10).await.unwrap().is_empty(), "episodes without an air date wait");
+        let progress = |id: i64| {
+            let pool = pool.clone();
+            async move { show_progress(&pool).await.unwrap().into_iter().find(|p| p.show_id == id).unwrap() }
+        };
         sqlx::query("UPDATE titles SET release_date = '2011-04-17' WHERE id = ?")
             .bind(eps[0].id)
             .execute(&pool)
@@ -526,6 +573,15 @@ mod tests {
             .unwrap();
         let due = due_episodes(&pool, 10).await.unwrap();
         assert_eq!(due.iter().map(|e| e.id).collect::<Vec<_>>(), [eps[0].id], "only aired episodes");
+        let p = progress(t.id).await;
+        assert_eq!((p.aired, p.available, p.busy), (1, 0, 0));
+        assert_eq!(p.state(TitleState::Wanted), TitleState::Wanted);
+        mark_available(&pool, eps[0].id).await.unwrap();
+        assert_eq!(
+            progress(t.id).await.state(TitleState::Wanted),
+            TitleState::Available,
+            "the unaired one does not count"
+        );
         assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave shows out");
         assert!(due_for_search(&pool, 10).await.unwrap().is_empty());
     }

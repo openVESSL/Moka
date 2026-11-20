@@ -168,8 +168,10 @@ pub(crate) enum Query {
 
 /// Asks every usable indexer for a film and evaluates what comes back.
 pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchResult> {
-    if title.kind != "movie" {
-        bail!("Episodes are searched automatically; searching one by hand is not available yet");
+    match title.kind.as_str() {
+        "movie" => {}
+        "episode" => return crate::series::search_episode(state, title).await,
+        _ => bail!("Search a single episode, or let the background search find the season"),
     }
     let query = MovieQuery {
         title: title.title.clone(),

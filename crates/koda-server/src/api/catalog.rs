@@ -381,9 +381,20 @@ pub(crate) async fn new_show(state: &AppState, tmdb_id: i64) -> ApiResult<koda_d
 
 async fn local_states(state: &AppState, kind: TitleKind, ids: &[i64]) -> ApiResult<HashMap<i64, LocalState>> {
     let rows = koda_db::titles::states_for_tmdb(&state.db, kind, ids).await?;
+    // a show's own row only says requested or wanted; its episodes tell the rest
+    let progress: HashMap<i64, koda_db::titles::ShowProgress> = if kind == TitleKind::Show && !rows.is_empty()
+    {
+        koda_db::titles::show_progress(&state.db).await?.into_iter().map(|p| (p.show_id, p)).collect()
+    } else {
+        HashMap::new()
+    };
     Ok(rows
         .into_iter()
-        .filter_map(|(tmdb_id, title_id, s)| Some((tmdb_id, LocalState { title_id, state: s.parse().ok()? })))
+        .filter_map(|(tmdb_id, title_id, s)| {
+            let own: TitleState = s.parse().ok()?;
+            let state = progress.get(&title_id).map_or(own, |p| p.state(own));
+            Some((tmdb_id, LocalState { title_id, state }))
+        })
         .collect())
 }
 

@@ -36,6 +36,9 @@ the steps to migrate.
   aired season as one pack when nothing of it is in the library yet,
   otherwise episode by episode. Files land in a shows folder as
   `Show (Year)/Season 01/Show - S01E02 - Name - Quality.ext`.
+- A show's state follows its episodes (on the way, in the library), and each
+  episode on the show page opens its own status, player, release search
+  and grab.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

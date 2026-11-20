@@ -95,6 +95,38 @@ async fn search_season(state: &AppState, season_id: i64, first: &Title) -> anyho
     Ok(())
 }
 
+/// Searches for one episode by hand (nothing is grabbed): only releases
+/// holding this episode alone are acceptable.
+pub async fn search_episode(state: &AppState, ep: &Title) -> anyhow::Result<crate::pipeline::SearchResult> {
+    let db = &state.db;
+    let season = koda_db::titles::by_id(db, ep.parent_id.unwrap_or(0)).await?;
+    let show_id = season.as_ref().and_then(|s| s.parent_id).unwrap_or(0);
+    let show =
+        koda_db::titles::by_id(db, show_id).await?.ok_or_else(|| anyhow::anyhow!("The show was removed"))?;
+    let siblings = koda_db::titles::children(db, ep.parent_id.unwrap_or(0)).await?.len() as u32;
+    let (number, episode) = (ep.season_number.unwrap_or(0) as u32, ep.episode_number.unwrap_or(0) as u32);
+    let files = koda_db::library::files_for_title(db, ep.id).await?;
+    let target = Target {
+        title: show.title.clone(),
+        year: show.year.and_then(|y| u16::try_from(y).ok()),
+        imdb_id: show.imdb_id.clone(),
+        tmdb_id: show.tmdb_id,
+        runtime_minutes: ep.runtime_minutes.or(show.runtime_minutes).and_then(|m| u32::try_from(m).ok()),
+        existing: files.first().and_then(|f| f.quality.as_deref()).and_then(Quality::from_key),
+        episodes: Some(EpisodeTarget { season: number, episodes: vec![episode], season_episodes: siblings }),
+        ..Default::default()
+    };
+    let query = TvQuery {
+        title: show.title.clone(),
+        tvdb_id: koda_db::titles::tvdb_id(db, show.id).await?,
+        tmdb_id: show.tmdb_id,
+        imdb_id: show.imdb_id.clone(),
+        season: number,
+        episode: Some(episode),
+    };
+    crate::pipeline::search_with(state, ep.id, show.quality_profile_id, Query::Tv(query), target).await
+}
+
 /// Searches for `unit` (a season or an episode) and grabs the best release.
 /// Returns false when nothing fitted; the unit is then scheduled to retry.
 async fn try_unit(
@@ -517,6 +549,14 @@ mod flow {
                 .map(|e| e.state())
                 .collect::<Vec<_>>()
         };
+
+        // by hand, one episode: only the single-episode release fits
+        let ep1 = koda_db::titles::episodes_of_show(&db, s.id).await.unwrap().remove(0);
+        let found = crate::pipeline::search(&state, &ep1).await.unwrap();
+        let ok: Vec<&str> =
+            found.evaluated.iter().filter(|e| e.accepted()).map(|e| e.title.as_str()).collect();
+        assert_eq!(ok, ["Test.Show.S01E01.1080p.WEB-DL.H264-GRP"]);
+        assert!(crate::pipeline::search(&state, &s).await.is_err(), "a whole show is not searched by hand");
 
         // pass 1: the whole season is wanted, so the pack wins over the single episode
         crate::pipeline::tick_for_tests(&state).await;

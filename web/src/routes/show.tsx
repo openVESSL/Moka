@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
+import { useState } from "react";
 import { img, type Schemas } from "../api/client";
-import { episodesQuery, showQuery } from "../api/queries";
+import { episodesQuery, meQuery, showQuery } from "../api/queries";
 import { RequestButton } from "../components/RequestButton";
 import { SlateFields } from "../components/SlateFields";
 import { Tape } from "../components/Tape";
+import { TitlePanel } from "../components/TitlePanel";
 import { runtime } from "../lib/states";
 import { CatalogError } from "./discover";
 
@@ -128,7 +130,9 @@ function CatalogSeasons({ seasons }: { seasons: Schemas["CatalogSeason"][] }) {
 
 /** Episodes in the library, by season, each with where it stands. */
 function Episodes({ titleId }: { titleId: number }) {
-  const { data, isPending } = useQuery(episodesQuery(titleId));
+  const { data, isPending } = useQuery({ ...episodesQuery(titleId), refetchInterval: 15_000 });
+  const { data: me } = useQuery(meQuery);
+  const [open, setOpen] = useState<number | null>(null);
   if (isPending) return <div className="h-40 animate-pulse rounded bg-slate-raised/50" />;
   const bySeason = new Map<number, Schemas["Title"][]>();
   for (const e of data ?? []) {
@@ -147,16 +151,34 @@ function Episodes({ titleId }: { titleId: number }) {
           </h3>
           <ol className="border-t border-slate-line">
             {eps.map((e) => (
-              <li key={e.id} className="flex items-center gap-4 border-b border-slate-line py-2.5">
-                <span className="w-10 shrink-0 data text-sm text-chalk-faint">
-                  {String(e.episode_number ?? 0).padStart(2, "0")}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-slate text-[17px] font-semibold">{e.title}</span>
-                {e.release_date && <span className="data hidden text-xs text-chalk-faint sm:inline">{e.release_date}</span>}
-                {!e.monitored ? (
-                  <span className="text-xs text-chalk-faint">Not monitored</span>
-                ) : (
-                  e.state !== "available" && <Tape state={e.state} />
+              <li key={e.id} className="border-b border-slate-line">
+                <button
+                  type="button"
+                  aria-expanded={open === e.id}
+                  onClick={() => setOpen(open === e.id ? null : e.id)}
+                  className="flex w-full items-center gap-4 py-2.5 text-left hover:text-white"
+                >
+                  <span className="w-10 shrink-0 data text-sm text-chalk-faint">
+                    {String(e.episode_number ?? 0).padStart(2, "0")}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-slate text-[17px] font-semibold">{e.title}</span>
+                  {e.release_date && (
+                    <span className="data hidden text-xs text-chalk-faint sm:inline">{e.release_date}</span>
+                  )}
+                  {!e.monitored ? (
+                    <span className="text-xs text-chalk-faint">Not monitored</span>
+                  ) : (
+                    e.state !== "available" && <Tape state={e.state} />
+                  )}
+                  <ChevronDown
+                    aria-hidden
+                    className={`size-4 shrink-0 text-chalk-faint transition-transform ${open === e.id ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {open === e.id && (
+                  <div className="pb-6 [&>section]:mt-0 [&>section]:px-0">
+                    <TitlePanel titleId={e.id} permissions={me?.permissions ?? 0} />
+                  </div>
                 )}
               </li>
             ))}

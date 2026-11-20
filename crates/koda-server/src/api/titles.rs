@@ -269,11 +269,25 @@ pub async fn list(
         .transpose()?;
     let rows = match q.kind.as_deref() {
         None | Some("movie") => koda_db::titles::list(&state.db, filter).await?,
-        Some("show") => koda_db::titles::shows(&state.db)
-            .await?
-            .into_iter()
-            .filter(|t| filter.is_none_or(|f| t.state() == f))
-            .collect(),
+        Some("show") => {
+            let progress: std::collections::HashMap<i64, koda_db::titles::ShowProgress> =
+                koda_db::titles::show_progress(&state.db)
+                    .await?
+                    .into_iter()
+                    .map(|p| (p.show_id, p))
+                    .collect();
+            koda_db::titles::shows(&state.db)
+                .await?
+                .into_iter()
+                .map(|mut t| {
+                    if let Some(p) = progress.get(&t.id) {
+                        t.state = p.state(t.state()).as_str().to_owned();
+                    }
+                    t
+                })
+                .filter(|t| filter.is_none_or(|f| t.state() == f))
+                .collect()
+        }
         Some(_) => return Err(ApiError::BadRequest("kind must be movie or show".into())),
     };
     Ok(Json(rows.into_iter().map(Title::from).collect()))

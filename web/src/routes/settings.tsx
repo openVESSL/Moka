@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { ApiKeysSection } from "./apikeys";
-import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, ScanPanel } from "./connectors";
+import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, RadarrSection, ScanPanel } from "./connectors";
 import { ProfileSection } from "./profile";
 import { UsersSection } from "./users";
 import { WebhooksSection } from "./webhooks";
@@ -43,6 +43,12 @@ export function SettingsPage() {
         intro="Keep watching in Jellyfin if you like. Koda tells it about new films right after import and brings back what people watched there."
       >
         <JellyfinSection />
+      </Section>
+      <Section
+        title="Radarr"
+        intro="Already use Radarr? Koda can sit in front of it: approved requests go to Radarr, which searches and downloads, and every film Radarr has shows up in Koda's library to watch."
+      >
+        <RadarrSection />
       </Section>
       <Section title="People" intro="Everyone who can sign in, and what each person may do.">
         <UsersSection />

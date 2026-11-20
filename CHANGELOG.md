@@ -21,6 +21,9 @@ the steps to migrate.
 - Subtitle apps that work with Radarr can read films with their file paths
   and release names from `/api/v3`, and webhooks pointed at their
   `/api/webhooks/radarr` address are told about each import.
+- Koda in front of an existing Radarr: approved films are sent to Radarr,
+  followed until they have a file, and Radarr's downloaded films are listed
+  in Koda's library (with optional path mapping).
 
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.

@@ -89,6 +89,8 @@ pub mod webhooks;
         settings::put_library,
         settings::get_jellyfin,
         settings::put_jellyfin,
+        settings::get_radarr,
+        settings::put_radarr,
         keys::list_keys,
         keys::create_key,
         keys::delete_key,

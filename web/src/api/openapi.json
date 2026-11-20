@@ -1230,6 +1230,56 @@
         }
       }
     },
+    "/api/v1/settings/radarr": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_radarr",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Saves the Radarr connection after checking it answers. While enabled,\napproved films go to Radarr instead of Koda's own search.",
+        "operationId": "put_radarr",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadarrUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cannot connect"
+          }
+        }
+      }
+    },
     "/api/v1/settings/requests": {
       "get": {
         "tags": [
@@ -2807,6 +2857,115 @@
             ],
             "format": "int64",
             "description": "Maximum films per period. Missing or zero means unlimited."
+          }
+        }
+      },
+      "RadarrProfile": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "RadarrUpdate": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "url"
+        ],
+        "properties": {
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omit to keep the stored key."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "path_from": {
+            "type": "string"
+          },
+          "path_to": {
+            "type": "string"
+          },
+          "quality_profile_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "root_folder": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "RadarrView": {
+        "type": "object",
+        "description": "Radarr connection as the UI sees it, with Radarr's profiles and folders\nto choose from once connected. The key is never returned.",
+        "required": [
+          "enabled",
+          "url",
+          "api_key_set",
+          "quality_profile_id",
+          "root_folder",
+          "path_from",
+          "path_to",
+          "profiles",
+          "root_folders"
+        ],
+        "properties": {
+          "api_key_set": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why Radarr could not be reached, when it could not."
+          },
+          "path_from": {
+            "type": "string"
+          },
+          "path_to": {
+            "type": "string"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RadarrProfile"
+            }
+          },
+          "quality_profile_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "root_folder": {
+            "type": "string"
+          },
+          "root_folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string"
           }
         }
       },

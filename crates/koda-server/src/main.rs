@@ -9,6 +9,7 @@ mod error;
 mod jellyfin;
 mod notify;
 mod pipeline;
+mod radarr;
 mod scan;
 mod state;
 mod streaming;
@@ -53,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(pipeline::run(state.clone()));
     tokio::spawn(state.streams.clone().reap());
     tokio::spawn(jellyfin::run(state.clone()));
+    tokio::spawn(radarr::run(state.clone()));
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("listening on http://{listen}");

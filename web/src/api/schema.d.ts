@@ -520,6 +520,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_radarr"];
+        /**
+         * Saves the Radarr connection after checking it answers. While enabled,
+         *     approved films go to Radarr instead of Koda's own search.
+         */
+        put: operations["put_radarr"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/requests": {
         parameters: {
             query?: never;
@@ -1033,6 +1053,40 @@ export interface components {
              * @description Maximum films per period. Missing or zero means unlimited.
              */
             limit?: number | null;
+        };
+        RadarrProfile: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RadarrUpdate: {
+            /** @description Omit to keep the stored key. */
+            api_key?: string | null;
+            enabled: boolean;
+            path_from?: string;
+            path_to?: string;
+            /** Format: int64 */
+            quality_profile_id?: number;
+            root_folder?: string;
+            url: string;
+        };
+        /**
+         * @description Radarr connection as the UI sees it, with Radarr's profiles and folders
+         *     to choose from once connected. The key is never returned.
+         */
+        RadarrView: {
+            api_key_set: boolean;
+            enabled: boolean;
+            /** @description Why Radarr could not be reached, when it could not. */
+            error?: string | null;
+            path_from: string;
+            path_to: string;
+            profiles: components["schemas"]["RadarrProfile"][];
+            /** Format: int64 */
+            quality_profile_id: number;
+            root_folder: string;
+            root_folders: string[];
+            url: string;
         };
         /** @description One release from the last search, with the verdict on it. */
         ReleaseView: {
@@ -2176,6 +2230,55 @@ export interface operations {
                 };
             };
             /** @description folder not usable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_radarr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrView"];
+                };
+            };
+        };
+    };
+    put_radarr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RadarrUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrView"];
+                };
+            };
+            /** @description cannot connect */
             400: {
                 headers: {
                     [name: string]: unknown;

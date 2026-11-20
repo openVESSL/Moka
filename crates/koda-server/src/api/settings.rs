@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/settings/requests", get(get_requests).put(put_requests))
         .route("/settings/library", get(get_library).put(put_library))
         .route("/settings/jellyfin", get(get_jellyfin).put(put_jellyfin))
+        .route("/settings/radarr", get(get_radarr).put(put_radarr))
 }
 
 /// Catalog settings as the UI sees them. The key itself is never returned.
@@ -264,4 +265,125 @@ pub async fn put_jellyfin(
     }
     next.save(&state.db).await?;
     Ok(Json(jellyfin_view(next)))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RadarrProfile {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Radarr connection as the UI sees it, with Radarr's profiles and folders
+/// to choose from once connected. The key is never returned.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RadarrView {
+    pub enabled: bool,
+    pub url: String,
+    pub api_key_set: bool,
+    pub quality_profile_id: i64,
+    pub root_folder: String,
+    pub path_from: String,
+    pub path_to: String,
+    pub profiles: Vec<RadarrProfile>,
+    pub root_folders: Vec<String>,
+    /// Why Radarr could not be reached, when it could not.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RadarrUpdate {
+    pub enabled: bool,
+    pub url: String,
+    /// Omit to keep the stored key.
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub quality_profile_id: i64,
+    #[serde(default)]
+    pub root_folder: String,
+    #[serde(default)]
+    pub path_from: String,
+    #[serde(default)]
+    pub path_to: String,
+}
+
+async fn radarr_view(state: &AppState, s: crate::radarr::RadarrSettings) -> RadarrView {
+    let mut v = RadarrView {
+        enabled: s.enabled,
+        url: s.url.clone(),
+        api_key_set: !s.api_key.is_empty(),
+        quality_profile_id: s.quality_profile_id,
+        root_folder: s.root_folder.clone(),
+        path_from: s.path_from.clone(),
+        path_to: s.path_to.clone(),
+        profiles: vec![],
+        root_folders: vec![],
+        error: None,
+    };
+    if s.usable() {
+        let c = crate::radarr::Client::new(&state.http, &s);
+        match tokio::try_join!(c.profiles(), c.root_folders()) {
+            Ok((p, r)) => {
+                v.profiles = p.into_iter().map(|(id, name)| RadarrProfile { id, name }).collect();
+                v.root_folders = r;
+            }
+            Err(e) => v.error = Some(e.to_string()),
+        }
+    }
+    v
+}
+
+#[utoipa::path(get, path = "/api/v1/settings/radarr", tag = "settings",
+    responses((status = 200, body = RadarrView)))]
+pub async fn get_radarr(user: CurrentUser, State(state): State<AppState>) -> ApiResult<Json<RadarrView>> {
+    user.require(Permissions::ADMIN)?;
+    let s = crate::radarr::RadarrSettings::load(&state.db).await?;
+    Ok(Json(radarr_view(&state, s).await))
+}
+
+/// Saves the Radarr connection after checking it answers. While enabled,
+/// approved films go to Radarr instead of Koda's own search.
+#[utoipa::path(put, path = "/api/v1/settings/radarr", tag = "settings", request_body = RadarrUpdate,
+    responses((status = 200, body = RadarrView), (status = 400, description = "cannot connect")))]
+pub async fn put_radarr(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(b): Json<RadarrUpdate>,
+) -> ApiResult<Json<RadarrView>> {
+    user.require(Permissions::ADMIN)?;
+    let current = crate::radarr::RadarrSettings::load(&state.db).await?;
+    let url = b.url.trim().trim_end_matches('/').to_owned();
+    if !url.is_empty() {
+        match reqwest::Url::parse(&url) {
+            Ok(u) if matches!(u.scheme(), "http" | "https") => {
+                koda_net::check_url(&u).map_err(|e| ApiError::BadRequest(e.to_string()))?
+            }
+            _ => return Err(ApiError::BadRequest("address must start with http:// or https://".into())),
+        }
+    }
+    let next = crate::radarr::RadarrSettings {
+        enabled: b.enabled,
+        url,
+        api_key: b.api_key.map(|k| k.trim().to_owned()).filter(|k| !k.is_empty()).unwrap_or(current.api_key),
+        quality_profile_id: b.quality_profile_id.max(0),
+        root_folder: b.root_folder.trim().to_owned(),
+        path_from: b.path_from.trim().to_owned(),
+        path_to: b.path_to.trim().to_owned(),
+    };
+    if next.enabled {
+        crate::radarr::Client::new(&state.http, &next)
+            .version()
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("could not connect to Radarr: {e}")))?;
+    }
+    next.save(&state.db).await?;
+    if next.usable() {
+        let s = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::radarr::import_library(&s).await {
+                tracing::warn!(error = %e, "Radarr library sync failed");
+            }
+        });
+        state.wake.notify_one();
+    }
+    Ok(Json(radarr_view(&state, next).await))
 }

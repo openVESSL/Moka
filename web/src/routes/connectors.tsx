@@ -421,6 +421,113 @@ export function JellyfinSection() {
   );
 }
 
+/** Radarr in front: approved films go to Radarr, its films show up here. */
+export function RadarrSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["settings", "radarr"],
+    queryFn: () => unwrap(api.GET("/api/v1/settings/radarr")),
+  });
+  const [f, setF] = useState({
+    enabled: false,
+    url: "",
+    api_key: "",
+    quality_profile_id: 0,
+    root_folder: "",
+    path_from: "",
+    path_to: "",
+  });
+  useEffect(() => {
+    if (data) setF({ ...data, api_key: "" });
+  }, [data]);
+  const save = useMutation({
+    mutationFn: () => unwrap(api.PUT("/api/v1/settings/radarr", { body: { ...f, api_key: f.api_key || null } })),
+    onSuccess: (v) => {
+      setF((x) => ({ ...x, api_key: "" }));
+      qc.setQueryData(["settings", "radarr"], v);
+    },
+  });
+  const text = (k: "url" | "api_key" | "root_folder" | "path_from" | "path_to") =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+      className="mt-6 grid gap-6 sm:grid-cols-2"
+    >
+      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+        <input
+          type="checkbox"
+          className="accent-grease"
+          checked={f.enabled}
+          onChange={(e) => setF((x) => ({ ...x, enabled: e.target.checked }))}
+        />
+        Let Radarr search and download (Koda's own search stops)
+      </label>
+      <Field label="Radarr address">
+        <input className="chalk-input data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:7878" />
+      </Field>
+      <Field label="API key">
+        <input
+          className="chalk-input data text-base"
+          type="password"
+          value={f.api_key}
+          onChange={text("api_key")}
+          placeholder={data?.api_key_set ? "Saved. Paste a new one to replace it" : "Settings → General → API Key"}
+          autoComplete="off"
+        />
+      </Field>
+      {data && data.profiles.length > 0 && (
+        <Field label="Quality profile">
+          <select
+            className="chalk-input bg-slate"
+            value={f.quality_profile_id}
+            onChange={(e) => setF((x) => ({ ...x, quality_profile_id: Number(e.target.value) }))}
+          >
+            <option value={0}>First one ({data.profiles[0].name})</option>
+            {data.profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {data && data.root_folders.length > 0 && (
+        <Field label="Root folder">
+          <select className="chalk-input bg-slate" value={f.root_folder} onChange={text("root_folder")}>
+            <option value="">First one ({data.root_folders[0]})</option>
+            {data.root_folders.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      <Field label="Film folder in Radarr">
+        <input className="chalk-input data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/movies (only if different)" />
+      </Field>
+      <Field label="Same folder in Koda">
+        <input className="chalk-input data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/data/movies" />
+      </Field>
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <button type="submit" className="btn-grease" disabled={save.isPending}>
+          {save.isPending ? "Checking…" : "Save"}
+        </button>
+        <p role="status" className={`text-sm ${save.error || data?.error ? "text-grease-hot" : "text-tape-available"}`}>
+          {save.error?.message ??
+            data?.error ??
+            (save.isSuccess ? "Saved. Radarr's films are being added to the library." : "")}
+        </p>
+      </div>
+    </form>
+  );
+}
+
 /** Brings in every film indexer already set up in Prowlarr. */
 export function ProwlarrImport() {
   const qc = useQueryClient();

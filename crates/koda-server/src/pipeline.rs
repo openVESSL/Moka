@@ -76,6 +76,10 @@ pub async fn run(state: AppState) {
 async fn tick(state: &AppState) -> anyhow::Result<bool> {
     let tracking = track_downloads(state).await?;
     let importing = import_pending(state).await?;
+    // with Radarr in front, it does the searching
+    if crate::radarr::tick(state).await? {
+        return Ok(tracking || importing);
+    }
     for title in koda_db::titles::due_for_search(&state.db, 3).await? {
         if let Err(e) = search_and_grab(state, &title).await {
             tracing::warn!(title = %title.title, error = ?e, "search failed");
@@ -84,7 +88,7 @@ async fn tick(state: &AppState) -> anyhow::Result<bool> {
     Ok(tracking || importing)
 }
 
-fn publish_state(state: &AppState, t: &Title) {
+pub(crate) fn publish_state(state: &AppState, t: &Title) {
     state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: t.state_reason.clone() });
 }
 

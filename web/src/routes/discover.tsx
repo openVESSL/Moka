@@ -8,6 +8,7 @@ import {
   SHOW_LISTS,
   discoverQuery,
   artistSearchQuery,
+  bookSearchQuery,
   searchQuery,
   type DiscoverList,
   type MediaKind,
@@ -184,13 +185,13 @@ export function SearchPage({ q }: { q: string }) {
       <form role="search" onSubmit={submit} className="max-w-xl">
         <label className="flex h-12 items-center gap-3 rounded-xl border border-line bg-white/[0.03] px-4 transition-colors focus-within:border-accent">
           <Search aria-hidden className="size-4 shrink-0 text-faint" />
-          <span className="sr-only">Search films, shows and music</span>
+          <span className="sr-only">Search films, shows, music and books</span>
           <input
             type="search"
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Search films, shows, artists"
+            placeholder="Search films, shows, artists, books"
             className="h-full min-w-0 flex-1 bg-transparent placeholder:text-faint focus:outline-none"
           />
         </label>
@@ -211,9 +212,15 @@ export function SearchPage({ q }: { q: string }) {
             </h2>
             <Artists q={q} />
           </section>
+          <section aria-labelledby="found-books" className="mt-8">
+            <h2 id="found-books" className="mb-3 text-base font-semibold">
+              Books
+            </h2>
+            <Books q={q} />
+          </section>
         </>
       ) : (
-        <p className="mt-4 text-sm text-muted">Type a title or an artist and press Enter.</p>
+        <p className="mt-4 text-sm text-muted">Type a title, an artist or an author and press Enter.</p>
       )}
     </main>
   );
@@ -277,6 +284,27 @@ function Artists({ q }: { q: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function Books({ q }: { q: string }) {
+  const { data, error, isFetching } = useQuery(bookSearchQuery(q));
+  if (error) return <p className="text-danger">{error.message}</p>;
+  if (isFetching && !data) return <PosterGridSkeleton count={12} />;
+  if (!data?.length) return <p className="text-muted">No books match that.</p>;
+  return (
+    <PosterGrid
+      items={data.map((b) => ({
+        key: b.olid,
+        title: b.title,
+        year: b.year,
+        kind: "book" as const,
+        olid: b.olid,
+        coverId: b.cover_id,
+        note: b.authors[0],
+        state: b.ebook?.state ?? b.audiobook?.state,
+      }))}
+    />
   );
 }
 

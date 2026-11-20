@@ -13,7 +13,7 @@ export type DiscoverList = (typeof DISCOVER_LISTS)[number]["id"];
 /** Films or shows: the catalog and the library are split by it. */
 export type MediaKind = "movie" | "show";
 /** Anything that can be requested. */
-export type RequestKind = MediaKind | "album";
+export type RequestKind = MediaKind | "album" | "ebook" | "audiobook";
 
 export const SHOW_LISTS: readonly DiscoverList[] = ["trending", "popular", "now_playing", "top_rated"];
 
@@ -101,6 +101,36 @@ export const albumQuery = (mbid: string) =>
     retry: false,
   });
 
+export const bookSearchQuery = (q: string) =>
+  queryOptions({
+    queryKey: ["catalog", "books", "search", q],
+    queryFn: () => unwrap(api.GET("/api/v1/catalog/books/search", { params: { query: { q } } })),
+    enabled: q.trim().length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+export const bookQuery = (olid: string) =>
+  queryOptions({
+    queryKey: ["catalog", "books", "book", olid],
+    queryFn: () => unwrap(api.GET("/api/v1/catalog/books/book/{olid}", { params: { path: { olid } } })),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+export const bookAuthorQuery = (olid: string) =>
+  queryOptions({
+    queryKey: ["catalog", "books", "author", olid],
+    queryFn: () => unwrap(api.GET("/api/v1/catalog/books/author/{olid}", { params: { path: { olid } } })),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+export const booksQuery = queryOptions({
+  queryKey: ["titles", "books"],
+  queryFn: () => unwrap(api.GET("/api/v1/titles", { params: { query: { kind: "book" } } })),
+});
+
 export const albumTracksQuery = (titleId: number) =>
   queryOptions({
     queryKey: ["titles", titleId, "tracks"],
@@ -142,8 +172,17 @@ export const quotaQuery = queryOptions({
 export function useRequestFilm() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ tmdbId, kind = "movie", mbid }: { tmdbId: number; kind?: RequestKind; mbid?: string }) =>
-      unwrap(api.POST("/api/v1/requests", { body: { tmdb_id: tmdbId, kind, mbid } })),
+    mutationFn: ({
+      tmdbId,
+      kind = "movie",
+      mbid,
+      olid,
+    }: {
+      tmdbId: number;
+      kind?: RequestKind;
+      mbid?: string;
+      olid?: string;
+    }) => unwrap(api.POST("/api/v1/requests", { body: { tmdb_id: tmdbId, kind, mbid, olid } })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["catalog"] });
       qc.invalidateQueries({ queryKey: ["requests"] });

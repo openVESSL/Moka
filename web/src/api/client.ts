@@ -41,6 +41,16 @@ export function cover(mbid?: string | null) {
   return mbid ? `/api/v1/images/cover/${mbid}` : undefined;
 }
 
+/** Book cover (Open Library) served through our own cache. */
+export function bookCover(id?: number | string | null) {
+  return id ? `/api/v1/images/book/${id}` : undefined;
+}
+
+/** Author photo (Open Library) served through our own cache. */
+export function authorPhoto(id?: number | null) {
+  return id ? `/api/v1/images/author/${id}` : undefined;
+}
+
 /** URL of a TMDB image served through our own cache. */
 export function img(size: "w185" | "w342" | "w500" | "w780" | "w1280" | "original", path?: string | null) {
   if (!path) return undefined;

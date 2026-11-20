@@ -13,12 +13,18 @@ export function RequestButton({
   local,
   kind = "movie",
   mbid,
+  olid,
+  label,
 }: {
   tmdbId: number;
   local?: Schemas["LocalState"] | null;
   kind?: RequestKind;
   /** MusicBrainz id, for albums. */
   mbid?: string;
+  /** Open Library id, for ebooks and audiobooks. */
+  olid?: string;
+  /** What is requested, when a page offers more than one ("ebook"). */
+  label?: string;
 }) {
   const request = useRequestFilm();
   const state = request.data?.title_state ?? local?.state;
@@ -26,6 +32,7 @@ export function RequestButton({
   if (state) {
     return (
       <div className="flex items-center gap-3" aria-live="polite">
+        {label && <span className="text-sm font-semibold capitalize">{label}</span>}
         {state === "available" ? (
           <span className="inline-flex items-center gap-2 font-bold text-state-available">
             <Check aria-hidden className="size-5" /> In your library
@@ -46,10 +53,10 @@ export function RequestButton({
         type="button"
         className="btn-primary"
         disabled={request.isPending}
-        onClick={() => request.mutate({ tmdbId, kind, mbid })}
+        onClick={() => request.mutate({ tmdbId, kind, mbid, olid })}
       >
         <Plus aria-hidden className="size-4" strokeWidth={2.5} />
-        {request.isPending ? "Requesting…" : "Request"}
+        {request.isPending ? "Requesting…" : label ? `Request ${label}` : "Request"}
       </button>
       {request.error && (
         <p role="alert" className="text-sm text-danger">

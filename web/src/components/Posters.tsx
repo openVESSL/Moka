@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronLeft, ChevronRight, Film } from "lucide-react";
 import { useRef, type ReactNode } from "react";
-import { cover, img } from "../api/client";
+import { bookCover, cover, img } from "../api/client";
 import { StateBadge } from "./StateBadge";
 
 export type PosterItem = {
@@ -11,10 +11,62 @@ export type PosterItem = {
   year?: number | null;
   posterPath?: string | null;
   state?: string | null;
-  kind?: "movie" | "show" | "album";
+  kind?: "movie" | "show" | "album" | "book";
   /** MusicBrainz id, for albums (cover and link). */
   mbid?: string | null;
+  /** Open Library id and cover, for books. */
+  olid?: string | null;
+  coverId?: number | string | null;
+  /** A word next to the year ("Audiobook"). */
+  note?: string;
 };
+
+/** Link to a title's catalog page, by kind. Without an id it renders a plain box. */
+export function CatalogLink({
+  kind,
+  tmdbId,
+  mbid,
+  olid,
+  className,
+  label,
+  children,
+}: {
+  kind?: string | null;
+  tmdbId?: number | null;
+  mbid?: string | null;
+  olid?: string | null;
+  className?: string;
+  label?: string;
+  children: ReactNode;
+}) {
+  if (kind === "album" && mbid) {
+    return (
+      <Link to="/album/$mbid" params={{ mbid }} className={className} aria-label={label}>
+        {children}
+      </Link>
+    );
+  }
+  if ((kind === "book" || kind === "ebook" || kind === "audiobook") && olid) {
+    return (
+      <Link to="/book/$olid" params={{ olid }} className={className} aria-label={label}>
+        {children}
+      </Link>
+    );
+  }
+  if (!tmdbId || kind === "album" || kind === "book" || kind === "ebook" || kind === "audiobook") {
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    <Link
+      to={kind === "show" ? "/show/$tmdbId" : "/movie/$tmdbId"}
+      params={{ tmdbId: String(tmdbId) }}
+      className={className}
+      aria-label={label}
+    >
+      {children}
+    </Link>
+  );
+}
 
 const GRID =
   "grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-7 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]";
@@ -83,9 +135,11 @@ function PosterCell({ item }: { item: PosterItem }) {
       <div
         className={`relative overflow-hidden rounded-xl bg-raised shadow-[0_10px_30px_-12px_rgb(0_0_0/0.8)] ring-1 ring-white/[0.07] transition duration-300 ease-[var(--ease-out-expo)] group-hover:scale-[1.035] group-hover:ring-white/25 ${square ? "aspect-square" : "aspect-[2/3]"}`}
       >
-        {item.posterPath || item.mbid ? (
+        {item.posterPath || item.mbid || item.coverId ? (
           <img
-            src={item.mbid ? cover(item.mbid) : img("w342", item.posterPath)}
+            src={
+              item.kind === "book" ? bookCover(item.coverId) : item.mbid ? cover(item.mbid) : img("w342", item.posterPath)
+            }
             alt=""
             loading="lazy"
             decoding="async"
@@ -113,29 +167,25 @@ function PosterCell({ item }: { item: PosterItem }) {
       </div>
       <div className="mt-2.5 min-w-0 px-0.5">
         <span className="line-clamp-1 text-sm font-medium text-fg">{item.title}</span>
-        {item.year && <span className="data text-xs text-faint">{item.year}</span>}
+        {(item.year || item.note) && (
+          <span className="data text-xs text-faint">{[item.year, item.note].filter(Boolean).join(" · ")}</span>
+        )}
       </div>
     </>
   );
 
   const label = item.year ? `${item.title} (${item.year})` : item.title;
-  if (item.kind === "album" && item.mbid) {
-    return (
-      <Link to="/album/$mbid" params={{ mbid: item.mbid }} className="group block rounded-xl" aria-label={label}>
-        {inner}
-      </Link>
-    );
-  }
-  if (!item.tmdbId) return <div className="group">{inner}</div>;
   return (
-    <Link
-      to={item.kind === "show" ? "/show/$tmdbId" : "/movie/$tmdbId"}
-      params={{ tmdbId: String(item.tmdbId) }}
+    <CatalogLink
+      kind={item.kind}
+      tmdbId={item.tmdbId}
+      mbid={item.mbid}
+      olid={item.olid}
       className="group block rounded-xl"
-      aria-label={label}
+      label={label}
     >
       {inner}
-    </Link>
+    </CatalogLink>
   );
 }
 

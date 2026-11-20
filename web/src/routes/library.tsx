@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { albumsQuery, showsQuery, titlesQuery } from "../api/queries";
+import { albumsQuery, booksQuery, showsQuery, titlesQuery } from "../api/queries";
 import { PosterGrid, PosterGridSkeleton } from "../components/Posters";
 
 const GROUPS = [
@@ -14,7 +14,8 @@ export function LibraryPage() {
   const { data, isPending } = useQuery(titlesQuery);
   const { data: shows } = useQuery(showsQuery);
   const { data: albums } = useQuery(albumsQuery);
-  const titles = [...(data ?? []), ...(shows ?? []), ...(albums ?? [])];
+  const { data: books } = useQuery(booksQuery);
+  const titles = [...(data ?? []), ...(shows ?? []), ...(albums ?? []), ...(books ?? [])];
 
   return (
     <main className="mx-auto max-w-[110rem] px-4 pt-10 pb-20 sm:px-8">
@@ -26,7 +27,7 @@ export function LibraryPage() {
       ) : titles.length === 0 ? (
         <div className="mt-10 max-w-[52ch]">
           <p className="text-lg text-muted">
-            Nothing here yet. Films, shows and albums you request show up on this page as they move from wanted to ready.
+            Nothing here yet. Films, shows, albums and books you request show up on this page as they move from wanted to ready.
           </p>
           <Link to="/" className="btn-primary mt-6">
             Find a film
@@ -53,8 +54,16 @@ export function LibraryPage() {
                   year: t.year,
                   posterPath: t.poster_path,
                   state: t.state,
-                  kind: t.kind === "show" ? "show" : t.kind === "album" ? "album" : "movie",
+                  kind:
+                    t.kind === "show" || t.kind === "album"
+                      ? t.kind
+                      : t.kind === "ebook" || t.kind === "audiobook"
+                        ? "book"
+                        : "movie",
                   mbid: t.mbid,
+                  olid: t.olid,
+                  coverId: t.kind === "ebook" || t.kind === "audiobook" ? t.poster_path : undefined,
+                  note: t.kind === "ebook" ? "Ebook" : t.kind === "audiobook" ? "Audiobook" : undefined,
                 }))}
               />
             </section>

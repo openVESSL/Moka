@@ -7,6 +7,7 @@ import { LibraryPage } from "./routes/library";
 import { MoviePage } from "./routes/movie";
 import { ShowPage } from "./routes/show";
 import { AlbumPage, ArtistPage } from "./routes/music";
+import { BookAuthorPage, BookPage } from "./routes/books";
 import { RequestsPage } from "./routes/requests";
 import { ConnectionsPage, SettingsPage } from "./routes/settings";
 import { AboutPage } from "./routes/about";
@@ -111,6 +112,24 @@ const album = createRoute({
   },
 });
 
+const book = createRoute({
+  getParentRoute: () => app,
+  path: "/book/$olid",
+  component: function Book() {
+    const { olid } = book.useParams();
+    return <BookPage key={olid} olid={olid} />;
+  },
+});
+
+const author = createRoute({
+  getParentRoute: () => app,
+  path: "/author/$olid",
+  component: function Author() {
+    const { olid } = author.useParams();
+    return <BookAuthorPage key={olid} olid={olid} />;
+  },
+});
+
 const requests = createRoute({
   getParentRoute: () => app,
   path: "/requests",
@@ -138,7 +157,7 @@ const about = createRoute({ getParentRoute: () => app, path: "/about", component
 const tree = root.addChildren([
   setup,
   login,
-  app.addChildren([discover, search, movie, show, artist, album, requests, library, settings, connections, about, watch]),
+  app.addChildren([discover, search, movie, show, artist, album, book, author, requests, library, settings, connections, about, watch]),
 ]);
 
 export function makeRouter(queryClient: QueryClient) {

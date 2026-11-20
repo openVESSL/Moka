@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { img } from "../api/client";
+import { bookCover, cover, img } from "../api/client";
+import { CatalogLink } from "../components/Posters";
 import { meQuery, requestsQuery, useDecideRequest } from "../api/queries";
 import { StateBadge } from "../components/StateBadge";
 import { ago } from "../lib/states";
@@ -54,7 +55,7 @@ export function RequestsPage({ filter }: { filter: Filter }) {
         <table className="mt-2 w-full border-collapse text-left">
           <thead>
             <tr className="field-label border-b border-line text-[10px]">
-              <th scope="col" className="py-3 pr-4 font-semibold">Film</th>
+              <th scope="col" className="py-3 pr-4 font-semibold">Title</th>
               {canManage && <th scope="col" className="hidden py-3 pr-4 font-semibold sm:table-cell">Asked by</th>}
               <th scope="col" className="hidden py-3 pr-4 font-semibold md:table-cell">When</th>
               <th scope="col" className="py-3 pr-4 font-semibold">State</th>
@@ -65,21 +66,31 @@ export function RequestsPage({ filter }: { filter: Filter }) {
             {rows.map((r) => (
               <tr key={r.id} className="border-b border-line/70">
                 <td className="py-3 pr-4">
-                  <Link
-                    to="/movie/$tmdbId"
-                    params={{ tmdbId: String(r.tmdb_id ?? 0) }}
+                  <CatalogLink
+                    kind={r.kind}
+                    tmdbId={r.tmdb_id}
+                    mbid={r.mbid}
+                    olid={r.olid}
                     className="flex items-center gap-4 hover:text-white"
                   >
-                    {r.poster_path ? (
+                    {r.kind === "album" && r.mbid ? (
+                      <img src={cover(r.mbid)} alt="" className="size-11 shrink-0 rounded-[2px] object-cover" />
+                    ) : (r.kind === "ebook" || r.kind === "audiobook") && r.poster_path ? (
+                      <img src={bookCover(r.poster_path)} alt="" className="h-16 w-11 shrink-0 rounded-[2px] object-cover" />
+                    ) : r.poster_path ? (
                       <img src={img("w185", r.poster_path)} alt="" className="h-16 w-11 shrink-0 rounded-[2px] object-cover" />
                     ) : (
                       <span className="h-16 w-11 shrink-0 rounded-[2px] bg-raised" />
                     )}
                     <span>
                       <span className="block text-lg leading-tight font-bold">{r.title}</span>
-                      {r.year && <span className="data text-xs text-faint">{r.year}</span>}
+                      <span className="data text-xs text-faint">
+                        {[r.year, r.kind === "ebook" ? "Ebook" : r.kind === "audiobook" ? "Audiobook" : null]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
                     </span>
-                  </Link>
+                  </CatalogLink>
                 </td>
                 {canManage && <td className="hidden py-3 pr-4 text-muted sm:table-cell">{r.requested_by}</td>}
                 <td className="hidden py-3 pr-4 data text-sm text-faint md:table-cell">{ago(r.created_at)}</td>

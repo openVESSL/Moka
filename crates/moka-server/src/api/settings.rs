@@ -152,6 +152,12 @@ pub struct LibrarySettingsBody {
     /// Folder albums are imported into. Empty until music is wanted.
     #[serde(default)]
     pub music_path: String,
+    /// Folder ebooks are imported into. Empty until ebooks are wanted.
+    #[serde(default)]
+    pub books_path: String,
+    /// Folder audiobooks are imported into. Empty until audiobooks are wanted.
+    #[serde(default)]
+    pub audiobooks_path: String,
 }
 
 #[utoipa::path(get, path = "/api/v1/settings/library", tag = "settings",
@@ -167,6 +173,8 @@ pub async fn get_library(
         movies_path: lib.movies_path,
         shows_path: lib.shows_path,
         music_path: lib.music_path,
+        books_path: lib.books_path,
+        audiobooks_path: lib.audiobooks_path,
     }))
 }
 
@@ -182,20 +190,30 @@ pub async fn put_library(
     let path = body.movies_path.trim().to_owned();
     let shows = body.shows_path.trim().to_owned();
     let music = body.music_path.trim().to_owned();
+    let books = body.books_path.trim().to_owned();
+    let audiobooks = body.audiobooks_path.trim().to_owned();
     if path.is_empty() {
         return Err(ApiError::BadRequest("use a full folder path, like /data/movies".into()));
     }
-    for p in [&path, &shows, &music].into_iter().filter(|p| !p.is_empty()) {
+    for p in [&path, &shows, &music, &books, &audiobooks].into_iter().filter(|p| !p.is_empty()) {
         writable_folder(p).await?;
     }
     let lib = crate::pipeline::LibrarySettings {
         movies_path: path.clone(),
         shows_path: shows.clone(),
         music_path: music.clone(),
+        books_path: books.clone(),
+        audiobooks_path: audiobooks.clone(),
     };
     moka_db::settings::set(&state.db, crate::pipeline::LibrarySettings::KEY, &lib).await?;
     state.wake.notify_one();
-    Ok(Json(LibrarySettingsBody { movies_path: path, shows_path: shows, music_path: music }))
+    Ok(Json(LibrarySettingsBody {
+        movies_path: path,
+        shows_path: shows,
+        music_path: music,
+        books_path: books,
+        audiobooks_path: audiobooks,
+    }))
 }
 
 /// Every audio format, best first.

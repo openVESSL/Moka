@@ -571,6 +571,19 @@ pub async fn book_states(pool: &Pool, olids: &[String]) -> Result<Vec<(String, S
     .await
 }
 
+/// Wanted ebooks and audiobooks whose next search is due.
+pub async fn due_books(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!(
+        "WHERE kind IN ('ebook', 'audiobook') AND state = 'wanted' AND monitored = 1
+           AND (next_search_at IS NULL OR next_search_at <= ?)
+         ORDER BY next_search_at LIMIT ?"
+    ))
+    .bind(now())
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 /// Ebooks and audiobooks, newest change first.
 pub async fn books(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind IN ('ebook', 'audiobook') ORDER BY updated_at DESC"))

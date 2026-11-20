@@ -61,13 +61,19 @@ pub async fn search_album(state: &AppState, album: &Title) -> anyhow::Result<Sea
 
 /// Every audio file in a download, in name order.
 pub(crate) fn audio_files(path: &Path) -> Vec<PathBuf> {
-    let is_audio = |p: &Path| {
+    files_with(path, AUDIO_EXTENSIONS)
+}
+
+/// Every file with one of `extensions` in a download (a file or a folder up
+/// to three levels deep), in name order.
+pub(crate) fn files_with(path: &Path, extensions: &[&str]) -> Vec<PathBuf> {
+    let wanted = |p: &Path| {
         p.extension()
             .and_then(|e| e.to_str())
-            .is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+            .is_some_and(|e| extensions.contains(&e.to_ascii_lowercase().as_str()))
     };
     if path.is_file() {
-        return if is_audio(path) { vec![path.to_path_buf()] } else { vec![] };
+        return if wanted(path) { vec![path.to_path_buf()] } else { vec![] };
     }
     let mut found = Vec::new();
     let mut stack = vec![(path.to_path_buf(), 0)];
@@ -77,7 +83,7 @@ pub(crate) fn audio_files(path: &Path) -> Vec<PathBuf> {
             let p = e.path();
             if p.is_dir() && depth < 3 {
                 stack.push((p, depth + 1));
-            } else if is_audio(&p) {
+            } else if wanted(&p) {
                 found.push(p);
             }
         }

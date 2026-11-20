@@ -1336,6 +1336,10 @@ export interface components {
             url: string;
         };
         LibrarySettingsBody: {
+            /** @description Folder audiobooks are imported into. Empty until audiobooks are wanted. */
+            audiobooks_path?: string;
+            /** @description Folder ebooks are imported into. Empty until ebooks are wanted. */
+            books_path?: string;
             /** @description Folder films are imported into, as the server sees it. */
             movies_path: string;
             /** @description Folder albums are imported into. Empty until music is wanted. */

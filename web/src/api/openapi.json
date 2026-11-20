@@ -3559,6 +3559,14 @@
           "movies_path"
         ],
         "properties": {
+          "audiobooks_path": {
+            "type": "string",
+            "description": "Folder audiobooks are imported into. Empty until audiobooks are wanted."
+          },
+          "books_path": {
+            "type": "string",
+            "description": "Folder ebooks are imported into. Empty until ebooks are wanted."
+          },
           "movies_path": {
             "type": "string",
             "description": "Folder films are imported into, as the server sees it."

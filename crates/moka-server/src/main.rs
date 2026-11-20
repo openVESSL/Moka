@@ -4,6 +4,7 @@ use tracing_subscriber::EnvFilter;
 
 mod api;
 mod auth;
+mod books;
 mod config;
 mod error;
 mod jellyfin;

@@ -37,32 +37,8 @@ pub async fn author_photo(
     open_library_image(&state, "a", id).await
 }
 
-/// `kind` is `b` (book) or `a` (author); ids are numbers, so they are safe
-/// as file names.
 async fn open_library_image(state: &AppState, kind: &str, id: u64) -> ApiResult<Response> {
-    let dir = state.config.cache_dir().join("images").join(format!("openlibrary-{kind}"));
-    let path = dir.join(format!("{id}.jpg"));
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(b) => b,
-        Err(_) => {
-            // default=false: a 404 instead of a blank placeholder
-            let url = format!("{}/{kind}/id/{id}-L.jpg?default=false", moka_metadata::books::COVERS_URL);
-            let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
-            if res.status().as_u16() == 404 {
-                return Err(ApiError::NotFound("image"));
-            }
-            if !res.status().is_success() {
-                return Err(ApiError::Upstream(format!("cover host returned {}", res.status())));
-            }
-            let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
-            tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
-            let tmp = dir.join(format!(".{id}.part"));
-            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
-                let _ = tokio::fs::rename(&tmp, &path).await;
-            }
-            bytes
-        }
-    };
+    let bytes = open_library_bytes(state, kind, id).await?.ok_or(ApiError::NotFound("image"))?;
     Ok((
         [
             (header::CONTENT_TYPE, "image/jpeg".to_owned()),
@@ -92,6 +68,33 @@ pub async fn cover(
         bytes,
     )
         .into_response())
+}
+
+/// A book cover (`kind` `b`) or author photo (`a`) from the cache, or
+/// fetched and cached. `None` when Open Library has none. Ids are numbers,
+/// so they are safe as file names.
+pub(crate) async fn open_library_bytes(state: &AppState, kind: &str, id: u64) -> ApiResult<Option<Vec<u8>>> {
+    let dir = state.config.cache_dir().join("images").join(format!("openlibrary-{kind}"));
+    let path = dir.join(format!("{id}.jpg"));
+    if let Ok(b) = tokio::fs::read(&path).await {
+        return Ok(Some(b));
+    }
+    // default=false: a 404 instead of a blank placeholder
+    let url = format!("{}/{kind}/id/{id}-L.jpg?default=false", moka_metadata::books::COVERS_URL);
+    let res = state.http.get(&url).send().await.map_err(|e| ApiError::Upstream(e.to_string()))?;
+    if res.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    if !res.status().is_success() {
+        return Err(ApiError::Upstream(format!("cover host returned {}", res.status())));
+    }
+    let bytes = res.bytes().await.map_err(|e| ApiError::Upstream(e.to_string()))?.to_vec();
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| ApiError::Internal(e.into()))?;
+    let tmp = dir.join(format!(".{id}.part"));
+    if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, &path).await;
+    }
+    Ok(Some(bytes))
 }
 
 /// An album's front cover, from the cache or fetched and cached. `None` when

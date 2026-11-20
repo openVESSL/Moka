@@ -1,4 +1,4 @@
-//! Background work that moves a film (or an episode, see `series`, or an album, see `music`)
+//! Background work that moves a film (or an episode, see `series`, an album, see `music`, or a book, see `books`)
 //! from "wanted" to "available":
 //! search indexers, pick a release, hand it to the download client, follow
 //! the download, and import the finished file into the library.
@@ -36,6 +36,12 @@ pub struct LibrarySettings {
     /// Folder albums are imported into.
     #[serde(default)]
     pub music_path: String,
+    /// Folder ebooks are imported into.
+    #[serde(default)]
+    pub books_path: String,
+    /// Folder audiobooks are imported into.
+    #[serde(default)]
+    pub audiobooks_path: String,
 }
 
 impl LibrarySettings {
@@ -85,7 +91,7 @@ pub async fn run(state: AppState) {
 async fn tick(state: &AppState) -> anyhow::Result<bool> {
     let tracking = track_downloads(state).await?;
     let importing = import_pending(state).await?;
-    // with Radarr in front, it searches for films; shows and music stay here
+    // with Radarr in front, it searches for films; shows, music and books stay here
     if !crate::radarr::tick(state).await? {
         for title in moka_db::titles::due_for_search(&state.db, 3).await? {
             if let Err(e) = search_and_grab(state, &title).await {
@@ -98,6 +104,9 @@ async fn tick(state: &AppState) -> anyhow::Result<bool> {
     }
     if let Err(e) = crate::music::tick(state).await {
         tracing::warn!(error = ?e, "album search failed");
+    }
+    if let Err(e) = crate::books::tick(state).await {
+        tracing::warn!(error = ?e, "book search failed");
     }
     Ok(tracking || importing)
 }
@@ -173,6 +182,7 @@ pub(crate) enum Query {
     Movie(MovieQuery),
     Tv(TvQuery),
     Music(MusicQuery),
+    Book(moka_indexers::BookQuery),
 }
 
 /// Asks every usable indexer for a film and evaluates what comes back.
@@ -181,6 +191,7 @@ pub async fn search(state: &AppState, title: &Title) -> anyhow::Result<SearchRes
         "movie" => {}
         "episode" => return crate::series::search_episode(state, title).await,
         "album" => return crate::music::search_album(state, title).await,
+        "ebook" | "audiobook" => return crate::books::search_book(state, title).await,
         _ => bail!("Search a single episode, or let the background search find the season"),
     }
     let query = MovieQuery {
@@ -243,12 +254,13 @@ pub(crate) async fn gather(
         jobs.spawn(async move {
             let result = async {
                 let cfg = indexer_config(&idx);
-                // capabilities saved before TV or music search was read lack it: ask again
+                // capabilities saved before TV, music or book search was read lack it: ask again
                 let knows = |field: &str| idx.capabilities.as_deref().is_some_and(|c| c.contains(field));
                 let stale = match query {
                     Query::Movie(_) => false,
                     Query::Tv(_) => !knows("tv_search"),
                     Query::Music(_) => !knows("music_search"),
+                    Query::Book(_) => !knows("book_search"),
                 };
                 let caps = match idx
                     .capabilities
@@ -269,6 +281,7 @@ pub(crate) async fn gather(
                     Query::Movie(q) => client.search_movie(&cfg, &caps, q).await,
                     Query::Tv(q) => client.search_tv(&cfg, &caps, q).await,
                     Query::Music(q) => client.search_music(&cfg, &caps, q).await,
+                    Query::Book(q) => client.search_book(&cfg, &caps, q).await,
                 }
             }
             .await;
@@ -589,6 +602,7 @@ async fn import_pending(state: &AppState) -> anyhow::Result<bool> {
         let done = match t.kind.as_str() {
             "movie" => import(state, &t, &g).await,
             "album" => crate::music::import(state, &t, &g).await,
+            "ebook" | "audiobook" => crate::books::import(state, &t, &g).await,
             _ => crate::series::import(state, &t, &g).await,
         };
         match done {

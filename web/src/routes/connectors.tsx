@@ -24,7 +24,7 @@ function TestLine({ result, error }: { result?: TestResult; error?: Error | null
   );
 }
 
-/** Library folders: where imported films and shows are placed. */
+/** Library folders: where imported films, shows, music and books are placed. */
 export function LibrarySection() {
   const qc = useQueryClient();
   const { data } = useQuery({
@@ -34,14 +34,22 @@ export function LibrarySection() {
   const [path, setPath] = useState("");
   const [shows, setShows] = useState("");
   const [music, setMusic] = useState("");
+  const [books, setBooks] = useState("");
+  const [audiobooks, setAudiobooks] = useState("");
   useEffect(() => {
     setPath(data?.movies_path ?? "");
     setShows(data?.shows_path ?? "");
     setMusic(data?.music_path ?? "");
+    setBooks(data?.books_path ?? "");
+    setAudiobooks(data?.audiobooks_path ?? "");
   }, [data]);
   const save = useMutation({
     mutationFn: () =>
-      unwrap(api.PUT("/api/v1/settings/library", { body: { movies_path: path, shows_path: shows, music_path: music } })),
+      unwrap(
+        api.PUT("/api/v1/settings/library", {
+          body: { movies_path: path, shows_path: shows, music_path: music, books_path: books, audiobooks_path: audiobooks },
+        }),
+      ),
     onSuccess: (v) => qc.setQueryData(["settings", "library"], v),
   });
 
@@ -77,6 +85,24 @@ export function LibrarySection() {
           value={music}
           onChange={(e) => setMusic(e.target.value)}
           placeholder="/data/music"
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Ebooks folder" className="min-w-0 flex-1 basis-80">
+        <input
+          className="field data text-base"
+          value={books}
+          onChange={(e) => setBooks(e.target.value)}
+          placeholder="/data/books"
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Audiobooks folder" className="min-w-0 flex-1 basis-80">
+        <input
+          className="field data text-base"
+          value={audiobooks}
+          onChange={(e) => setAudiobooks(e.target.value)}
+          placeholder="/data/audiobooks"
           spellCheck={false}
         />
       </Field>

@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
 /// Catalog settings as the UI sees them. The key itself is never returned.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CatalogSettingsView {
+    /// The admin set their own key; otherwise the built-in one is used.
     pub tmdb_key_set: bool,
     pub language: String,
     pub region: Option<String>,
@@ -32,7 +33,7 @@ pub struct CatalogSettingsView {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CatalogSettingsUpdate {
-    /// New key. Omit to keep the current one.
+    /// New key. Omit to keep the current one; an empty string goes back to the built-in key.
     pub tmdb_key: Option<String>,
     pub language: String,
     pub region: Option<String>,
@@ -86,7 +87,8 @@ pub async fn put_catalog(
                 Err(e) => return Err(ApiError::Upstream(e.to_string())),
             }
         }
-        _ => current.tmdb_key,
+        Some(_) => String::new(),
+        None => current.tmdb_key,
     };
     let next = CatalogSettings { tmdb_key: key, language: language.to_owned(), region };
     next.save(&state.db).await?;

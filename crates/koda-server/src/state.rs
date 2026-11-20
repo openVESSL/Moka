@@ -43,6 +43,10 @@ pub struct CatalogSettings {
     pub region: Option<String>,
 }
 
+/// The project's own TMDB key, so the catalog works without setup. It ships in every
+/// binary, as TMDB allows for open-source apps. Tests never call TMDB, so they get none.
+const BUILT_IN_TMDB_KEY: &str = if cfg!(test) { "" } else { "f34a9d267c8e135401e2531b26087b47" };
+
 fn default_language() -> String {
     "en-US".into()
 }
@@ -63,8 +67,10 @@ impl CatalogSettings {
         koda_db::settings::set(db, Self::KEY, &sealed).await
     }
 
+    /// TMDB client with the admin's own key, or the project key when none is set.
     pub fn client(&self) -> Tmdb {
-        Tmdb::new(self.tmdb_key.clone(), self.language.clone(), self.region.clone())
+        let key = if self.tmdb_key.is_empty() { BUILT_IN_TMDB_KEY } else { &self.tmdb_key };
+        Tmdb::new(key, self.language.clone(), self.region.clone())
     }
 }
 

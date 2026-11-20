@@ -2566,7 +2566,7 @@
               "string",
               "null"
             ],
-            "description": "New key. Omit to keep the current one."
+            "description": "New key. Omit to keep the current one; an empty string goes back to the built-in key."
           }
         }
       },
@@ -2588,7 +2588,8 @@
             ]
           },
           "tmdb_key_set": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "The admin set their own key; otherwise the built-in one is used."
           }
         }
       },

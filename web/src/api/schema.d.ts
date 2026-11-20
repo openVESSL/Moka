@@ -1033,13 +1033,14 @@ export interface components {
         CatalogSettingsUpdate: {
             language: string;
             region?: string | null;
-            /** @description New key. Omit to keep the current one. */
+            /** @description New key. Omit to keep the current one; an empty string goes back to the built-in key. */
             tmdb_key?: string | null;
         };
         /** @description Catalog settings as the UI sees them. The key itself is never returned. */
         CatalogSettingsView: {
             language: string;
             region?: string | null;
+            /** @description The admin set their own key; otherwise the built-in one is used. */
             tmdb_key_set: boolean;
         };
         CatalogShow: {

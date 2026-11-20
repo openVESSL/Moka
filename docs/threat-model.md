@@ -6,7 +6,8 @@ listed as "tested" has an automated test that runs in CI.
 ## Assets
 
 - **Credentials for other services**: indexer API keys, download client
-  passwords, webhook addresses (which can embed tokens), the TMDB key.
+  passwords, webhook addresses (which can embed tokens), an admin's own TMDB
+  key (the built-in one ships in every binary and is not a secret).
 - **Accounts**: passwords and sessions of the people using the server.
 - **Files**: the media library and the download folder Koda can read and write.
 - **The host network**: Koda makes outgoing requests to addresses users type in.

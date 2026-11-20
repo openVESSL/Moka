@@ -12,6 +12,9 @@ pub enum TitleKind {
     Artist,
     Album,
     Track,
+    Author,
+    Ebook,
+    Audiobook,
 }
 
 string_enum!(TitleKind, "title kind" {
@@ -22,6 +25,9 @@ string_enum!(TitleKind, "title kind" {
     Artist => "artist",
     Album => "album",
     Track => "track",
+    Author => "author",
+    Ebook => "ebook",
+    Audiobook => "audiobook",
 });
 
 /// Where a title is in its lifecycle. See `docs/architecture.md`, section 2.2.

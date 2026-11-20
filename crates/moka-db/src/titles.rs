@@ -9,10 +9,13 @@ use crate::{Error, Pool, now};
 pub struct Title {
     pub id: i64,
     pub kind: String,
-    /// Season for an episode, show for a season, album for a track, artist for an album.
+    /// Season for an episode, show for a season, album for a track, artist
+    /// for an album, author for a book.
     pub parent_id: Option<i64>,
     /// MusicBrainz id, for music.
     pub mbid: Option<String>,
+    /// Open Library id, for books and authors.
+    pub olid: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub tmdb_id: Option<i64>,
@@ -94,6 +97,20 @@ pub struct NewAlbum {
     pub tracks: Vec<NewTrack>,
 }
 
+/// A book with its author, from Open Library. Stored as an ebook or an
+/// audiobook: the two are wanted, found and kept apart.
+#[derive(Debug, Clone, Default)]
+pub struct NewBook {
+    pub author_olid: String,
+    pub author: String,
+    pub olid: String,
+    pub title: String,
+    pub year: Option<i64>,
+    pub overview: Option<String>,
+    /// Open Library cover id, kept as text.
+    pub poster_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NewTrack {
     /// Position across the album, from 1.
@@ -107,7 +124,7 @@ pub struct NewTrack {
 macro_rules! select_titles {
     ($rest:literal) => {
         concat!(
-            "SELECT id, kind, parent_id, mbid, season_number, episode_number, tmdb_id, imdb_id, title, original_title, year, overview, \
+            "SELECT id, kind, parent_id, mbid, olid, season_number, episode_number, tmdb_id, imdb_id, title, original_title, year, overview, \
              runtime_minutes, release_date, poster_path, backdrop_path, state, state_reason, \
              quality_profile_id, monitored, next_search_at, last_search_at, created_at, updated_at \
              FROM titles ",
@@ -485,6 +502,82 @@ pub async fn album_states(pool: &Pool, mbids: &[String]) -> Result<Vec<(String, 
     .await
 }
 
+/// Inserts an ebook or audiobook under its author (created if new), or
+/// returns the existing one.
+pub async fn upsert_book(
+    pool: &Pool,
+    b: &NewBook,
+    kind: TitleKind,
+    state: TitleState,
+) -> Result<Title, Error> {
+    debug_assert!(matches!(kind, TitleKind::Ebook | TitleKind::Audiobook));
+    let profile: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(id) FROM quality_profiles").fetch_one(pool).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO titles (kind, olid, title, state, monitored) VALUES ('author', ?, ?, ?, 1)
+         ON CONFLICT(kind, olid) WHERE olid IS NOT NULL DO UPDATE SET title = excluded.title",
+    )
+    .bind(&b.author_olid)
+    .bind(&b.author)
+    .bind(TitleState::Wanted.as_str())
+    .execute(&mut *tx)
+    .await?;
+    let author: i64 = sqlx::query_scalar("SELECT id FROM titles WHERE kind = 'author' AND olid = ?")
+        .bind(&b.author_olid)
+        .fetch_one(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO titles (kind, parent_id, olid, title, year, overview, poster_path, state,
+            quality_profile_id, monitored, next_search_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+         ON CONFLICT(kind, olid) WHERE olid IS NOT NULL DO NOTHING",
+    )
+    .bind(kind.as_str())
+    .bind(author)
+    .bind(&b.olid)
+    .bind(&b.title)
+    .bind(b.year)
+    .bind(&b.overview)
+    .bind(&b.poster_path)
+    .bind(state.as_str())
+    .bind(profile)
+    .bind((state == TitleState::Wanted).then(now))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    by_olid(pool, kind, &b.olid).await?.ok_or(Error::RowNotFound)
+}
+
+/// A book or author by its Open Library id.
+pub async fn by_olid(pool: &Pool, kind: TitleKind, olid: &str) -> Result<Option<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind = ? AND olid = ?"))
+        .bind(kind.as_str())
+        .bind(olid)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Open Library id, kind (`ebook` or `audiobook`), local id and state of
+/// each book in `olids` that is in the library.
+pub async fn book_states(pool: &Pool, olids: &[String]) -> Result<Vec<(String, String, i64, String)>, Error> {
+    let ids = serde_json::to_string(olids).map_err(|e| Error::Encode(Box::new(e)))?;
+    sqlx::query_as(
+        "SELECT olid, kind, id, state FROM titles
+         WHERE kind IN ('ebook', 'audiobook') AND olid IN (SELECT value FROM json_each(?))",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+}
+
+/// Ebooks and audiobooks, newest change first.
+pub async fn books(pool: &Pool) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind IN ('ebook', 'audiobook') ORDER BY updated_at DESC"))
+        .fetch_all(pool)
+        .await
+}
+
 /// Albums, newest change first.
 pub async fn albums(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'album' ORDER BY updated_at DESC")).fetch_all(pool).await
@@ -823,6 +916,32 @@ mod tests {
         assert_eq!(album_states(&pool, &["rg1".into(), "nope".into()]).await.unwrap().len(), 1);
         assert_eq!(albums(&pool).await.unwrap().len(), 2);
         assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave music out");
+    }
+
+    #[tokio::test]
+    async fn books_sit_under_their_author() {
+        let pool = crate::memory().await;
+        let hobbit = NewBook {
+            author_olid: "OL26320A".into(),
+            author: "J.R.R. Tolkien".into(),
+            olid: "OL27482W".into(),
+            title: "The Hobbit".into(),
+            year: Some(1937),
+            poster_path: Some("14627509".into()),
+            ..Default::default()
+        };
+        let e = upsert_book(&pool, &hobbit, TitleKind::Ebook, TitleState::Wanted).await.unwrap();
+        let a = upsert_book(&pool, &hobbit, TitleKind::Audiobook, TitleState::Requested).await.unwrap();
+        assert_ne!(e.id, a.id, "an ebook and an audiobook of one book");
+        assert_eq!(e.parent_id, a.parent_id, "one author row for both");
+        assert!(e.next_search_at.is_some() && a.next_search_at.is_none());
+        assert_eq!(upsert_book(&pool, &hobbit, TitleKind::Ebook, TitleState::Wanted).await.unwrap().id, e.id);
+        let author = by_olid(&pool, TitleKind::Author, "OL26320A").await.unwrap().unwrap();
+        assert_eq!(author.title, "J.R.R. Tolkien");
+        let states = book_states(&pool, &["OL27482W".into(), "OL1W".into()]).await.unwrap();
+        assert_eq!(states.len(), 2);
+        assert_eq!(books(&pool).await.unwrap().len(), 2);
+        assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave books out");
     }
 
     #[tokio::test]

@@ -319,6 +319,7 @@ mod tests {
             kind: "track".into(),
             parent_id: Some(1),
             mbid: None,
+            olid: None,
             season_number: Some(disc),
             episode_number: Some(pos),
             tmdb_id: None,

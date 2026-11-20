@@ -27,6 +27,7 @@ pub(super) fn routes() -> Router<AppState> {
         .route("/videos/{id}/main.m3u8", get(master))
         .route("/videos/{id}/hls/{session}/{name}", get(hls))
         .route("/videos/{id}/{file}", get(stream).head(stream))
+        .route("/audio/{id}/{file}", get(stream).head(stream))
         .route("/videos/{id}/{source}/subtitles/{index}/{file}", get(subtitle))
         .route("/videos/{id}/{source}/subtitles/{index}/{start}/{file}", get(subtitle_from))
         .route("/sessions/playing", post(progress))
@@ -232,13 +233,15 @@ pub(super) async fn media_source(
     let audio = probe.audio.iter().find(|a| a.default).or_else(|| probe.audio.first());
     let profile = request.and_then(|r| field(r, "DeviceProfile"));
     let allowed = |name: &str| request.and_then(|r| field(r, name)).and_then(Value::as_bool).unwrap_or(true);
-    let direct = allowed("EnableDirectPlay")
-        && plays_directly(
-            profile,
-            container,
-            probe.video.as_ref().map(|v| v.codec.as_str()),
-            audio.map(|a| a.codec.as_str()),
-        );
+    // music files play as they are: phones and TVs read every common format
+    let direct = t.kind == "track"
+        || allowed("EnableDirectPlay")
+            && plays_directly(
+                profile,
+                container,
+                probe.video.as_ref().map(|v| v.codec.as_str()),
+                audio.map(|a| a.codec.as_str()),
+            );
     let default_audio = probe.audio.iter().position(|a| a.default).unwrap_or(0) + 1;
     let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let mut v = json!({
@@ -275,6 +278,11 @@ pub(super) async fn media_source(
         "DefaultAudioStreamIndex": default_audio,
         "HasSegments": false,
     });
+    if t.kind == "track"
+        && let Some(o) = v.as_object_mut()
+    {
+        o.remove("VideoType");
+    }
     if !direct {
         let (video, audio) = transcode_caps(profile);
         let session = request
@@ -313,8 +321,8 @@ async fn resolve(state: &AppState, id: &str, source: Option<&str>) -> ApiResult<
     }
     .ok_or(ApiError::NotFound("file"))?;
     let title = moka_db::titles::by_id(&state.db, file.title_id).await?.ok_or(ApiError::NotFound("title"))?;
-    if !matches!(title.kind.as_str(), "movie" | "episode") {
-        return Err(ApiError::NotFound("video"));
+    if !matches!(title.kind.as_str(), "movie" | "episode" | "track") {
+        return Err(ApiError::NotFound("playable title"));
     }
     Ok((title, file))
 }
@@ -372,7 +380,8 @@ async fn stream(
     if let Err(r) = u.can_play() {
         return r.into_response();
     }
-    if !file.starts_with("stream") {
+    // `stream`, `stream.mkv`, or `universal` for music apps
+    if !file.starts_with("stream") && file != "universal" {
         return StatusCode::NOT_FOUND.into_response();
     }
     let (_, f) = match resolve(&state, &id, q.get("mediasourceid")).await {

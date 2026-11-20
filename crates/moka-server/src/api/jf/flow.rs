@@ -318,3 +318,102 @@ async fn ffmpeg_apps_get_a_converted_stream() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[tokio::test]
+async fn music_apps_list_artists_albums_and_tracks() {
+    let root = std::env::temp_dir().join(format!("moka-jf-music-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let db = moka_db::memory().await;
+    let pw = crate::auth::hash_password("password1").unwrap();
+    moka_db::users::create(&db, "ana", &pw, Permissions::DEFAULT_USER).await.unwrap();
+    let album = moka_db::titles::NewAlbum {
+        artist_mbid: "artist-1".into(),
+        artist: "Test Band".into(),
+        mbid: "11111111-2222-3333-4444-555555555555".into(),
+        title: "First Light".into(),
+        year: Some(2001),
+        tracks: ["Opening", "Middle", "Closing"]
+            .iter()
+            .zip(1..)
+            .map(|(t, n)| moka_db::titles::NewTrack {
+                title: (*t).into(),
+                disc: 1,
+                number: n,
+                length_seconds: Some(200),
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let a = moka_db::titles::upsert_album(&db, &album, TitleState::Available).await.unwrap();
+    let tracks = moka_db::titles::children(&db, a.id).await.unwrap();
+    for t in &tracks[..2] {
+        let f = root.join(format!("{}.flac", t.id));
+        std::fs::write(&f, b"flac").unwrap();
+        moka_db::library::add_file(&db, t.id, &f.to_string_lossy(), 4, Some("flac"), None).await.unwrap();
+    }
+    let config = crate::config::Config {
+        config_dir: root.clone(),
+        listen: "127.0.0.1:0".parse().unwrap(),
+        database_url: String::new(),
+    };
+    let app = crate::app(AppState::new(db, config, Default::default()));
+    let (_, auth) = send(
+        &app,
+        "POST",
+        "/jellyfin/Users/AuthenticateByName",
+        None,
+        json!({ "Username": "ana", "Pw": "password1" }),
+    )
+    .await;
+    let token = auth["AccessToken"].as_str().unwrap().to_owned();
+    let t = Some(token.as_str());
+
+    let (_, views) = send(&app, "GET", "/jellyfin/UserViews", t, Value::Null).await;
+    assert_eq!(views["Items"][2]["CollectionType"], "music");
+    let music = views["Items"][2]["Id"].as_str().unwrap().to_owned();
+
+    let (_, artists) = send(&app, "GET", "/jellyfin/Artists/AlbumArtists", t, Value::Null).await;
+    assert_eq!(artists["Items"][0]["Name"], "Test Band");
+    let artist = artists["Items"][0]["Id"].as_str().unwrap().to_owned();
+    let (_, albums) = send(
+        &app,
+        "GET",
+        &format!("/jellyfin/Items?IncludeItemTypes=MusicAlbum&Recursive=true&AlbumArtistIds={artist}"),
+        t,
+        Value::Null,
+    )
+    .await;
+    let al = &albums["Items"][0];
+    assert_eq!((al["Type"].as_str(), al["AlbumArtist"].as_str()), (Some("MusicAlbum"), Some("Test Band")));
+    assert_eq!(al["ImageTags"]["Primary"], "11111111222233334444555555555555");
+    let (_, latest) =
+        send(&app, "GET", &format!("/jellyfin/Items/Latest?ParentId={music}"), t, Value::Null).await;
+    assert_eq!(latest[0]["Name"], "First Light");
+
+    let album_id = al["Id"].as_str().unwrap().to_owned();
+    let (_, songs) = send(&app, "GET", &format!("/jellyfin/Items?ParentId={album_id}"), t, Value::Null).await;
+    let view: Vec<(&str, i64)> = songs["Items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["Name"].as_str().unwrap(), s["IndexNumber"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(view, [("Opening", 1), ("Middle", 2)], "only tracks with a file");
+    assert_eq!(
+        (songs["Items"][0]["Type"].as_str(), songs["Items"][0]["MediaType"].as_str()),
+        (Some("Audio"), Some("Audio"))
+    );
+
+    let song = songs["Items"][0]["Id"].as_str().unwrap();
+    let res = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/jellyfin/Audio/{song}/universal?api_key={token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let _ = std::fs::remove_dir_all(&root);
+}

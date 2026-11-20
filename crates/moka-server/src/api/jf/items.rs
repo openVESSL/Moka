@@ -36,6 +36,8 @@ pub(super) fn routes() -> Router<AppState> {
         .route("/shows/{id}/seasons", get(seasons))
         .route("/shows/{id}/episodes", get(episodes))
         .route("/search/hints", get(search_hints))
+        .route("/artists", get(artists))
+        .route("/artists/albumartists", get(artists))
         .route("/items/{id}/images/{kind}", get(image).head(image))
         .route("/items/{id}/images/{kind}/{index}", get(image_at).head(image_at))
         .route("/items/{id}/similar", get(empty_result))
@@ -59,6 +61,7 @@ pub(super) fn routes() -> Router<AppState> {
 
 const FILMS_VIEW: i64 = 1;
 const SHOWS_VIEW: i64 = 2;
+const MUSIC_VIEW: i64 = 3;
 
 async fn empty_result() -> Json<Value> {
     Json(json!({ "Items": [], "TotalRecordCount": 0, "StartIndex": 0 }))
@@ -84,7 +87,7 @@ pub(super) struct Library {
 
 impl Library {
     pub async fn load(state: &AppState, user_id: i64) -> ApiResult<Self> {
-        let titles = moka_db::titles::video_titles(&state.db).await?.into_iter().map(|t| (t.id, t)).collect();
+        let titles = moka_db::titles::app_titles(&state.db).await?.into_iter().map(|t| (t.id, t)).collect();
         let mut files: HashMap<i64, Vec<MediaFile>> = HashMap::new();
         for f in moka_db::library::all_files(&state.db).await? {
             files.entry(f.title_id).or_default().push(f);
@@ -150,12 +153,58 @@ impl Library {
         self.kind("show").filter(|s| with.contains(&s.id)).collect()
     }
 
+    /// Tracks with a file, by album, disc and position.
+    pub fn tracks(&self, album: Option<i64>) -> Vec<&Title> {
+        let mut out: Vec<&Title> = self
+            .kind("track")
+            .filter(|t| self.file(t.id).is_some())
+            .filter(|t| album.is_none_or(|a| t.parent_id == Some(a)))
+            .collect();
+        out.sort_by_key(|t| (t.parent_id, t.season_number, t.episode_number, t.id));
+        out
+    }
+
+    /// Albums with at least one track file, by title.
+    pub fn albums(&self, artist: Option<i64>) -> Vec<&Title> {
+        let with: std::collections::HashSet<i64> =
+            self.tracks(None).iter().filter_map(|t| t.parent_id).collect();
+        let mut out: Vec<&Title> = self
+            .kind("album")
+            .filter(|a| with.contains(&a.id))
+            .filter(|a| artist.is_none_or(|x| a.parent_id == Some(x)))
+            .collect();
+        out.sort_by_key(|a| sort_name(&a.title));
+        out
+    }
+
+    /// Artists with at least one album in the library.
+    pub fn artists(&self) -> Vec<&Title> {
+        let with: std::collections::HashSet<i64> =
+            self.albums(None).iter().filter_map(|a| a.parent_id).collect();
+        self.kind("artist").filter(|a| with.contains(&a.id)).collect()
+    }
+
+    /// A track's number on its disc (positions count across the album).
+    fn track_number(&self, t: &Title) -> Option<i64> {
+        let disc = t.season_number;
+        let pos = t.episode_number?;
+        let before = self
+            .kind("track")
+            .filter(|x| {
+                x.parent_id == t.parent_id && x.season_number == disc && x.episode_number <= Some(pos)
+            })
+            .count();
+        Some(before as i64)
+    }
+
     /// Whether apps may see this title.
     pub fn visible(&self, t: &Title) -> bool {
         match t.kind.as_str() {
-            "movie" | "episode" => self.file(t.id).is_some(),
+            "movie" | "episode" | "track" => self.file(t.id).is_some(),
             "season" => !self.episodes(None, Some(t.id)).is_empty(),
             "show" => !self.episodes(Some(t.id), None).is_empty(),
+            "album" => !self.tracks(Some(t.id)).is_empty(),
+            "artist" => !self.albums(Some(t.id)).is_empty(),
             _ => false,
         }
     }
@@ -173,6 +222,8 @@ impl Library {
             "season" => {
                 self.episodes(None, Some(t.id)).iter().map(|e| self.added(e)).max().unwrap_or(t.created_at)
             }
+            "album" => self.tracks(Some(t.id)).iter().map(|e| self.added(e)).max().unwrap_or(t.created_at),
+            "artist" => self.albums(Some(t.id)).iter().map(|a| self.added(a)).max().unwrap_or(t.created_at),
             _ => self.file(t.id).map(|f| f.added_at).unwrap_or(t.created_at),
         }
     }
@@ -223,9 +274,17 @@ impl Library {
             "movie" => "Movie",
             "show" => "Series",
             "season" => "Season",
+            "artist" => "MusicArtist",
+            "album" => "MusicAlbum",
+            "track" => "Audio",
             _ => "Episode",
         };
-        let folder = matches!(t.kind.as_str(), "show" | "season");
+        let folder = matches!(t.kind.as_str(), "show" | "season" | "artist" | "album");
+        let media = match t.kind.as_str() {
+            _ if folder => "Unknown",
+            "track" => "Audio",
+            _ => "Video",
+        };
         let mut v = json!({
             "Name": t.title,
             "SortName": sort_name(&t.title),
@@ -238,7 +297,7 @@ impl Library {
             "Type": kind,
             "IsFolder": folder,
             "LocationType": "FileSystem",
-            "MediaType": if folder { "Unknown" } else { "Video" },
+            "MediaType": media,
             "UserData": self.user_data(t),
             "ImageTags": {},
             "BackdropImageTags": [],
@@ -276,7 +335,9 @@ impl Library {
         }
         if let Some(f) = self.file(t.id) {
             v["Container"] = json!(extension(&f.path));
-            v["VideoType"] = json!("VideoFile");
+            if media == "Video" {
+                v["VideoType"] = json!("VideoFile");
+            }
             v["Path"] = json!(f.path.rsplit('/').next().unwrap_or(&f.path));
             v["MediaSourceCount"] = json!(1);
         }
@@ -313,9 +374,42 @@ impl Library {
                 v["ParentId"] = json!(season.map(|s| guid(IdKind::Title, s.id)));
                 self.series_fields(&mut v, show);
             }
+            "artist" => {
+                v["ChildCount"] = json!(self.albums(Some(t.id)).len());
+            }
+            "album" => {
+                v["ChildCount"] = json!(self.tracks(Some(t.id)).len());
+                self.album_fields(&mut v, Some(t));
+            }
+            "track" => {
+                let album = self.parent(t);
+                v["IndexNumber"] = json!(self.track_number(t));
+                v["ParentIndexNumber"] = json!(t.season_number);
+                v["Album"] = json!(album.map(|a| a.title.clone()));
+                v["AlbumId"] = json!(album.map(|a| guid(IdKind::Title, a.id)));
+                v["ParentId"] = json!(album.map(|a| guid(IdKind::Title, a.id)));
+                self.album_fields(&mut v, album);
+            }
             _ => {}
         }
         v
+    }
+
+    /// Artist and cover of an album, on the album and on its tracks.
+    fn album_fields(&self, v: &mut Value, album: Option<&Title>) {
+        let Some(album) = album else { return };
+        if let Some(artist) = self.parent(album) {
+            let item = json!([{ "Name": artist.title, "Id": guid(IdKind::Title, artist.id) }]);
+            v["AlbumArtist"] = json!(artist.title);
+            v["AlbumArtists"] = item.clone();
+            v["ArtistItems"] = item;
+            v["Artists"] = json!([artist.title]);
+        }
+        if let Some(tag) = album.mbid.as_deref().map(|m| m.replace('-', "")) {
+            v["ImageTags"] = json!({ "Primary": tag });
+            v["AlbumPrimaryImageTag"] = json!(tag);
+            v["PrimaryImageAspectRatio"] = json!(1.0);
+        }
     }
 
     fn series_fields(&self, v: &mut Value, show: Option<&Title>) {
@@ -365,7 +459,11 @@ fn extension(path: &str) -> String {
 }
 
 fn view(server_id: &str, n: i64) -> Value {
-    let (name, collection) = if n == FILMS_VIEW { ("Films", "movies") } else { ("Shows", "tvshows") };
+    let (name, collection) = match n {
+        FILMS_VIEW => ("Films", "movies"),
+        SHOWS_VIEW => ("Shows", "tvshows"),
+        _ => ("Music", "music"),
+    };
     json!({
         "Name": name,
         "ServerId": server_id,
@@ -391,10 +489,15 @@ fn result(items: Vec<Value>, total: usize, start: usize) -> Json<Value> {
     Json(json!({ "Items": items, "TotalRecordCount": total, "StartIndex": start }))
 }
 
+/// Films and shows always; music once there is some.
 async fn views(u: AppUser, State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let _ = u;
-    let sid = server_id(&state).await?;
-    Ok(result(vec![view(&sid, FILMS_VIEW), view(&sid, SHOWS_VIEW)], 2, 0))
+    let lib = Library::load(&state, u.user.id).await?;
+    let mut list = vec![view(&lib.server_id, FILMS_VIEW), view(&lib.server_id, SHOWS_VIEW)];
+    if !lib.tracks(None).is_empty() {
+        list.push(view(&lib.server_id, MUSIC_VIEW));
+    }
+    let n = list.len();
+    Ok(result(list, n, 0))
 }
 
 /// Type names apps filter by, as Moka kinds.
@@ -404,6 +507,9 @@ fn kind_of(app_type: &str) -> Option<&'static str> {
         "series" => Some("show"),
         "season" => Some("season"),
         "episode" => Some("episode"),
+        "musicartist" => Some("artist"),
+        "musicalbum" => Some("album"),
+        "audio" => Some("track"),
         _ => None,
     }
 }
@@ -437,8 +543,29 @@ fn select<'a>(lib: &'a Library, q: &Q) -> Vec<&'a Title> {
         if wants("episode") {
             out.extend(lib.episodes(None, None));
         }
+        if wants("artist") {
+            out.extend(lib.artists());
+        }
+        if wants("album") {
+            out.extend(lib.albums(None));
+        }
+        if wants("track") {
+            out.extend(lib.tracks(None));
+        }
         out
     };
+    // music apps ask for an artist's albums or an album's tracks this way
+    let artist = q.get("albumartistids").or_else(|| q.get("artistids")).and_then(parse_guid).map(|(_, n)| n);
+    if let Some(a) = artist {
+        return if wants("track") {
+            lib.albums(Some(a)).into_iter().flat_map(|al| lib.tracks(Some(al.id))).collect()
+        } else {
+            lib.albums(Some(a))
+        };
+    }
+    if let Some((_, al)) = q.get("albumids").and_then(parse_guid) {
+        return lib.tracks(Some(al));
+    }
     match q.get("parentid").and_then(parse_guid) {
         Some((IdKind::View, FILMS_VIEW)) => lib.movies(),
         Some((IdKind::View, SHOWS_VIEW)) => {
@@ -450,7 +577,21 @@ fn select<'a>(lib: &'a Library, q: &Q) -> Vec<&'a Title> {
                 lib.shows()
             }
         }
+        Some((IdKind::View, MUSIC_VIEW)) => {
+            if wants("track") {
+                lib.tracks(None)
+            } else if wants("artist") {
+                lib.artists()
+            } else {
+                lib.albums(None)
+            }
+        }
         Some((IdKind::Title, id)) => match lib.titles.get(&id).map(|t| t.kind.as_str()) {
+            Some("artist") if wants("track") => {
+                lib.albums(Some(id)).into_iter().flat_map(|al| lib.tracks(Some(al.id))).collect()
+            }
+            Some("artist") => lib.albums(Some(id)),
+            Some("album") => lib.tracks(Some(id)),
             Some("show") if recursive || wants("episode") => lib.episodes(Some(id), None),
             Some("show") => lib.seasons(Some(id)),
             Some("season") => lib.episodes(None, Some(id)),
@@ -500,6 +641,8 @@ fn sort(lib: &Library, q: &Q, list: &mut [&Title]) {
             "indexnumber" | "parentindexnumber" | "airedepisodeorder" => {
                 (a.season_number, a.episode_number).cmp(&(b.season_number, b.episode_number))
             }
+            _ if a.kind == "track" && b.kind == "track" => (a.parent_id, a.season_number, a.episode_number)
+                .cmp(&(b.parent_id, b.season_number, b.episode_number)),
             _ if a.kind == "episode" && b.kind == "episode" => {
                 (a.season_number, a.episode_number).cmp(&(b.season_number, b.episode_number))
             }
@@ -529,13 +672,21 @@ async fn items(u: AppUser, State(state): State<AppState>, q: Q) -> ApiResult<Jso
     Ok(page(&lib, &q, list))
 }
 
+async fn artists(u: AppUser, State(state): State<AppState>, q: Q) -> ApiResult<Json<Value>> {
+    let lib = Library::load(&state, u.user.id).await?;
+    let list = lib.artists();
+    Ok(page(&lib, &q, list))
+}
+
 async fn latest(u: AppUser, State(state): State<AppState>, q: Q) -> ApiResult<Json<Value>> {
     let lib = Library::load(&state, u.user.id).await?;
     let types: Vec<&str> = q.list("includeitemtypes").iter().filter_map(|t| kind_of(t)).collect();
     let mut list: Vec<&Title> = match q.get("parentid").and_then(parse_guid) {
         Some((IdKind::View, FILMS_VIEW)) => lib.movies(),
         Some((IdKind::View, SHOWS_VIEW)) => lib.shows(),
+        Some((IdKind::View, MUSIC_VIEW)) => lib.albums(None),
         Some((IdKind::Title, id)) => lib.episodes(Some(id), None),
+        _ if types.contains(&"album") || types.contains(&"track") => lib.albums(None),
         _ if types.contains(&"movie") && !types.contains(&"show") => lib.movies(),
         _ if types.contains(&"show") || types.contains(&"episode") => lib.shows(),
         _ => {
@@ -587,7 +738,7 @@ async fn one(u: AppUser, state: AppState, id: String) -> Response {
     let run = async {
         let sid = server_id(&state).await?;
         let found = match parse_guid(&id) {
-            Some((IdKind::View, n)) if n == FILMS_VIEW || n == SHOWS_VIEW => Some(view(&sid, n)),
+            Some((IdKind::View, n)) if (FILMS_VIEW..=MUSIC_VIEW).contains(&n) => Some(view(&sid, n)),
             Some((IdKind::Title, n)) => {
                 let lib = Library::load(&state, u.user.id).await?;
                 match lib.titles.get(&n).filter(|t| lib.visible(t)) {
@@ -750,6 +901,26 @@ async fn artwork(state: &AppState, id: &str, kind: &str, q: &Q) -> Response {
         },
         _ => None,
     };
+    // albums and their tracks: the album cover
+    let album = match t.kind.as_str() {
+        "album" => Some(t.clone()),
+        "track" => parent(t.parent_id).await,
+        _ => None,
+    };
+    if let Some(album) = album {
+        let Some(mbid) = album.mbid.filter(|_| kind == "primary") else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        return match crate::api::images::cover_bytes(state, &mbid).await {
+            Ok(Some(bytes)) => (
+                [(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=604800")],
+                bytes,
+            )
+                .into_response(),
+            Ok(None) => StatusCode::NOT_FOUND.into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
     let backdrop = || t.backdrop_path.clone().or_else(|| show.as_ref().and_then(|s| s.backdrop_path.clone()));
     let path = match kind {
         "primary" => t.poster_path.clone().or_else(|| show.as_ref().and_then(|s| s.poster_path.clone())),

@@ -172,7 +172,7 @@ every pass (a few seconds while something moves, a minute when idle, at once whe
 - **Placing files**: hardlink when the download and library are on the same filesystem (the torrent keeps seeding, no extra space), copy otherwise. Subtitles next to the video come along.
 - **Films**: the biggest video (samples skipped) goes to `{films}/{Title} ({Year}) {tmdb-ID}/{Title} ({Year}) {tmdb-ID} - {Quality}.{ext}`.
 - **Episodes**: every video in the download is matched to an episode by its name (season/episode, air date or absolute number) and placed at `{shows}/{Show} ({Year}) {tmdb-ID}/Season NN/{Show} - S01E02 - {Name} - {Quality}.{ext}`. Episodes the download did not hold go back to `wanted`.
-- **Existing libraries**: a scan recognizes film folders and show folders (TMDB id in the name, else title + year) and adds them as available, leaving the files in place.
+- **Existing libraries**: a scan recognizes film folders and show folders (TMDB id in the name, else title + year) and album folders (`Artist/Album (Year)`, matched by name on MusicBrainz), and adds them as available, leaving the files in place.
 
 ## 7. Playback
 

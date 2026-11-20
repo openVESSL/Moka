@@ -1,4 +1,4 @@
-//! Requests: ask for a film, approve or decline.
+//! Requests: ask for a film or a show, approve or decline.
 
 use std::time::Duration;
 
@@ -32,6 +32,17 @@ pub struct Quota {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NewRequest {
     pub tmdb_id: i64,
+    /// `movie` (default) or `show`. A show is requested whole; specials are left out.
+    #[serde(default)]
+    pub kind: RequestKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestKind {
+    #[default]
+    Movie,
+    Show,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -39,6 +50,8 @@ pub struct Request {
     pub id: i64,
     pub title_id: i64,
     pub tmdb_id: Option<i64>,
+    /// movie | show
+    pub kind: String,
     pub title: String,
     pub year: Option<i64>,
     pub poster_path: Option<String>,
@@ -59,6 +72,7 @@ impl From<RequestRow> for Request {
             id: r.id,
             title_id: r.title_id,
             tmdb_id: r.tmdb_id,
+            kind: r.kind,
             title: r.title,
             year: r.year,
             poster_path: r.poster_path,
@@ -109,7 +123,7 @@ pub async fn list(
     Ok(Json(rows.into_iter().map(Request::from).collect()))
 }
 
-/// Requests a film. Creates the title if it is new; if someone already asked
+/// Requests a film or a show. Creates the title if it is new; if someone already asked
 /// for it, this adds the user to that title instead of failing.
 #[utoipa::path(post, path = "/api/v1/requests", tag = "requests", request_body = NewRequest,
     responses((status = 200, body = Request), (status = 403), (status = 429, description = "quota reached")))]
@@ -128,33 +142,22 @@ pub async fn create(
             let used = koda_db::requests::count_recent_for_user(db, user.0.id, quota.days.max(1)).await?;
             if used >= limit {
                 return Err(ApiError::TooManyRequests(format!(
-                    "request limit reached: {limit} films every {} days",
+                    "request limit reached: {limit} requests every {} days",
                     quota.days.max(1)
                 )));
             }
         }
     }
 
-    let tmdb = state.tmdb();
-    let d = state
-        .cached(format!("movie:{}", body.tmdb_id), Duration::from_secs(6 * 3600), || tmdb.movie(body.tmdb_id))
-        .await?;
     let auto = perms.has(Permissions::AUTO_APPROVE);
     let initial = if auto { TitleState::Wanted } else { TitleState::Requested };
-    let new = NewTitle {
-        tmdb_id: d.id,
-        imdb_id: d.imdb().map(str::to_owned),
-        title: d.title.clone(),
-        original_title: d.original_title.clone(),
-        year: d.year(),
-        overview: d.overview.clone(),
-        runtime_minutes: d.runtime.filter(|r| *r > 0),
-        release_date: d.release_date.clone(),
-        poster_path: d.poster_path.clone(),
-        backdrop_path: d.backdrop_path.clone(),
-        metadata_json: serde_json::to_string(&d).ok(),
+    let mut title = match body.kind {
+        RequestKind::Show => {
+            let show = crate::api::catalog::new_show(&state, body.tmdb_id).await?;
+            koda_db::titles::upsert_show(db, &show, initial).await?
+        }
+        RequestKind::Movie => movie_title(&state, body.tmdb_id, initial).await?,
     };
-    let mut title = koda_db::titles::upsert_movie(db, &new, initial).await?;
 
     // An auto-approved request moves a title someone else left pending.
     if auto && title.state() == TitleState::Requested {
@@ -162,6 +165,9 @@ pub async fn create(
             .await
             .map_err(|e| ApiError::Internal(e.into()))?;
         koda_db::titles::schedule_search(db, title.id, 0, None).await?;
+    }
+    if auto && title.kind == "show" {
+        koda_db::titles::approve_show_parts(db, title.id).await?;
     }
 
     let status = if auto { RequestStatus::Approved } else { RequestStatus::Pending };
@@ -179,6 +185,31 @@ pub async fn create(
         state.publish(LiveEvent::TitleState { title_id: title.id, state: title.state(), reason: None });
     }
     Ok(Json(row.into()))
+}
+
+async fn movie_title(
+    state: &AppState,
+    tmdb_id: i64,
+    initial: TitleState,
+) -> ApiResult<koda_db::titles::Title> {
+    let tmdb = state.tmdb();
+    let d = state
+        .cached(format!("movie:{tmdb_id}"), Duration::from_secs(6 * 3600), || tmdb.movie(tmdb_id))
+        .await?;
+    let new = NewTitle {
+        tmdb_id: d.id,
+        imdb_id: d.imdb().map(str::to_owned),
+        title: d.title.clone(),
+        original_title: d.original_title.clone(),
+        year: d.year(),
+        overview: d.overview.clone(),
+        runtime_minutes: d.runtime.filter(|r| *r > 0),
+        release_date: d.release_date.clone(),
+        poster_path: d.poster_path.clone(),
+        backdrop_path: d.backdrop_path.clone(),
+        metadata_json: serde_json::to_string(&d).ok(),
+    };
+    Ok(koda_db::titles::upsert_movie(&state.db, &new, initial).await?)
 }
 
 #[utoipa::path(post, path = "/api/v1/requests/{id}/approve", tag = "requests",
@@ -201,6 +232,9 @@ pub async fn approve(
             .await
             .map_err(|e| ApiError::Internal(e.into()))?;
         koda_db::titles::schedule_search(db, t.id, 0, None).await?;
+        if t.kind == "show" {
+            koda_db::titles::approve_show_parts(db, t.id).await?;
+        }
         state.publish(LiveEvent::TitleState { title_id: t.id, state: t.state(), reason: None });
     }
     state.publish(LiveEvent::RequestDecided { request_id: id, title_id: req.title_id, approved: true });

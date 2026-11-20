@@ -267,6 +267,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shows_are_requested_whole() {
+        // fake TMDB serving one show with specials and one season
+        let tmdb = axum::Router::new()
+            .route(
+                "/tv/1399",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "id": 1399, "name": "Thrones", "first_air_date": "2011-04-17",
+                        "external_ids": { "tvdb_id": 121361 },
+                        "seasons": [{"id": 30, "season_number": 0, "name": "Specials", "episode_count": 1},
+                                    {"id": 31, "season_number": 1, "name": "Season 1", "episode_count": 2}]
+                    }))
+                }),
+            )
+            .route(
+                "/tv/1399/season/{n}",
+                axum::routing::get(|axum::extract::Path(n): axum::extract::Path<i64>| async move {
+                    let eps: Vec<_> = (1..=if n == 0 { 1 } else { 2 })
+                        .map(|e| {
+                            serde_json::json!({"id": 300 + n * 10 + e, "season_number": n,
+                                                     "episode_number": e, "name": format!("Ep {e}")})
+                        })
+                        .collect();
+                    axum::Json(
+                        serde_json::json!({"id": 30 + n, "season_number": n, "name": "S", "episodes": eps}),
+                    )
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, tmdb).await.unwrap() });
+
+        let db = koda_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        koda_db::users::create(&db, "admin", &pw, koda_core::Permissions::ADMIN).await.unwrap();
+        koda_db::users::create(&db, "guest", &pw, koda_core::Permissions::DEFAULT_USER).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_tmdb(koda_metadata::Tmdb::with_base_url(&base, "k", "en-US", None));
+        let app = app(state);
+        let guest = login(&app, "guest", "password1").await;
+        let admin = login(&app, "admin", "password1").await;
+
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"tmdb_id":1399,"kind":"show"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let req = body_json(res).await;
+        assert_eq!((req["kind"].as_str(), req["title_state"].as_str()), (Some("show"), Some("requested")));
+        let (id, show) = (req["id"].as_i64().unwrap(), req["title_id"].as_i64().unwrap());
+
+        app.clone()
+            .oneshot(authed("POST", &format!("/api/v1/requests/{id}/approve"), &admin, "{}"))
+            .await
+            .unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("GET", &format!("/api/v1/titles/{show}/episodes"), &guest, ""))
+            .await
+            .unwrap();
+        let eps = body_json(res).await;
+        let eps = eps.as_array().unwrap();
+        assert_eq!(eps.len(), 3);
+        assert!(eps.iter().all(|e| e["state"] == "wanted"));
+        assert_eq!((eps[0]["season_number"].as_i64(), eps[0]["monitored"].as_bool()), (Some(0), Some(false)));
+        assert_eq!((eps[2]["episode_number"].as_i64(), eps[2]["monitored"].as_bool()), (Some(2), Some(true)));
+
+        // shows are listed apart from films
+        let res = app.clone().oneshot(authed("GET", "/api/v1/titles?kind=show", &guest, "")).await.unwrap();
+        assert_eq!(body_json(res).await.as_array().unwrap().len(), 1);
+        let res = app.clone().oneshot(authed("GET", "/api/v1/titles", &guest, "")).await.unwrap();
+        assert!(body_json(res).await.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn admin_manages_users_but_keeps_one_admin() {
         let db = koda_db::memory().await;
         let pw = auth::hash_password("password1").unwrap();

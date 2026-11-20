@@ -296,6 +296,125 @@
         }
       }
     },
+    "/api/v1/catalog/show/{tmdb_id}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "show",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogShow"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/catalog/shows/discover/{list}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "discover_shows",
+        "parameters": [
+          {
+            "name": "list",
+            "in": "path",
+            "description": "trending | popular | now_playing | top_rated",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPage"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TMDB key missing"
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/shows/search": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "search_shows",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/download-clients": {
       "get": {
         "tags": [
@@ -1148,7 +1267,7 @@
         "tags": [
           "requests"
         ],
-        "summary": "Requests a film. Creates the title if it is new; if someone already asked\nfor it, this adds the user to that title instead of failing.",
+        "summary": "Requests a film or a show. Creates the title if it is new; if someone already asked\nfor it, this adds the user to that title instead of failing.",
         "operationId": "create",
         "requestBody": {
           "content": {
@@ -1567,6 +1686,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "`movie` (default) or `show`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1608,6 +1739,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Title"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/titles/{id}/episodes": {
+      "get": {
+        "tags": [
+          "titles"
+        ],
+        "summary": "Every episode of a show, by season and number.",
+        "operationId": "episodes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Title"
+                  }
                 }
               }
             }
@@ -2213,6 +2379,39 @@
           }
         }
       },
+      "CatalogSeason": {
+        "type": "object",
+        "required": [
+          "season_number",
+          "name",
+          "episode_count"
+        ],
+        "properties": {
+          "air_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "episode_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "poster_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "season_number": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "CatalogSettingsUpdate": {
         "type": "object",
         "required": [
@@ -2256,6 +2455,134 @@
           },
           "tmdb_key_set": {
             "type": "boolean"
+          }
+        }
+      },
+      "CatalogShow": {
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "genres",
+          "cast",
+          "vote_average",
+          "seasons"
+        ],
+        "properties": {
+          "backdrop_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cast": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            }
+          },
+          "first_air_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "imdb_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "local": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocalState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "original_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "poster_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "seasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogSeason"
+            }
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "e.g. \"Returning Series\", \"Ended\"."
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "tmdb_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trailer_youtube_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tvdb_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vote_average": {
+            "type": "number",
+            "format": "double"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -2823,6 +3150,10 @@
           "tmdb_id"
         ],
         "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "`movie` (default) or `show`. A show is requested whole; specials are left out."
+          },
           "tmdb_id": {
             "type": "integer",
             "format": "int64"
@@ -3356,6 +3687,7 @@
         "required": [
           "id",
           "title_id",
+          "kind",
           "title",
           "status",
           "title_state",
@@ -3383,6 +3715,10 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "description": "movie | show"
           },
           "note": {
             "type": [
@@ -3429,6 +3765,13 @@
             "format": "int64"
           }
         }
+      },
+      "RequestKind": {
+        "type": "string",
+        "enum": [
+          "movie",
+          "show"
+        ]
       },
       "ScanRequest": {
         "type": "object",
@@ -3513,6 +3856,7 @@
         "required": [
           "id",
           "kind",
+          "monitored",
           "title",
           "state",
           "created_at",
@@ -3529,6 +3873,13 @@
             "type": "integer",
             "format": "int64"
           },
+          "episode_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "id": {
             "type": "integer",
             "format": "int64"
@@ -3540,7 +3891,8 @@
             ]
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "movie | show | season | episode"
           },
           "last_search_at": {
             "type": [
@@ -3548,6 +3900,10 @@
               "null"
             ],
             "format": "int64"
+          },
+          "monitored": {
+            "type": "boolean",
+            "description": "Searched for automatically (specials are not, by default)."
           },
           "next_search_at": {
             "type": [
@@ -3562,13 +3918,35 @@
               "null"
             ]
           },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Season of an episode, show of a season."
+          },
           "poster_path": {
             "type": [
               "string",
               "null"
             ]
           },
+          "release_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First air date for shows and episodes."
+          },
           "runtime_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "season_number": {
             "type": [
               "integer",
               "null"

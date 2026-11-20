@@ -14,6 +14,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/titles", get(list))
         .route("/titles/{id}", get(one))
+        .route("/titles/{id}/episodes", get(episodes))
         .route("/titles/{id}/search", axum::routing::post(search_now))
         .route("/titles/{id}/releases", get(releases))
         .route("/titles/{id}/grab", axum::routing::post(grab))
@@ -191,7 +192,16 @@ pub async fn stream(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Title {
     pub id: i64,
+    /// movie | show | season | episode
     pub kind: String,
+    /// Season of an episode, show of a season.
+    pub parent_id: Option<i64>,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
+    /// Searched for automatically (specials are not, by default).
+    pub monitored: bool,
+    /// First air date for shows and episodes.
+    pub release_date: Option<String>,
     pub tmdb_id: Option<i64>,
     pub imdb_id: Option<String>,
     pub title: String,
@@ -215,6 +225,11 @@ impl From<koda_db::titles::Title> for Title {
         Self {
             id: t.id,
             kind: t.kind,
+            parent_id: t.parent_id,
+            season_number: t.season_number,
+            episode_number: t.episode_number,
+            monitored: t.monitored,
+            release_date: t.release_date,
             tmdb_id: t.tmdb_id,
             imdb_id: t.imdb_id,
             title: t.title,
@@ -236,6 +251,8 @@ impl From<koda_db::titles::Title> for Title {
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ListQuery {
     pub state: Option<String>,
+    /// `movie` (default) or `show`.
+    pub kind: Option<String>,
 }
 
 #[utoipa::path(get, path = "/api/v1/titles", operation_id = "list_titles", tag = "titles", params(ListQuery),
@@ -250,7 +267,31 @@ pub async fn list(
         .as_deref()
         .map(|s| s.parse::<TitleState>().map_err(|e| ApiError::BadRequest(e.to_string())))
         .transpose()?;
-    let rows = koda_db::titles::list(&state.db, filter).await?;
+    let rows = match q.kind.as_deref() {
+        None | Some("movie") => koda_db::titles::list(&state.db, filter).await?,
+        Some("show") => koda_db::titles::shows(&state.db)
+            .await?
+            .into_iter()
+            .filter(|t| filter.is_none_or(|f| t.state() == f))
+            .collect(),
+        Some(_) => return Err(ApiError::BadRequest("kind must be movie or show".into())),
+    };
+    Ok(Json(rows.into_iter().map(Title::from).collect()))
+}
+
+/// Every episode of a show, by season and number.
+#[utoipa::path(get, path = "/api/v1/titles/{id}/episodes", tag = "titles", params(("id" = i64, Path)),
+    responses((status = 200, body = [Title]), (status = 404)))]
+pub async fn episodes(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Vec<Title>>> {
+    let show = koda_db::titles::by_id(&state.db, id).await?.ok_or(ApiError::NotFound("title"))?;
+    if show.kind != "show" {
+        return Err(ApiError::BadRequest("only shows have episodes".into()));
+    }
+    let rows = koda_db::titles::episodes_of_show(&state.db, id).await?;
     Ok(Json(rows.into_iter().map(Title::from).collect()))
 }
 

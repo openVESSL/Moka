@@ -216,6 +216,25 @@ async fn insert_part(
         .await
 }
 
+/// Approves a requested show: its seasons and episodes become wanted too.
+pub async fn approve_show_parts(pool: &Pool, show_id: i64) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE titles SET state = 'wanted', next_search_at = ?1, updated_at = ?1
+         WHERE state = 'requested'
+           AND (parent_id = ?2 OR parent_id IN (SELECT id FROM titles WHERE parent_id = ?2))",
+    )
+    .bind(now())
+    .bind(show_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Shows, newest change first.
+pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await
+}
+
 /// Seasons of a show, or episodes of a season, in order.
 pub async fn children(pool: &Pool, parent_id: i64) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE parent_id = ? ORDER BY season_number, episode_number"))
@@ -454,6 +473,18 @@ mod tests {
         let eps = episodes_of_show(&pool, a.id).await.unwrap();
         assert_eq!(eps.len(), 5);
         assert_eq!(eps[2].state(), TitleState::Searching);
+        assert_eq!(shows(&pool).await.unwrap().len(), 1);
+
+        let asked = NewShow {
+            show: part(2, "Asked"),
+            seasons: vec![NewSeason { title: part(20, "S1"), number: 1, episodes: episodes(200) }],
+            ..Default::default()
+        };
+        let t = upsert_show(&pool, &asked, TitleState::Requested).await.unwrap();
+        approve_show_parts(&pool, t.id).await.unwrap();
+        let eps = episodes_of_show(&pool, t.id).await.unwrap();
+        assert!(eps.iter().all(|e| e.state() == TitleState::Wanted && e.next_search_at.is_some()));
+        assert_eq!(children(&pool, t.id).await.unwrap()[0].state(), TitleState::Wanted);
         assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave shows out");
         assert!(due_for_search(&pool, 10).await.unwrap().is_empty());
     }

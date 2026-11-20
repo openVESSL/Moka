@@ -34,6 +34,7 @@ pub struct RequestRow {
     pub decided_at: Option<i64>,
     pub note: Option<String>,
     pub created_at: i64,
+    pub kind: String,
     pub tmdb_id: Option<i64>,
     pub title: String,
     pub year: Option<i64>,
@@ -46,7 +47,7 @@ macro_rules! select_requests {
     ($rest:literal) => {
         concat!(
             "SELECT r.id, r.title_id, r.user_id, u.username, r.status, r.decided_by, r.decided_at, \
-             r.note, r.created_at, t.tmdb_id, t.title, t.year, t.poster_path, t.backdrop_path, \
+             r.note, r.created_at, t.kind, t.tmdb_id, t.title, t.year, t.poster_path, t.backdrop_path, \
              t.state AS title_state \
              FROM requests r JOIN users u ON u.id = r.user_id JOIN titles t ON t.id = r.title_id ",
             $rest

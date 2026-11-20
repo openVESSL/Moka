@@ -150,6 +150,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/show/{tmdb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/shows/discover/{list}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["discover_shows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/shows/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["search_shows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/download-clients": {
         parameters: {
             query?: never;
@@ -495,7 +543,7 @@ export interface paths {
         get: operations["list_requests"];
         put?: never;
         /**
-         * Requests a film. Creates the title if it is new; if someone already asked
+         * Requests a film or a show. Creates the title if it is new; if someone already asked
          *     for it, this adds the user to that title instead of failing.
          */
         post: operations["create"];
@@ -668,6 +716,23 @@ export interface paths {
             cookie?: never;
         };
         get: operations["one"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{id}/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every episode of a show, by season and number. */
+        get: operations["episodes"];
         put?: never;
         post?: never;
         delete?: never;
@@ -888,6 +953,15 @@ export interface components {
             /** Format: int64 */
             total_pages: number;
         };
+        CatalogSeason: {
+            air_date?: string | null;
+            /** Format: int64 */
+            episode_count: number;
+            name: string;
+            poster_path?: string | null;
+            /** Format: int64 */
+            season_number: number;
+        };
         CatalogSettingsUpdate: {
             language: string;
             region?: string | null;
@@ -899,6 +973,33 @@ export interface components {
             language: string;
             region?: string | null;
             tmdb_key_set: boolean;
+        };
+        CatalogShow: {
+            backdrop_path?: string | null;
+            cast: components["schemas"]["Person"][];
+            first_air_date?: string | null;
+            genres: string[];
+            imdb_id?: string | null;
+            local?: components["schemas"]["LocalState"] | null;
+            original_title?: string | null;
+            overview?: string | null;
+            poster_path?: string | null;
+            /** Format: int64 */
+            runtime_minutes?: number | null;
+            seasons: components["schemas"]["CatalogSeason"][];
+            /** @description e.g. "Returning Series", "Ended". */
+            status?: string | null;
+            tagline?: string | null;
+            title: string;
+            /** Format: int64 */
+            tmdb_id: number;
+            trailer_youtube_key?: string | null;
+            /** Format: int64 */
+            tvdb_id?: number | null;
+            /** Format: double */
+            vote_average: number;
+            /** Format: int64 */
+            year?: number | null;
         };
         /** @description What the browser said it can decode (from `MediaSource.isTypeSupported`). */
         ClientCaps: {
@@ -1062,6 +1163,8 @@ export interface components {
             name: string;
         };
         NewRequest: {
+            /** @description `movie` (default) or `show`. A show is requested whole; specials are left out. */
+            kind?: components["schemas"]["RequestKind"];
             /** Format: int64 */
             tmdb_id: number;
         };
@@ -1235,6 +1338,8 @@ export interface components {
             decided_at?: number | null;
             /** Format: int64 */
             id: number;
+            /** @description movie | show */
+            kind: string;
             note?: string | null;
             poster_path?: string | null;
             requested_by: string;
@@ -1250,6 +1355,8 @@ export interface components {
             /** Format: int64 */
             year?: number | null;
         };
+        /** @enum {string} */
+        RequestKind: "movie" | "show";
         ScanRequest: {
             /** @description Folder to scan. Defaults to the library's films folder. */
             path?: string | null;
@@ -1274,17 +1381,31 @@ export interface components {
             /** Format: int64 */
             created_at: number;
             /** Format: int64 */
+            episode_number?: number | null;
+            /** Format: int64 */
             id: number;
             imdb_id?: string | null;
+            /** @description movie | show | season | episode */
             kind: string;
             /** Format: int64 */
             last_search_at?: number | null;
+            /** @description Searched for automatically (specials are not, by default). */
+            monitored: boolean;
             /** Format: int64 */
             next_search_at?: number | null;
             overview?: string | null;
+            /**
+             * Format: int64
+             * @description Season of an episode, show of a season.
+             */
+            parent_id?: number | null;
             poster_path?: string | null;
+            /** @description First air date for shows and episodes. */
+            release_date?: string | null;
             /** Format: int64 */
             runtime_minutes?: number | null;
+            /** Format: int64 */
+            season_number?: number | null;
             /** @description requested | wanted | searching | grabbed | downloading | importing | available */
             state: string;
             /** @description Plain-language reason for the current state, when there is one. */
@@ -1567,6 +1688,86 @@ export interface operations {
         };
     };
     search: {
+        parameters: {
+            query: {
+                q: string;
+                page?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPage"];
+                };
+            };
+        };
+    };
+    show: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogShow"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discover_shows: {
+        parameters: {
+            query?: {
+                page?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description trending | popular | now_playing | top_rated */
+                list: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPage"];
+                };
+            };
+            /** @description TMDB key missing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_shows: {
         parameters: {
             query: {
                 q: string;
@@ -2593,6 +2794,8 @@ export interface operations {
         parameters: {
             query?: {
                 state?: string | null;
+                /** @description `movie` (default) or `show`. */
+                kind?: string | null;
             };
             header?: never;
             path?: never;
@@ -2627,6 +2830,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Title"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    episodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Title"][];
                 };
             };
             404: {

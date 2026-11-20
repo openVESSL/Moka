@@ -102,7 +102,7 @@ impl MusicBrainz {
     pub fn with_base_url(base_url: impl Into<String>) -> Self {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
-            .user_agent(concat!("moka/", env!("CARGO_PKG_VERSION"), " ( self-hosted media server )"))
+            .user_agent(concat!("moka/", env!("CARGO_PKG_VERSION"), " ( https://github.com/openVESSL/Moka )"))
             .build()
             .expect("http client builds");
         Self { http, base_url: base_url.into().trim_end_matches('/').to_owned(), last: Default::default() }

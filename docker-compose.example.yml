@@ -9,9 +9,8 @@
 
 services:
   moka:
-    image: ghcr.io/openvessl/moka:latest
-    # or build it yourself:
-    # build: .
+    # No published image yet: build it from this repository.
+    build: .
     container_name: moka
     user: "1000:1000"
     ports:

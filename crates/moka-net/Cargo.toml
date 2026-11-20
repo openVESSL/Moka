@@ -4,6 +4,7 @@ description = "Outgoing HTTP clients that refuse cloud-metadata and link-local a
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 reqwest.workspace = true

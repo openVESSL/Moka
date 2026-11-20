@@ -4,7 +4,10 @@ Self-hosted media library manager. One program for films, shows and music: brows
 
 Moka ships with no content sources. You connect your own download clients and indexers.
 
-> Early development. Nothing to install yet.
+> **Development preview.** Moka is under active development and not ready for
+> everyday use. There are no releases yet, settings and the database may change
+> between commits, and things will break. Try it on a copy of your media, not
+> the only one, and please report what you find.
 
 ## Status
 
@@ -70,6 +73,10 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+Copyright (C) 2026 OpenVessl and contributors.
+
+Moka is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License, version 3 (GPL-3.0-only).
+See [LICENSE](LICENSE).
 
 This product uses the TMDB API but is not endorsed or certified by TMDB. Music metadata comes from MusicBrainz and album covers from the Cover Art Archive.

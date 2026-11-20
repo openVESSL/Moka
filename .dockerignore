@@ -1,8 +1,9 @@
-target
-config
+# Send only what the image build needs.
+*
+!Cargo.toml
+!Cargo.lock
+!rustfmt.toml
+!crates
+!web
 web/node_modules
 web/dist
-.git
-.claude
-notes
-*.db

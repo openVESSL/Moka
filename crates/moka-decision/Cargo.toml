@@ -4,6 +4,7 @@ description = "Accept, reject and rank releases for a film"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 moka-core.workspace = true

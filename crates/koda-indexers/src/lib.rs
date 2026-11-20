@@ -49,6 +49,11 @@ pub struct Capabilities {
     pub movie_search: bool,
     /// Parameters accepted by movie search, e.g. `q`, `imdbid`, `tmdbid`.
     pub movie_params: Vec<String>,
+    #[serde(default)]
+    pub tv_search: bool,
+    /// Parameters accepted by TV search, e.g. `q`, `season`, `ep`, `tvdbid`.
+    #[serde(default)]
+    pub tv_params: Vec<String>,
     pub limit_max: Option<u32>,
     pub categories: Vec<Category>,
 }
@@ -90,6 +95,23 @@ pub struct MovieQuery {
     pub year: Option<u16>,
     pub imdb_id: Option<String>,
     pub tmdb_id: Option<i64>,
+}
+
+/// An episode or a whole season of a show.
+#[derive(Debug, Clone, Default)]
+pub struct TvQuery {
+    pub title: String,
+    pub tvdb_id: Option<i64>,
+    pub tmdb_id: Option<i64>,
+    pub imdb_id: Option<String>,
+    pub season: u32,
+    /// `None` searches the whole season.
+    pub episode: Option<u32>,
+}
+
+/// Newznab TV categories are 5000-5999; films are everything else.
+fn is_tv_category(c: u32) -> bool {
+    (5000..6000).contains(&c)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -214,10 +236,61 @@ impl Client {
             };
             params.push(("q", search_text(&text)));
         }
-        if !cfg.categories.is_empty() {
-            let cats: Vec<String> = cfg.categories.iter().map(u32::to_string).collect();
+        let cats: Vec<u32> = cfg.categories.iter().copied().filter(|c| !is_tv_category(*c)).collect();
+        if !cats.is_empty() {
+            let cats: Vec<String> = cats.iter().map(u32::to_string).collect();
             params.push(("cat", cats.join(",")));
+        } else if !cfg.categories.is_empty() {
+            params.push(("cat", "2000".into()));
         }
+        params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
+        params.push(("extended", "1".into()));
+
+        let body = self.get_xml(self.url(cfg, &params)?).await?;
+        parse_feed(&body, cfg.kind.protocol())
+    }
+
+    /// Searches for an episode or a season, by ids and season/episode when
+    /// the indexer supports them, else by "Title S01E02" text.
+    pub async fn search_tv(
+        &self,
+        cfg: &IndexerConfig,
+        caps: &Capabilities,
+        q: &TvQuery,
+    ) -> Result<Vec<Release>, Error> {
+        let has = |p: &str| caps.tv_params.iter().any(|x| x == p);
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if caps.tv_search && has("season") {
+            params.push(("t", "tvsearch".into()));
+            let mut by_id = false;
+            if let Some(id) = q.tvdb_id.filter(|_| has("tvdbid")) {
+                params.push(("tvdbid", id.to_string()));
+                by_id = true;
+            } else if let Some(id) = q.tmdb_id.filter(|_| has("tmdbid")) {
+                params.push(("tmdbid", id.to_string()));
+                by_id = true;
+            } else if let Some(id) = q.imdb_id.as_deref().filter(|_| has("imdbid")) {
+                params.push(("imdbid", id.trim_start_matches("tt").to_owned()));
+                by_id = true;
+            }
+            if !by_id {
+                params.push(("q", search_text(&q.title)));
+            }
+            params.push(("season", q.season.to_string()));
+            if let Some(e) = q.episode.filter(|_| has("ep")) {
+                params.push(("ep", e.to_string()));
+            }
+        } else {
+            let marker = match q.episode {
+                Some(e) => format!("S{:02}E{:02}", q.season, e),
+                None => format!("S{:02}", q.season),
+            };
+            params.push(("t", "search".into()));
+            params.push(("q", format!("{} {marker}", search_text(&q.title))));
+        }
+        let cats: Vec<String> =
+            cfg.categories.iter().copied().filter(|c| is_tv_category(*c)).map(|c| c.to_string()).collect();
+        params.push(("cat", if cats.is_empty() { "5000".into() } else { cats.join(",") }));
         params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
         params.push(("extended", "1".into()));
 
@@ -315,6 +388,10 @@ pub fn parse_caps(body: &str) -> Result<Capabilities, Error> {
             "movie-search" if available => {
                 caps.movie_search = true;
                 caps.movie_params = params();
+            }
+            "tv-search" if available => {
+                caps.tv_search = true;
+                caps.tv_params = params();
             }
             "category" | "subcat" => {
                 if let (Some(id), Some(name)) =

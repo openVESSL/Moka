@@ -156,3 +156,50 @@ fn upgrades_respect_cutoff() {
     t.existing = Some(q(Source::Bluray, Resolution::R1080));
     assert_eq!(codes(&evaluate(&t, &profile(), &[web])[0]), vec!["not_upgrade"], "already at cutoff");
 }
+
+fn thrones(episodes: &[u32]) -> Target {
+    Target {
+        title: "Thrones".into(),
+        runtime_minutes: Some(55),
+        episodes: Some(EpisodeTarget { season: 1, episodes: episodes.to_vec(), season_episodes: 10 }),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn episodes_match_season_and_number() {
+    let cands = [
+        cand("Thrones.S01E02.1080p.WEB-DL.x264-GRP", 2.0, 50),
+        cand("Thrones.S01E01E02.1080p.WEB-DL.x264-GRP", 4.0, 50),
+        cand("Thrones.S01E05.1080p.WEB-DL.x264-GRP", 2.0, 50),
+        cand("Thrones.S02E02.1080p.WEB-DL.x264-GRP", 2.0, 50),
+        cand("Thrones.S01.1080p.WEB-DL.x264-GRP", 20.0, 50),
+        cand("Other.Show.S01E02.1080p.WEB-DL.x264-GRP", 2.0, 50),
+        cand("Thrones.2024.01.15.1080p.WEB-DL.x264-GRP", 2.0, 50),
+    ];
+    let out = evaluate(&thrones(&[1, 2]), &profile(), &cands);
+    let by = |t: &str| out.iter().find(|e| e.title.starts_with(t)).unwrap();
+    assert!(by("Thrones.S01E02").accepted());
+    assert_eq!(by("Thrones.S01E01E02").covers, [1, 2]);
+    assert!(by("Thrones.S01E01E02").accepted());
+    assert_eq!(codes(by("Thrones.S01E05")), ["wrong_episode"]);
+    assert_eq!(codes(by("Thrones.S02E02")), ["wrong_season"]);
+    assert_eq!(codes(by("Thrones.S01.1080p")), ["season_pack"]);
+    assert_eq!(codes(by("Other.Show")), ["wrong_film"]);
+    assert_eq!(codes(by("Thrones.2024")), ["numbering"]);
+}
+
+#[test]
+fn season_packs_are_sized_for_the_season() {
+    let cands = [
+        cand("Thrones.S01.1080p.WEB-DL.x264-GRP", 20.0, 50),
+        // 10 x 55 min at most 120 MB/min is ~64 GB; one episode's worth is too small for a season
+        cand("Thrones.S01.720p.BluRay.x264-GRP", 0.2, 50),
+        cand("Thrones.S01E01.1080p.WEB-DL.x264-GRP", 2.0, 50),
+    ];
+    let out = evaluate(&thrones(&[]), &profile(), &cands);
+    assert!(out[0].accepted() && out[0].title.starts_with("Thrones.S01.1080p"));
+    assert_eq!(out[0].covers.len(), 10);
+    let by = |t: &str| out.iter().find(|e| e.title.starts_with(t)).unwrap();
+    assert_eq!(codes(by("Thrones.S01E01")), ["not_season_pack"]);
+}

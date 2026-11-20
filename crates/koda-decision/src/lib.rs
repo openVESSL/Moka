@@ -1,4 +1,4 @@
-//! Decides which releases are acceptable for a film and which one is best.
+//! Decides which releases are acceptable for a film or an episode, and which one is best.
 //!
 //! Pure functions: no I/O. Every rejection carries a plain-language reason,
 //! and the ranking keeps the criterion that separated the winner from the
@@ -9,11 +9,13 @@ use std::collections::HashMap;
 
 use koda_core::{Modifier, Quality, Revision};
 use koda_indexers::{Protocol, Release};
-use koda_parser::{ParsedRelease, normalize_title, parse_movie};
+use koda_parser::{ParsedEpisode, ParsedRelease, normalize_title, parse_episode, parse_movie};
 use serde::{Deserialize, Serialize};
 
 /// Runtime assumed when the catalog does not know it yet.
 pub const DEFAULT_RUNTIME_MINUTES: u32 = 110;
+/// Episode runtime assumed when the catalog does not know it yet.
+pub const DEFAULT_EPISODE_MINUTES: u32 = 45;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct SizeLimit {
@@ -49,7 +51,18 @@ impl Profile {
     }
 }
 
-/// The film being searched for.
+/// The episodes being searched for, when the target is a show.
+#[derive(Debug, Clone, Default)]
+pub struct EpisodeTarget {
+    pub season: u32,
+    /// Episodes that may be grabbed. Empty means the whole season, as one pack.
+    pub episodes: Vec<u32>,
+    /// Episodes in the season, to size a season pack.
+    pub season_episodes: u32,
+}
+
+/// The film or show being searched for. For a show, `runtime_minutes` is
+/// the length of one episode.
 #[derive(Debug, Clone, Default)]
 pub struct Target {
     pub title: String,
@@ -60,6 +73,7 @@ pub struct Target {
     pub runtime_minutes: Option<u32>,
     /// Quality of the file already in the library, if any.
     pub existing: Option<Quality>,
+    pub episodes: Option<EpisodeTarget>,
 }
 
 /// A search result plus what we know about where it came from.
@@ -88,6 +102,8 @@ pub struct Evaluated {
     pub parsed: Option<ParsedRelease>,
     pub quality: Option<Quality>,
     pub score: i32,
+    /// Episodes the release holds, for a show.
+    pub covers: Vec<u32>,
     pub rejections: Vec<Rejection>,
     /// Why this release ranks above the next accepted one.
     pub beats_next_by: Option<&'static str>,
@@ -106,17 +122,44 @@ fn reject(code: &'static str, message: impl Into<String>, permanent: bool) -> Re
 /// Evaluates every candidate and returns them best first: accepted ones in
 /// ranking order, then rejected ones.
 pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) -> Vec<Evaluated> {
-    let runtime = target.runtime_minutes.filter(|m| *m > 0).unwrap_or(DEFAULT_RUNTIME_MINUTES);
+    let default = if target.episodes.is_some() { DEFAULT_EPISODE_MINUTES } else { DEFAULT_RUNTIME_MINUTES };
+    let runtime = target.runtime_minutes.filter(|m| *m > 0).unwrap_or(default);
     let mut out: Vec<Evaluated> = candidates
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let parsed = parse_movie(&c.release.title);
-            let rejections = match &parsed {
-                None => {
+            let (parsed, episode) = match &target.episodes {
+                Some(_) => match parse_episode(&c.release.title) {
+                    Some(e) => (Some(e.release.clone()), Some(e)),
+                    None => (None, None),
+                },
+                None => (parse_movie(&c.release.title), None),
+            };
+            let mut covers = Vec::new();
+            let rejections = match (&parsed, &target.episodes) {
+                (None, Some(_)) => {
+                    vec![reject(
+                        "unparseable",
+                        "Could not read a season or episode from the release name",
+                        true,
+                    )]
+                }
+                (None, None) => {
                     vec![reject("unparseable", "Could not read a film title from the release name", true)]
                 }
-                Some(p) => rules(target, profile, runtime, c, p),
+                (Some(p), None) => rules(target, profile, runtime, c, p),
+                (Some(p), Some(want)) => {
+                    let e = episode.as_ref().expect("parsed with episode");
+                    covers = if e.is_season_pack() {
+                        (1..=want.season_episodes).collect()
+                    } else {
+                        e.episodes.clone()
+                    };
+                    let minutes = runtime * (covers.len().max(1) as u32);
+                    let mut out = episode_rules(want, e);
+                    out.extend(rules(target, profile, minutes, c, p));
+                    out
+                }
             };
             let score = parsed.as_ref().map(|_| term_score(profile, &c.release.title)).unwrap_or(0);
             Evaluated {
@@ -125,6 +168,7 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
                 quality: parsed.as_ref().map(|p| p.quality),
                 parsed,
                 score,
+                covers,
                 rejections,
                 beats_next_by: None,
             }
@@ -143,6 +187,37 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
         }
     }
     out
+}
+
+/// Why a release is not the season or episodes wanted, if it is not.
+fn episode_rules(want: &EpisodeTarget, e: &ParsedEpisode) -> Vec<Rejection> {
+    if e.seasons.is_empty() {
+        let what = if e.air_date.is_some() { "air date" } else { "absolute episode number" };
+        return vec![reject("numbering", format!("Numbered by {what}, which is not supported yet"), true)];
+    }
+    if e.seasons != [want.season] {
+        let s: Vec<String> = e.seasons.iter().map(|s| format!("S{s:02}")).collect();
+        return vec![reject(
+            "wrong_season",
+            format!("Holds {}, not S{:02}", s.join(", "), want.season),
+            true,
+        )];
+    }
+    match (want.episodes.is_empty(), e.is_season_pack()) {
+        (true, false) => vec![reject("not_season_pack", "A single episode, not the whole season", true)],
+        (false, true) => {
+            vec![reject("season_pack", "The whole season, but only some episodes are wanted", true)]
+        }
+        (false, false) => match e.episodes.iter().find(|n| !want.episodes.contains(n)) {
+            Some(n) => vec![reject(
+                "wrong_episode",
+                format!("Episode S{:02}E{n:02} is not wanted", want.season),
+                true,
+            )],
+            None => vec![],
+        },
+        (true, true) => vec![],
+    }
 }
 
 fn rules(
@@ -229,9 +304,10 @@ fn rules(
 fn mismatch(target: &Target, r: &Release, p: &ParsedRelease) -> Option<String> {
     // ids from the indexer are the strongest signal both ways
     if let (Some(a), Some(b)) = (r.tmdb_id, target.tmdb_id) {
-        return (a != b).then(|| "The indexer says this is a different film".to_owned());
+        return (a != b).then(|| "The indexer says this is a different title".to_owned());
     }
-    if let (Some(a), Some(b)) = (&r.imdb_id, &target.imdb_id) {
+    // for shows the indexer's IMDb id may be the episode's, not the show's
+    if let (Some(a), Some(b), None) = (&r.imdb_id, &target.imdb_id, &target.episodes) {
         return (!a.eq_ignore_ascii_case(b)).then(|| "The indexer says this is a different film".to_owned());
     }
     let wanted: Vec<String> = std::iter::once(&target.title)

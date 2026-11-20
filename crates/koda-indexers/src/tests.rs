@@ -9,7 +9,7 @@ const CAPS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <searching>
     <search available="yes" supportedParams="q"/>
     <movie-search available="yes" supportedParams="q,imdbid,tmdbid"/>
-    <tv-search available="no"/>
+    <tv-search available="yes" supportedParams="q,season,ep,tvdbid"/>
   </searching>
   <categories>
     <category id="2000" name="Movies">
@@ -58,7 +58,19 @@ async fn mock() -> String {
                 }
                 match q.get("t").map(String::as_str) {
                     Some("caps") => CAPS.into_response(),
+                    Some("tvsearch") => {
+                        assert_eq!(q.get("tvdbid").map(String::as_str), Some("121361"));
+                        assert_eq!(q.get("season").map(String::as_str), Some("1"));
+                        assert_eq!(q.get("ep").map(String::as_str), Some("2"));
+                        assert_eq!(q.get("cat").map(String::as_str), Some("5000"), "TV categories only");
+                        FEED.into_response()
+                    }
+                    Some("search") => {
+                        assert_eq!(q.get("q").map(String::as_str), Some("Thrones S01"));
+                        FEED.into_response()
+                    }
                     Some("movie") => {
+                        assert_eq!(q.get("cat").map(String::as_str), Some("2000"), "film categories only");
                         assert_eq!(q.get("tmdbid").map(String::as_str), Some("603"));
                         assert_eq!(q.get("imdbid").map(String::as_str), Some("0133093"));
                         assert!(!q.contains_key("q"), "ids replace the text query");
@@ -191,4 +203,28 @@ async fn reads_prowlarr_indexers() {
     assert_eq!(list[1].protocol, Protocol::Usenet);
     assert!(!list[1].enabled);
     assert!(matches!(c.prowlarr_indexers(&base, "bad").await, Err(Error::Auth)));
+}
+
+#[tokio::test]
+async fn tv_search_by_id_or_text() {
+    let base = mock().await;
+    let c = Client::new();
+    let mut cfg = cfg(&base, "good");
+    cfg.categories = vec![2000, 5000];
+    let caps = c.capabilities(&cfg).await.unwrap();
+    assert!(caps.tv_search);
+    assert_eq!(caps.tv_params, vec!["q", "season", "ep", "tvdbid"]);
+    let q = TvQuery {
+        title: "Thrones".into(),
+        tvdb_id: Some(121361),
+        season: 1,
+        episode: Some(2),
+        ..Default::default()
+    };
+    assert_eq!(c.search_tv(&cfg, &caps, &q).await.unwrap().len(), 2);
+
+    // an indexer without TV search gets "Title S01"
+    let plain = Capabilities { search: true, ..Default::default() };
+    let q = TvQuery { title: "Thrones".into(), season: 1, ..Default::default() };
+    assert_eq!(c.search_tv(&cfg, &plain, &q).await.unwrap().len(), 2);
 }

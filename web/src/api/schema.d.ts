@@ -1360,7 +1360,12 @@ export interface components {
         /** @enum {string} */
         RequestKind: "movie" | "show";
         ScanRequest: {
-            /** @description Folder to scan. Defaults to the library's films folder. */
+            /**
+             * @description `movie` (default) or `show`. Episodes of a new show that aired but
+             *     are not on disk are not searched; new episodes are.
+             */
+            kind?: components["schemas"]["RequestKind"];
+            /** @description Folder to scan. Defaults to the library's films or shows folder. */
             path?: string | null;
         };
         ScanStatus: {

@@ -1,4 +1,4 @@
-//! Library scan: add films that are already on disk.
+//! Library scan: add films and shows that are already on disk.
 
 use axum::extract::State;
 use axum::{Json, Router, routing::get};
@@ -17,8 +17,12 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Debug, Default, Deserialize, ToSchema)]
 pub struct ScanRequest {
-    /// Folder to scan. Defaults to the library's films folder.
+    /// Folder to scan. Defaults to the library's films or shows folder.
     pub path: Option<String>,
+    /// `movie` (default) or `show`. Episodes of a new show that aired but
+    /// are not on disk are not searched; new episodes are.
+    #[serde(default)]
+    pub kind: super::requests::RequestKind,
 }
 
 #[utoipa::path(get, path = "/api/v1/library/scan", operation_id = "scan_status", tag = "library", responses((status = 200, body = ScanStatus)))]
@@ -36,21 +40,23 @@ pub async fn start(
     body: Option<Json<ScanRequest>>,
 ) -> ApiResult<Json<ScanStatus>> {
     user.require(Permissions::MANAGE_LIBRARY)?;
-    let path = match body.and_then(|Json(b)| b.path).filter(|p| !p.trim().is_empty()) {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let shows = body.kind == super::requests::RequestKind::Show;
+    let path = match body.path.filter(|p| !p.trim().is_empty()) {
         Some(p) => p.trim().to_owned(),
         None => {
             let lib: crate::pipeline::LibrarySettings =
                 koda_db::settings::get(&s.db, crate::pipeline::LibrarySettings::KEY)
                     .await?
                     .unwrap_or_default();
-            lib.movies_path
+            if shows { lib.shows_path } else { lib.movies_path }
         }
     };
     let dir = std::path::PathBuf::from(&path);
     if path.is_empty() || !dir.is_dir() {
         return Err(ApiError::BadRequest("choose an existing folder to scan".into()));
     }
-    if !crate::scan::start(&s, dir) {
+    if !crate::scan::start(&s, dir, shows) {
         return Err(ApiError::Conflict("a scan is already running".into()));
     }
     Ok(Json(s.scan.lock().expect("scan lock").clone()))

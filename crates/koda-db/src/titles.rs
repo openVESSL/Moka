@@ -306,6 +306,21 @@ pub async fn show_progress(pool: &Pool) -> Result<Vec<ShowProgress>, Error> {
     .await
 }
 
+/// Stops following the aired episodes of a show that are not in the
+/// library. Used when an existing show folder is brought in: what is on disk
+/// is kept, and only episodes airing from now on are searched.
+pub async fn unmonitor_missing(pool: &Pool, show_id: i64) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE titles SET monitored = 0
+         WHERE kind = 'episode' AND state = 'wanted' AND release_date <= date('now')
+           AND parent_id IN (SELECT id FROM titles WHERE parent_id = ?)",
+    )
+    .bind(show_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Shows, newest change first.
 pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await

@@ -3780,12 +3780,16 @@
       "ScanRequest": {
         "type": "object",
         "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "`movie` (default) or `show`. Episodes of a new show that aired but\nare not on disk are not searched; new episodes are."
+          },
           "path": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Folder to scan. Defaults to the library's films folder."
+            "description": "Folder to scan. Defaults to the library's films or shows folder."
           }
         }
       },

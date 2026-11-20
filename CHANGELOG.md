@@ -41,6 +41,9 @@ the steps to migrate.
   and grab.
 - Shows are refreshed from the catalog twice a day: new episodes and air
   dates arrive on their own and are searched once they air.
+- Existing show folders can be brought into the library: episodes on disk
+  become available, aired episodes that are missing are not searched, and
+  episodes airing from then on are.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 

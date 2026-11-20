@@ -317,7 +317,7 @@ export function ScanPanel() {
     refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
   });
   const start = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/v1/library/scan", { body: {} })),
+    mutationFn: (kind: "movie" | "show") => unwrap(api.POST("/api/v1/library/scan", { body: { kind } })),
     onSuccess: (v) => qc.setQueryData(["library", "scan"], v),
   });
   useEffect(() => {
@@ -327,8 +327,11 @@ export function ScanPanel() {
   return (
     <div className="mt-6 border-t border-slate-line pt-5">
       <div className="flex flex-wrap items-center gap-4">
-        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate()}>
-          {s?.running ? "Scanning…" : "Find films already in this folder"}
+        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate("movie")}>
+          {s?.running ? "Scanning…" : "Find films already on disk"}
+        </button>
+        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate("show")}>
+          Find shows already on disk
         </button>
         {s && (s.running || s.done > 0) && (
           <span className="data text-sm text-chalk-dim">

@@ -27,6 +27,7 @@ pub mod settings;
 pub mod titles;
 pub mod users;
 pub mod v3;
+mod v3_series;
 pub mod webhooks;
 
 #[derive(OpenApi)]

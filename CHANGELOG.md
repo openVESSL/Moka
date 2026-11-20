@@ -21,6 +21,10 @@ the steps to migrate.
 - Subtitle apps that work with Radarr can read films with their file paths
   and release names from `/api/v3`, and webhooks pointed at their
   `/api/webhooks/radarr` address are told about each import.
+- Shows through `/api/v3` as well: TV request apps can look up shows by
+  TheTVDB id, add them with the seasons asked for, follow episodes and the
+  queue; subtitle apps can list episode files with their release names, and
+  webhooks at `/api/webhooks/sonarr` are told about each episode import.
 - Koda in front of an existing Radarr: approved films are sent to Radarr,
   followed until they have a file, and Radarr's downloaded films are listed
   in Koda's library (with optional path mapping).

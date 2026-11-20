@@ -1,5 +1,6 @@
-//! Compatibility layer: the `/api/v3` film-manager API that indexer managers
-//! and request apps already speak, mapped onto Koda. Authenticated with a
+//! Compatibility layer: the `/api/v3` film- and show-manager API that indexer
+//! managers, request apps and subtitle apps already speak, mapped onto Koda
+//! (shows live in `v3_series`). Authenticated with a
 //! Koda API key (`X-Api-Key` header or `apikey` query parameter) of an admin.
 
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 use tower_http::set_header::SetResponseHeaderLayer;
 
+use super::v3_series as series;
 use crate::auth::CurrentUser;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -41,6 +43,14 @@ pub fn router() -> Router<AppState> {
         .route("/movie", get(list_movies).post(add_movie).put(update_movie_body))
         .route("/movie/lookup", get(lookup_movie))
         .route("/movie/{id}", get(one_movie).put(update_movie))
+        .route("/series", get(series::list_series).post(series::add_series).put(series::update_series_body))
+        .route("/series/lookup", get(series::lookup_series))
+        .route("/series/{id}", get(series::one_series).put(series::update_series))
+        .route("/episode", get(series::list_episodes))
+        .route("/episode/monitor", axum::routing::put(series::monitor_episodes))
+        .route("/episodefile", get(series::list_episode_files))
+        .route("/languageprofile", get(series::language_profiles))
+        .route("/languageProfile", get(series::language_profiles))
         .route("/command", post(command))
         .route("/queue", get(queue))
         // subtitle apps
@@ -69,7 +79,7 @@ async fn key_from_query(mut req: Request) -> Request {
     req
 }
 
-fn admin(user: &CurrentUser) -> ApiResult<()> {
+pub(super) fn admin(user: &CurrentUser) -> ApiResult<()> {
     user.require(Permissions::ADMIN)
 }
 
@@ -315,14 +325,14 @@ async fn delete_indexer(user: CurrentUser, State(s): State<AppState>, Path(id): 
 
 // ---- request apps -------------------------------------------------------
 
-fn date(unix: i64) -> String {
+pub(super) fn date(unix: i64) -> String {
     time::OffsetDateTime::from_unix_timestamp(unix)
         .ok()
         .and_then(|t| t.format(&Rfc3339).ok())
         .unwrap_or_default()
 }
 
-fn slug(title: &str, tmdb_id: i64) -> String {
+pub(super) fn slug(title: &str, tmdb_id: i64) -> String {
     let words: Vec<String> = title
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
@@ -332,7 +342,7 @@ fn slug(title: &str, tmdb_id: i64) -> String {
 }
 
 /// 2160, 1080, 720, 576, 480 or 0, read from a quality key such as `bluray-1080p`.
-fn resolution(quality: &str) -> u32 {
+pub(super) fn resolution(quality: &str) -> u32 {
     [2160, 1080, 720, 576, 480].into_iter().find(|r| quality.contains(&r.to_string())).unwrap_or(0)
 }
 
@@ -410,12 +420,16 @@ async fn quality_profiles(user: CurrentUser, State(s): State<AppState>) -> ApiRe
 
 async fn root_folders(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<Value>> {
     admin(&user)?;
-    let root = movies_root(&s).await?;
-    if root.is_empty() {
-        return Ok(Json(json!([])));
-    }
-    // shortcut: free space is not measured, report it once Koda tracks disk usage
-    Ok(Json(json!([{ "id": 1, "path": root, "accessible": true, "freeSpace": 0, "unmappedFolders": [] }])))
+    let lib: crate::pipeline::LibrarySettings =
+        koda_db::settings::get(&s.db, crate::pipeline::LibrarySettings::KEY).await?.unwrap_or_default();
+    // films first, then shows; Koda picks the folder itself either way
+    let folders: Vec<Value> = [(1, lib.movies_path), (2, lib.shows_path)]
+        .into_iter()
+        .filter(|(_, p)| !p.is_empty())
+        // shortcut: free space is not measured, report it once Koda tracks disk usage
+        .map(|(id, p)| json!({ "id": id, "path": p, "accessible": true, "freeSpace": 0, "unmappedFolders": [] }))
+        .collect();
+    Ok(Json(json!(folders)))
 }
 
 // shortcut: Koda has no tags; created tags are acknowledged, not stored
@@ -562,10 +576,13 @@ struct Command {
     name: String,
     #[serde(default)]
     movie_ids: Vec<i64>,
+    #[serde(default)]
+    series_id: Option<i64>,
 }
 
-/// `MoviesSearch` searches now for wanted films; other commands are accepted
-/// and have nothing to do in Koda.
+/// `MoviesSearch` searches now for wanted films, `SeriesSearch` and
+/// `MissingEpisodeSearch` for a show's wanted episodes; other commands are
+/// accepted and have nothing to do in Koda.
 async fn command(
     user: CurrentUser,
     State(s): State<AppState>,
@@ -581,6 +598,11 @@ async fn command(
             }
         }
         s.wake.notify_one();
+    }
+    if let Some(id) = c.series_id
+        && ["SeriesSearch", "MissingEpisodeSearch"].iter().any(|n| c.name.eq_ignore_ascii_case(n))
+    {
+        series::search_series(&s, id).await?;
     }
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     Ok((
@@ -647,7 +669,7 @@ async fn queue(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<V
         let left = (d.size_bytes as f64 * (1.0 - f64::from(d.progress))) as u64;
         let eta = d.eta_seconds.unwrap_or(0);
         let status = format!("{:?}", d.status).to_lowercase();
-        records.push(json!({
+        let mut record = json!({
             "id": g.id,
             "movieId": g.title_id,
             "title": g.release_title,
@@ -660,7 +682,15 @@ async fn queue(user: CurrentUser, State(s): State<AppState>) -> ApiResult<Json<V
             "trackedDownloadState": if status == "completed" { "importPending" } else { "downloading" },
             "downloadId": download_id,
             "errorMessage": d.message,
-        }));
+        });
+        // episodes and season packs are reported by series, not as films
+        if let Some(extra) = series::queue_fields(&s, g.title_id).await? {
+            record.as_object_mut().expect("object").remove("movieId");
+            if let (Some(r), Some(e)) = (record.as_object_mut(), extra.as_object()) {
+                r.extend(e.clone());
+            }
+        }
+        records.push(record);
     }
     Ok(Json(
         json!({ "page": 1, "pageSize": records.len().max(1), "totalRecords": records.len(), "records": records }),

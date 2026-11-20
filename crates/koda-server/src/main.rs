@@ -451,6 +451,16 @@ mod tests {
             "POST /api/v3/command",
             "GET /api/v3/queue",
             "GET /api/v3/history?movieIds=1",
+            "GET /api/v3/series",
+            "POST /api/v3/series",
+            "PUT /api/v3/series",
+            "GET /api/v3/series/lookup?term=tvdb:1",
+            "GET /api/v3/series/1",
+            "PUT /api/v3/series/1",
+            "GET /api/v3/episode?seriesId=1",
+            "PUT /api/v3/episode/monitor",
+            "GET /api/v3/episodefile?seriesId=1",
+            "GET /api/v3/languageprofile",
             "GET /api/system/status",
         ] {
             let (m, p) = extra.split_once(' ').unwrap();
@@ -642,5 +652,107 @@ mod tests {
         assert!(legacy["version"].as_str().unwrap().starts_with('5'));
         let p = body_json(call("GET", "/api/v3/qualityProfile", "").await.unwrap()).await;
         assert_eq!(p[0]["name"], "HD 1080p");
+    }
+
+    #[tokio::test]
+    async fn tv_request_apps_add_shows_through_v3() {
+        let tmdb = axum::Router::new()
+            .route(
+                "/find/121361",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({ "tv_results": [{ "id": 1399, "name": "Thrones" }] }))
+                }),
+            )
+            .route(
+                "/tv/1399",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "id": 1399, "name": "Thrones", "first_air_date": "2011-04-17",
+                        "external_ids": { "tvdb_id": 121361 },
+                        "seasons": [{"id": 31, "season_number": 1, "name": "Season 1", "episode_count": 2},
+                                    {"id": 32, "season_number": 2, "name": "Season 2", "episode_count": 2}]
+                    }))
+                }),
+            )
+            .route(
+                "/tv/1399/season/{n}",
+                axum::routing::get(|axum::extract::Path(n): axum::extract::Path<i64>| async move {
+                    let eps: Vec<_> = (1..=2)
+                        .map(|e| serde_json::json!({"id": 300 + n * 10 + e, "season_number": n, "episode_number": e,
+                                                     "name": format!("Ep {e}"), "air_date": "2011-04-17"}))
+                        .collect();
+                    axum::Json(serde_json::json!({"id": 30 + n, "season_number": n, "name": "S", "episodes": eps}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, tmdb).await.unwrap() });
+
+        let db = koda_db::memory().await;
+        let admin = koda_db::users::create(&db, "admin", "x", koda_core::Permissions::ADMIN).await.unwrap();
+        koda_db::users::create_api_key(&db, admin.id, "tv", &auth::token_hash("K")).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_tmdb(koda_metadata::Tmdb::with_base_url(&base, "k", "en-US", None));
+        let app = app(state);
+        let call = |method: &str, uri: &str, body: &str| {
+            let mut r = json(method, uri, body);
+            r.headers_mut().insert("x-api-key", "K".parse().unwrap());
+            app.clone().oneshot(r)
+        };
+
+        let found = body_json(call("GET", "/api/v3/series/lookup?term=tvdb:121361", "").await.unwrap()).await;
+        assert_eq!((found[0]["title"].as_str(), found[0]["id"].as_i64()), (Some("Thrones"), None));
+        assert_eq!(found[0]["seasons"].as_array().unwrap().len(), 2);
+
+        // a request for season 2 only
+        let body = r#"{"tvdbId":121361,"title":"Thrones","qualityProfileId":1,"monitored":true,
+            "seasons":[{"seasonNumber":1,"monitored":false},{"seasonNumber":2,"monitored":true}],
+            "addOptions":{"searchForMissingEpisodes":true}}"#;
+        let res = call("POST", "/api/v3/series", body).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let added = body_json(res).await;
+        let id = added["id"].as_i64().unwrap();
+        let flags: Vec<(i64, bool)> = added["seasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| (s["seasonNumber"].as_i64().unwrap(), s["monitored"].as_bool().unwrap()))
+            .collect();
+        assert_eq!(flags, [(1, false), (2, true)]);
+        assert_eq!(added["seasons"][1]["statistics"]["totalEpisodeCount"], 2);
+
+        let found = body_json(call("GET", "/api/v3/series/lookup?term=tvdb:121361", "").await.unwrap()).await;
+        assert_eq!(found[0]["id"].as_i64(), Some(id), "now in the library");
+        let by_tvdb = body_json(call("GET", "/api/v3/series?tvdbId=121361", "").await.unwrap()).await;
+        assert_eq!(by_tvdb.as_array().unwrap().len(), 1);
+
+        let eps = body_json(call("GET", &format!("/api/v3/episode?seriesId={id}"), "").await.unwrap()).await;
+        let eps = eps.as_array().unwrap();
+        assert_eq!(eps.len(), 4);
+        assert_eq!(
+            (eps[2]["absoluteEpisodeNumber"].as_i64(), eps[2]["monitored"].as_bool()),
+            (Some(3), Some(true))
+        );
+        assert_eq!(eps[0]["monitored"].as_bool(), Some(false));
+
+        // then season 1 episode 1 as well
+        let one = format!(r#"{{"episodeIds":[{}],"monitored":true}}"#, eps[0]["id"]);
+        assert_eq!(
+            call("PUT", "/api/v3/episode/monitor", &one).await.unwrap().status(),
+            StatusCode::ACCEPTED
+        );
+        let eps = body_json(call("GET", &format!("/api/v3/episode?seriesId={id}"), "").await.unwrap()).await;
+        assert_eq!(eps[0]["monitored"].as_bool(), Some(true));
+
+        let cmd = format!(r#"{{"name":"MissingEpisodeSearch","seriesId":{id}}}"#);
+        assert_eq!(call("POST", "/api/v3/command", &cmd).await.unwrap().status(), StatusCode::CREATED);
+        let files =
+            body_json(call("GET", &format!("/api/v3/episodefile?seriesId={id}"), "").await.unwrap()).await;
+        assert!(files.as_array().unwrap().is_empty());
     }
 }

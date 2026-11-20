@@ -426,6 +426,17 @@ impl Tmdb {
         self.get(&format!("/tv/{id}"), &[("append_to_response", "credits,videos,external_ids")]).await
     }
 
+    /// The TMDB id of the show with this TheTVDB id.
+    pub async fn show_by_tvdb(&self, tvdb_id: i64) -> Result<i64, Error> {
+        #[derive(Deserialize)]
+        struct Found {
+            #[serde(default)]
+            tv_results: Vec<ShowSummary>,
+        }
+        let found: Found = self.get(&format!("/find/{tvdb_id}"), &[("external_source", "tvdb_id")]).await?;
+        found.tv_results.first().map(|s| s.id).ok_or(Error::NotFound)
+    }
+
     pub async fn season(&self, show_id: i64, season: i64) -> Result<SeasonDetails, Error> {
         self.get(&format!("/tv/{show_id}/season/{season}"), &[]).await
     }

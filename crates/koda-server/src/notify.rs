@@ -1,6 +1,7 @@
 //! Outgoing webhooks. Plain JSON for bots and scripts; Discord webhook
 //! addresses get a Discord message with the poster instead, and subtitle
-//! apps listening at `/api/webhooks/radarr` get the import in that format.
+//! apps listening at `/api/webhooks/radarr` or `/api/webhooks/sonarr` get
+//! film or episode imports in those formats.
 
 use std::time::Duration;
 
@@ -72,6 +73,9 @@ pub struct TitleInfo {
     /// Library file id, filled for `available`.
     #[serde(skip)]
     pub file_id: Option<i64>,
+    /// (episode id, file id) of the episodes a show import placed.
+    #[serde(skip)]
+    pub episode_files: Vec<(i64, i64)>,
 }
 
 impl TitleInfo {
@@ -85,6 +89,7 @@ impl TitleInfo {
             poster_url: t.poster_path.as_ref().map(|p| format!("{}/w500{p}", koda_metadata::IMAGE_BASE_URL)),
             detail,
             file_id: None,
+            episode_files: Vec::new(),
         }
     }
 }
@@ -129,8 +134,9 @@ pub async fn deliver(http: &reqwest::Client, url: &str, payload: &Payload) -> Re
     koda_net::check_str(url).map_err(|e| e.to_string())?;
     let body = if is_discord(url) {
         discord(payload)
-    } else if is_radarr_hook(url) {
-        match radarr(payload) {
+    } else if is_radarr_hook(url) || is_sonarr_hook(url) {
+        let body = if is_radarr_hook(url) { radarr(payload) } else { sonarr(payload) };
+        match body {
             Some(b) => b,
             // only imports matter to these listeners
             None => return Ok(()),
@@ -168,6 +174,33 @@ fn is_radarr_hook(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
         .is_some_and(|u| u.path().trim_end_matches('/').ends_with("/api/webhooks/radarr"))
+}
+
+fn is_sonarr_hook(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .is_some_and(|u| u.path().trim_end_matches('/').ends_with("/api/webhooks/sonarr"))
+}
+
+/// Import notice in the show-manager webhook format; `None` for other
+/// events and for films.
+fn sonarr(p: &Payload) -> Option<serde_json::Value> {
+    match (p.event, &p.title) {
+        (Event::Test, _) => Some(serde_json::json!({ "eventType": "Test" })),
+        (Event::Available, Some(t)) if !t.episode_files.is_empty() => {
+            let files: Vec<serde_json::Value> =
+                t.episode_files.iter().map(|(_, f)| serde_json::json!({ "id": f })).collect();
+            Some(serde_json::json!({
+                "eventType": "Download",
+                "isUpgrade": false,
+                "series": { "id": t.id, "title": t.title, "year": t.year, "tmdbId": t.tmdb_id, "imdbId": t.imdb_id },
+                "episodes": t.episode_files.iter().map(|(e, _)| serde_json::json!({ "id": e })).collect::<Vec<_>>(),
+                "episodeFile": files.first(),
+                "episodeFiles": files,
+            }))
+        }
+        _ => None,
+    }
 }
 
 /// Import notice in the film-manager webhook format; `None` for other events.
@@ -234,6 +267,7 @@ mod tests {
                 poster_url: Some("https://img/p.jpg".into()),
                 detail: Some("WEB-DL 1080p".into()),
                 file_id: Some(7),
+                episode_files: vec![],
             }),
             user: Some("ana".into()),
         };
@@ -249,6 +283,16 @@ mod tests {
             (r["eventType"].as_str(), r["movie"]["id"].as_i64(), r["movieFile"]["id"].as_i64()),
             (Some("Download"), Some(1), Some(7))
         );
+        assert!(sonarr(&p).is_none(), "films are not sent to show listeners");
+
+        let mut show = p.clone();
+        if let Some(t) = show.title.as_mut() {
+            t.episode_files = vec![(11, 70), (12, 71)];
+        }
+        assert!(is_sonarr_hook("http://subs.local:6767/api/webhooks/sonarr"));
+        let s = sonarr(&show).unwrap();
+        assert_eq!((s["series"]["id"].as_i64(), s["episodes"][1]["id"].as_i64()), (Some(1), Some(12)));
+        assert_eq!(s["episodeFile"]["id"].as_i64(), Some(70));
         assert!(radarr(&Payload { event: Event::Grabbed, ..p }).is_none(), "only imports are sent");
     }
 }

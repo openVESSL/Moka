@@ -349,6 +349,27 @@ pub async fn set_monitored(pool: &Pool, id: i64, monitored: bool) -> Result<(), 
     Ok(())
 }
 
+/// Searches a show's wanted, followed episodes on the next pass.
+pub async fn search_show_now(pool: &Pool, show_id: i64) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE titles SET next_search_at = ? WHERE kind = 'episode' AND state = 'wanted' AND monitored = 1
+           AND parent_id IN (SELECT id FROM titles WHERE parent_id = ?)",
+    )
+    .bind(now())
+    .bind(show_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// A show by TheTVDB id.
+pub async fn show_by_tvdb(pool: &Pool, tvdb_id: i64) -> Result<Option<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind = 'show' AND tvdb_id = ?"))
+        .bind(tvdb_id)
+        .fetch_optional(pool)
+        .await
+}
+
 /// Shows, newest change first.
 pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await

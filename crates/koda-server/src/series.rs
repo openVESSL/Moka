@@ -341,6 +341,7 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
     let root = PathBuf::from(lib.shows_path.trim());
 
     let mut done: HashSet<i64> = HashSet::new();
+    let mut episode_files = Vec::new();
     let mut placed = Vec::new();
     for (_, video) in &files {
         let eps = match_file(video, &by_number, &targets, files.len(), &all);
@@ -361,7 +362,7 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
         .map_err(|e| ImportError::Wait(e.to_string()))?
         .map_err(|e| ImportError::Wait(format!("Could not write to the shows folder: {e}")))?;
         // shortcut: a file holding several episodes is linked to the first one only; the others show as available without their own file row
-        koda_db::library::add_file(
+        let file_id = koda_db::library::add_file(
             db,
             first.id,
             &dest.to_string_lossy(),
@@ -371,6 +372,7 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
         )
         .await
         .map_err(err)?;
+        episode_files.extend(eps.iter().map(|t| (t.id, file_id)));
         done.extend(eps.iter().map(|t| t.id));
         placed.push(dest);
     }
@@ -397,12 +399,9 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
         .filter(|t| done.contains(&t.id))
         .map(|t| format!("S{:02}E{:02}", t.season_number.unwrap_or(0), t.episode_number.unwrap_or(0)))
         .collect();
-    crate::notify::send(
-        state,
-        crate::notify::Event::Available,
-        Some(crate::notify::TitleInfo::from_title(&show, Some(names.join(", ")))),
-        None,
-    );
+    let mut info = crate::notify::TitleInfo::from_title(&show, Some(names.join(", ")));
+    info.episode_files = episode_files;
+    crate::notify::send(state, crate::notify::Event::Available, Some(info), None);
     tracing::info!(show = %show.title, episodes = %names.join(","), "imported");
     for p in placed {
         crate::jellyfin::announce_import(state, p.to_string_lossy().into_owned());

@@ -62,7 +62,7 @@ export function SettingsPage() {
       </Section>
       <Section
         title="Notifications"
-        intro="Tell other apps when a film is requested, approved, downloading, ready or stuck. Works with Discord webhooks and any service that accepts JSON. A subtitle app's Radarr webhook address (ending in /api/webhooks/radarr) is told about each new film."
+        intro="Tell other apps when a film or show is requested, approved, downloading, ready or stuck. Works with Discord webhooks and any service that accepts JSON. A subtitle app's Radarr or Sonarr webhook address (ending in /api/webhooks/radarr or /api/webhooks/sonarr) is told about each new film or episode."
       >
         <WebhooksSection />
       </Section>

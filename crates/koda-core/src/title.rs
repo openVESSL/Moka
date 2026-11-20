@@ -9,6 +9,9 @@ pub enum TitleKind {
     Show,
     Season,
     Episode,
+    Artist,
+    Album,
+    Track,
 }
 
 string_enum!(TitleKind, "title kind" {
@@ -16,6 +19,9 @@ string_enum!(TitleKind, "title kind" {
     Show => "show",
     Season => "season",
     Episode => "episode",
+    Artist => "artist",
+    Album => "album",
+    Track => "track",
 });
 
 /// Where a title is in its lifecycle. See `docs/architecture.md`, section 2.2.

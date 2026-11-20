@@ -9,8 +9,10 @@ use crate::{Error, Pool, now};
 pub struct Title {
     pub id: i64,
     pub kind: String,
-    /// Season for an episode, show for a season.
+    /// Season for an episode, show for a season, album for a track, artist for an album.
     pub parent_id: Option<i64>,
+    /// MusicBrainz id, for music.
+    pub mbid: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub tmdb_id: Option<i64>,
@@ -79,11 +81,33 @@ pub struct NewEpisode {
     pub number: i64,
 }
 
+/// An album with its artist and tracks, from MusicBrainz.
+#[derive(Debug, Clone, Default)]
+pub struct NewAlbum {
+    pub artist_mbid: String,
+    pub artist: String,
+    pub mbid: String,
+    pub title: String,
+    pub year: Option<i64>,
+    pub release_date: Option<String>,
+    pub poster_path: Option<String>,
+    pub tracks: Vec<NewTrack>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewTrack {
+    /// Position across the album, from 1.
+    pub number: i64,
+    pub disc: i64,
+    pub title: String,
+    pub length_seconds: Option<i64>,
+}
+
 /// `SELECT <title columns> FROM titles <rest>` as a static string.
 macro_rules! select_titles {
     ($rest:literal) => {
         concat!(
-            "SELECT id, kind, parent_id, season_number, episode_number, tmdb_id, imdb_id, title, original_title, year, overview, \
+            "SELECT id, kind, parent_id, mbid, season_number, episode_number, tmdb_id, imdb_id, title, original_title, year, overview, \
              runtime_minutes, release_date, poster_path, backdrop_path, state, state_reason, \
              quality_profile_id, monitored, next_search_at, last_search_at, created_at, updated_at \
              FROM titles ",
@@ -375,6 +399,96 @@ pub async fn shows(pool: &Pool) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE kind = 'show' ORDER BY updated_at DESC")).fetch_all(pool).await
 }
 
+/// Inserts an album under its artist (created if new) with its tracks, or
+/// returns the existing album. Tracks are keyed by album and number.
+pub async fn upsert_album(pool: &Pool, a: &NewAlbum, state: TitleState) -> Result<Title, Error> {
+    let profile: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(id) FROM quality_profiles").fetch_one(pool).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO titles (kind, mbid, title, state, monitored) VALUES ('artist', ?, ?, ?, 1)
+         ON CONFLICT(kind, mbid) WHERE mbid IS NOT NULL DO UPDATE SET title = excluded.title",
+    )
+    .bind(&a.artist_mbid)
+    .bind(&a.artist)
+    .bind(TitleState::Wanted.as_str())
+    .execute(&mut *tx)
+    .await?;
+    let artist: i64 = sqlx::query_scalar("SELECT id FROM titles WHERE kind = 'artist' AND mbid = ?")
+        .bind(&a.artist_mbid)
+        .fetch_one(&mut *tx)
+        .await?;
+    let existing: Option<i64> = sqlx::query_scalar("SELECT id FROM titles WHERE kind = 'album' AND mbid = ?")
+        .bind(&a.mbid)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let album = match existing {
+        Some(id) => id,
+        None => {
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO titles (kind, parent_id, mbid, title, year, release_date, poster_path, state,
+                    quality_profile_id, monitored, next_search_at)
+                 VALUES ('album', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) RETURNING id",
+            )
+            .bind(artist)
+            .bind(&a.mbid)
+            .bind(&a.title)
+            .bind(a.year)
+            .bind(&a.release_date)
+            .bind(&a.poster_path)
+            .bind(state.as_str())
+            .bind(profile)
+            .bind((state == TitleState::Wanted).then(now))
+            .fetch_one(&mut *tx)
+            .await?;
+            for t in &a.tracks {
+                sqlx::query(
+                    "INSERT INTO titles (kind, parent_id, title, season_number, episode_number, runtime_minutes,
+                        state, monitored)
+                     VALUES ('track', ?, ?, ?, ?, ?, ?, 1)",
+                )
+                .bind(id)
+                .bind(&t.title)
+                .bind(t.disc)
+                .bind(t.number)
+                // shortcut: track length is kept in whole minutes, rounded up; seconds need their own column
+                .bind(t.length_seconds.map(|s| (s + 59) / 60))
+                .bind(state.as_str())
+                .execute(&mut *tx)
+                .await?;
+            }
+            id
+        }
+    };
+    tx.commit().await?;
+    by_id(pool, album).await?.ok_or(Error::RowNotFound)
+}
+
+/// A music title by its MusicBrainz id.
+pub async fn by_mbid(pool: &Pool, kind: TitleKind, mbid: &str) -> Result<Option<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind = ? AND mbid = ?"))
+        .bind(kind.as_str())
+        .bind(mbid)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Local id and state of each album in `mbids` that is in the library.
+pub async fn album_states(pool: &Pool, mbids: &[String]) -> Result<Vec<(String, i64, String)>, Error> {
+    let ids = serde_json::to_string(mbids).map_err(|e| Error::Encode(Box::new(e)))?;
+    sqlx::query_as(
+        "SELECT mbid, id, state FROM titles WHERE kind = 'album' AND mbid IN (SELECT value FROM json_each(?))",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+}
+
+/// Albums, newest change first.
+pub async fn albums(pool: &Pool) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!("WHERE kind = 'album' ORDER BY updated_at DESC")).fetch_all(pool).await
+}
+
 /// Seasons of a show, or episodes of a season, in order.
 pub async fn children(pool: &Pool, parent_id: i64) -> Result<Vec<Title>, Error> {
     sqlx::query_as(select_titles!("WHERE parent_id = ? ORDER BY season_number, episode_number"))
@@ -663,6 +777,39 @@ mod tests {
         );
         assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave shows out");
         assert!(due_for_search(&pool, 10).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn albums_sit_under_their_artist() {
+        let pool = crate::memory().await;
+        let album = |mbid: &str, title: &str| NewAlbum {
+            artist_mbid: "a1".into(),
+            artist: "Band".into(),
+            mbid: mbid.into(),
+            title: title.into(),
+            year: Some(2001),
+            tracks: (1..=3)
+                .map(|n| NewTrack {
+                    number: n,
+                    disc: 1,
+                    title: format!("Song {n}"),
+                    length_seconds: Some(200),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let a = upsert_album(&pool, &album("rg1", "First"), TitleState::Requested).await.unwrap();
+        let b = upsert_album(&pool, &album("rg2", "Second"), TitleState::Wanted).await.unwrap();
+        assert_eq!((a.kind.as_str(), a.mbid.as_deref()), ("album", Some("rg1")));
+        assert_eq!(a.parent_id, b.parent_id, "one artist row for both");
+        let tracks = children(&pool, a.id).await.unwrap();
+        assert_eq!(tracks.iter().map(|t| t.episode_number).collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
+        assert_eq!(tracks[0].runtime_minutes, Some(4));
+        assert_eq!(upsert_album(&pool, &album("rg1", "First"), TitleState::Wanted).await.unwrap().id, a.id);
+        assert_eq!(by_mbid(&pool, TitleKind::Album, "rg2").await.unwrap().unwrap().id, b.id);
+        assert_eq!(album_states(&pool, &["rg1".into(), "nope".into()]).await.unwrap().len(), 1);
+        assert_eq!(albums(&pool).await.unwrap().len(), 2);
+        assert!(list(&pool, None).await.unwrap().is_empty(), "film lists leave music out");
     }
 
     #[tokio::test]

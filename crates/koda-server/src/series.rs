@@ -460,6 +460,7 @@ mod tests {
             id,
             kind: kind.into(),
             parent_id: None,
+            mbid: None,
             season_number: s,
             episode_number: e,
             tmdb_id: Some(id),

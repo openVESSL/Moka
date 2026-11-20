@@ -11,10 +11,12 @@ use moka_core::{Modifier, Quality, Resolution, Revision, Source};
 use regex::Regex;
 use serde::Serialize;
 
+mod book;
 mod episode;
 mod music;
 mod words;
 
+pub use book::{ParsedBook, book_matches, parse_book};
 pub use episode::{ParsedEpisode, parse_episode};
 pub use music::{ParsedAlbum, audio_quality, parse_album};
 

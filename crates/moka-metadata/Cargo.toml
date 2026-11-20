@@ -1,6 +1,6 @@
 [package]
 name = "moka-metadata"
-description = "Catalog metadata clients: TMDB for films and shows, MusicBrainz for music"
+description = "Catalog metadata clients: TMDB for films and shows, MusicBrainz for music, Open Library for books"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

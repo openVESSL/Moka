@@ -1,5 +1,6 @@
 //! Catalog clients: TMDB for film and show lists, search and details
-//! (here), MusicBrainz for artists and albums (`music`).
+//! (here), MusicBrainz for artists and albums (`music`), Open Library for
+//! books and authors (`books`).
 //!
 //! Knows nothing about the database. Takes a base URL so tests can point it
 //! at a local mock server.
@@ -8,6 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+pub mod books;
 pub mod music;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.themoviedb.org/3";

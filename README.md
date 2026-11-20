@@ -1,19 +1,22 @@
 # Koda
 
-Self-hosted media library manager. One program for your whole movie and TV setup: browse a catalog, request a title, let it be fetched through the download client and indexers you configure, imported into your library, and played in the browser.
+Self-hosted media library manager. One program for films, shows and music: browse a catalog, request a title, let it be fetched through the download client and indexers you configure, imported into your library, and played in the browser.
 
 Koda ships with no content sources. You connect your own download clients and indexers.
 
 > Early development. Nothing to install yet.
 
-## Planned
+## Status
 
-- Catalog search and requests (TMDB metadata)
-- Connectors: download clients and Torznab/Newznab indexers
-- Automatic release selection with quality profiles
-- Import with hardlink/move and renaming
-- Library browser and in-browser player (direct play, then transcoding via FFmpeg)
-- Multi-user with permissions and request approval
+Working in development builds, not yet tested widely:
+
+- Films and shows: catalog, requests with approval, automatic release selection with quality profiles, download tracking (qBittorrent, Transmission, SABnzbd), import with hardlinks and renaming, existing folders brought in as they are.
+- Shows: episodes or whole seasons, new episodes followed as they air.
+- In-browser player: direct play, remux or conversion with FFmpeg (optionally on a graphics card), subtitles inside or next to the file.
+- Works next to other self-hosted media apps through their usual APIs and webhooks.
+- Music: catalog and album requests. Downloading and playing music are in progress.
+
+Planned: ebooks and audiobooks, an API that existing phone and TV apps can connect to, a new interface.
 
 ## Stack
 
@@ -69,4 +72,4 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 
 GPL-3.0. See [LICENSE](LICENSE).
 
-This product uses the TMDB API but is not endorsed or certified by TMDB.
+This product uses the TMDB API but is not endorsed or certified by TMDB. Music metadata comes from MusicBrainz and album covers from the Cover Art Archive.

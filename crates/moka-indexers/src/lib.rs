@@ -60,6 +60,12 @@ pub struct Capabilities {
     /// Parameters accepted by music search, e.g. `q`, `artist`, `album`.
     #[serde(default)]
     pub music_params: Vec<String>,
+    /// Book search (`t=book`).
+    #[serde(default)]
+    pub book_search: bool,
+    /// Parameters accepted by book search, e.g. `q`, `author`, `title`.
+    #[serde(default)]
+    pub book_params: Vec<String>,
     pub limit_max: Option<u32>,
     pub categories: Vec<Category>,
 }
@@ -125,6 +131,28 @@ pub struct MusicQuery {
     pub artist: String,
     pub album: String,
     pub year: Option<u16>,
+}
+
+/// A book to look for, as an ebook or as an audiobook.
+#[derive(Debug, Clone, Default)]
+pub struct BookQuery {
+    pub author: String,
+    pub title: String,
+    pub audiobook: bool,
+}
+
+/// Newznab book categories are 7000-7999; audiobooks are 3030, in audio.
+fn is_book_category(c: u32) -> bool {
+    (7000..8000).contains(&c)
+}
+
+const AUDIOBOOK_CATEGORY: u32 = 3030;
+
+/// The indexer's ebook categories, or all of books.
+fn book_categories(cfg: &IndexerConfig) -> String {
+    let cats: Vec<String> =
+        cfg.categories.iter().copied().filter(|c| is_book_category(*c)).map(|c| c.to_string()).collect();
+    if cats.is_empty() { "7000".into() } else { cats.join(",") }
 }
 
 /// Newznab TV categories are 5000-5999.
@@ -277,7 +305,7 @@ impl Client {
             .categories
             .iter()
             .copied()
-            .filter(|c| !is_tv_category(*c) && !is_audio_category(*c))
+            .filter(|c| !is_tv_category(*c) && !is_audio_category(*c) && !is_book_category(*c))
             .collect();
         if !cats.is_empty() {
             let cats: Vec<String> = cats.iter().map(u32::to_string).collect();
@@ -411,6 +439,33 @@ impl Client {
         parse_feed(&body, cfg.kind.protocol())
     }
 
+    /// Searches for a book by author and title when the indexer supports
+    /// book search, else by "Author Title" text: ebooks in book categories,
+    /// audiobooks in the audiobook category.
+    pub async fn search_book(
+        &self,
+        cfg: &IndexerConfig,
+        caps: &Capabilities,
+        q: &BookQuery,
+    ) -> Result<Vec<Release>, Error> {
+        let has = |p: &str| caps.book_params.iter().any(|x| x == p);
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if caps.book_search && has("author") && has("title") {
+            params.push(("t", "book".into()));
+            params.push(("author", search_text(&q.author)));
+            params.push(("title", search_text(&q.title)));
+        } else {
+            params.push(("t", "search".into()));
+            params.push(("q", search_text(&format!("{} {}", q.author, q.title))));
+        }
+        let cats = if q.audiobook { AUDIOBOOK_CATEGORY.to_string() } else { book_categories(cfg) };
+        params.push(("cat", cats));
+        params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
+        params.push(("extended", "1".into()));
+        let body = self.get_xml(self.url(cfg, &params)?).await?;
+        parse_feed(&body, cfg.kind.protocol())
+    }
+
     /// Downloads what a release's link points at: a `.torrent` file, or the
     /// magnet link the indexer redirects to.
     pub async fn fetch(&self, url: &str) -> Result<torrent::Payload, Error> {
@@ -509,6 +564,10 @@ pub fn parse_caps(body: &str) -> Result<Capabilities, Error> {
             "music-search" | "audio-search" if available => {
                 caps.music_search = true;
                 caps.music_params = params();
+            }
+            "book-search" if available => {
+                caps.book_search = true;
+                caps.book_params = params();
             }
             "category" | "subcat" => {
                 if let (Some(id), Some(name)) =

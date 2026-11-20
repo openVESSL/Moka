@@ -11,6 +11,7 @@ const CAPS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <movie-search available="yes" supportedParams="q,imdbid,tmdbid"/>
     <tv-search available="yes" supportedParams="q,season,ep,tvdbid"/>
     <audio-search available="yes" supportedParams="q,artist,album"/>
+    <book-search available="yes" supportedParams="q,author,title"/>
   </searching>
   <categories>
     <category id="2000" name="Movies">
@@ -72,7 +73,14 @@ async fn mock() -> String {
                     }
                     Some("search") => {
                         let text = q.get("q").map(String::as_str).unwrap_or("");
-                        assert!(["Thrones S01", "Thrones 13", "Band First Light"].contains(&text), "{text}");
+                        assert!(
+                            ["Thrones S01", "Thrones 13", "Band First Light", "Frank Herbert Dune"]
+                                .contains(&text),
+                            "{text}"
+                        );
+                        if text == "Frank Herbert Dune" {
+                            assert_eq!(q.get("cat").map(String::as_str), Some("3030"), "audiobooks");
+                        }
                         if text == "Band First Light" {
                             assert_eq!(
                                 q.get("cat").map(String::as_str),
@@ -80,6 +88,12 @@ async fn mock() -> String {
                                 "all of audio by default"
                             );
                         }
+                        FEED.into_response()
+                    }
+                    Some("book") => {
+                        assert_eq!(q.get("author").map(String::as_str), Some("Frank Herbert"));
+                        assert_eq!(q.get("title").map(String::as_str), Some("Dune"));
+                        assert_eq!(q.get("cat").map(String::as_str), Some("7020"), "book categories only");
                         FEED.into_response()
                     }
                     Some("music") => {
@@ -298,4 +312,24 @@ async fn film_search_leaves_out_audio() {
         ..Default::default()
     };
     assert_eq!(c.search_movie(&cfg, &caps, &q).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn book_search_by_author_or_text() {
+    let base = mock().await;
+    let c = Client::new();
+    let mut cfg = cfg(&base, "good");
+    cfg.categories = vec![2000, 7020];
+    let caps = c.capabilities(&cfg).await.unwrap();
+    assert_eq!(
+        (caps.book_search, caps.book_params.clone()),
+        (true, vec!["q".into(), "author".into(), "title".into()])
+    );
+    let q = BookQuery { author: "Frank Herbert".into(), title: "Dune".into(), audiobook: false };
+    assert_eq!(c.search_book(&cfg, &caps, &q).await.unwrap().len(), 2);
+
+    // audiobooks as text, in the audiobook category
+    let plain = Capabilities { search: true, ..Default::default() };
+    let q = BookQuery { audiobook: true, ..q };
+    assert_eq!(c.search_book(&cfg, &plain, &q).await.unwrap().len(), 2);
 }

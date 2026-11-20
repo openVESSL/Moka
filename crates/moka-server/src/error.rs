@@ -73,7 +73,7 @@ impl From<moka_metadata::Error> for ApiError {
         use moka_metadata::Error as E;
         match e {
             E::MissingKey => ApiError::NotConfigured("add a TMDB API key in Settings to browse the catalog"),
-            E::NotFound => ApiError::NotFound("film"),
+            E::NotFound => ApiError::NotFound("catalog entry"),
             other => ApiError::Upstream(other.to_string()),
         }
     }

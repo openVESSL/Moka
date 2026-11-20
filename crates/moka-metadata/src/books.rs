@@ -170,7 +170,8 @@ impl OpenLibrary {
         Ok(BookDetails {
             summary,
             description: work.description.map(Text::into_string).filter(|d| !d.is_empty()),
-            subjects: work.subjects.into_iter().take(12).collect(),
+            // "nyt:…=2021-11-07" and the like are list markers, not subjects
+            subjects: work.subjects.into_iter().filter(|s| !s.contains([':', '='])).take(12).collect(),
         })
     }
 
@@ -279,7 +280,7 @@ mod tests {
                 "/works/OL1W.json",
                 get(|| async {
                     Json(serde_json::json!({ "title": "The Hobbit",
-                        "description": { "type": "/type/text", "value": " There and back. " }, "subjects": ["Dragons"] }))
+                        "description": { "type": "/type/text", "value": " There and back. " }, "subjects": ["Dragons", "nyt:hardcover=2021-01-01"] }))
                 }),
             )
             .route(

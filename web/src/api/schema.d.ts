@@ -1510,6 +1510,11 @@ export interface components {
             url: string;
         };
         Progress: {
+            /**
+             * @description For books: where the reader stopped (an EPUB location) or the
+             *     audiobook part playing. Left as it was when not sent.
+             */
+            bookmark?: string | null;
             played: boolean;
             /** Format: double */
             position_seconds: number;

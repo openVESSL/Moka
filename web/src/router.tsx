@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { DISCOVER_LISTS, authStatusQuery, meQuery, type DiscoverList, type MediaKind } from "./api/queries";
 import { LoginPage, SetupPage } from "./routes/auth";
 import { DiscoverPage, SearchPage } from "./routes/discover";
@@ -13,6 +14,9 @@ import { ConnectionsPage, SettingsPage } from "./routes/settings";
 import { AboutPage } from "./routes/about";
 import { Shell } from "./routes/Shell";
 import { WatchPage } from "./routes/watch";
+
+// the EPUB reader is large and only needed when reading
+const ReaderPage = lazy(() => import("./routes/read"));
 
 type Ctx = { queryClient: QueryClient };
 
@@ -150,6 +154,18 @@ const watch = createRoute({
     return <WatchPage fileId={Number(fileId)} />;
   },
 });
+const read = createRoute({
+  getParentRoute: () => app,
+  path: "/read/$fileId",
+  component: function Read() {
+    const { fileId } = read.useParams();
+    return (
+      <Suspense fallback={<div className="h-[40vh] animate-pulse bg-raised/50" />}>
+        <ReaderPage key={fileId} fileId={Number(fileId)} />
+      </Suspense>
+    );
+  },
+});
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: SettingsPage });
 const connections = createRoute({ getParentRoute: () => app, path: "/connections", component: ConnectionsPage });
 const about = createRoute({ getParentRoute: () => app, path: "/about", component: AboutPage });
@@ -157,7 +173,7 @@ const about = createRoute({ getParentRoute: () => app, path: "/about", component
 const tree = root.addChildren([
   setup,
   login,
-  app.addChildren([discover, search, movie, show, artist, album, book, author, requests, library, settings, connections, about, watch]),
+  app.addChildren([discover, search, movie, show, artist, album, book, author, requests, library, settings, connections, about, watch, read]),
 ]);
 
 export function makeRouter(queryClient: QueryClient) {

@@ -1,12 +1,73 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BookOpen, UserRound } from "lucide-react";
-import { authorPhoto, bookCover } from "../api/client";
-import { bookAuthorQuery, bookQuery, meQuery } from "../api/queries";
+import { BookOpen, Download, Headphones, UserRound } from "lucide-react";
+import { api, authorPhoto, bookCover, unwrap } from "../api/client";
+import { bookAuthorQuery, bookQuery, meQuery, titleFilesQuery } from "../api/queries";
 import { Facts } from "../components/Facts";
+import { usePlayer } from "../components/Player";
 import { PosterGrid } from "../components/Posters";
 import { RequestButton } from "../components/RequestButton";
 import { TitlePanel } from "../components/TitlePanel";
+
+const ACTION =
+  "inline-flex h-11 items-center gap-2 rounded-full bg-fg px-5 font-semibold text-canvas transition hover:scale-[1.03]";
+
+/** Read in the browser (EPUB) and download, once the ebook is in the library. */
+function EbookActions({ titleId }: { titleId: number }) {
+  const { data: files } = useQuery(titleFilesQuery(titleId));
+  const file = files?.[0];
+  if (!file) return null;
+  const epub = /\.(epub|kepub)$/i.test(file.path);
+  return (
+    <>
+      {epub && (
+        <Link to="/read/$fileId" params={{ fileId: String(file.id) }} className={ACTION}>
+          <BookOpen aria-hidden className="size-4" />
+          Read
+        </Link>
+      )}
+      <a href={`/api/v1/files/${file.id}/stream`} download className="btn">
+        <Download aria-hidden className="size-4" />
+        Download {file.path.split(".").pop()?.toUpperCase()}
+      </a>
+    </>
+  );
+}
+
+/** Listen from where the last session stopped, once the audiobook is in the library. */
+function AudiobookActions({ titleId, title, author, coverId }: { titleId: number; title: string; author: string; coverId?: number | null }) {
+  const qc = useQueryClient();
+  const player = usePlayer();
+  const { data: files } = useQuery(titleFilesQuery(titleId));
+  if (!files?.length) return null;
+  const parts = [...files].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  const listen = async () => {
+    const place = await qc
+      .fetchQuery({
+        queryKey: ["files", parts[0].id, "progress"],
+        queryFn: () => unwrap(api.GET("/api/v1/files/{id}/progress", { params: { path: { id: parts[0].id } } })),
+        staleTime: 0,
+      })
+      .catch(() => undefined);
+    const at = Math.max(0, parts.findIndex((p) => String(p.id) === place?.bookmark));
+    const startAt = place?.played ? 0 : place?.position_seconds;
+    const queue = parts.map((p, i) => ({
+      fileId: p.id,
+      title: parts.length > 1 ? `${title} · ${i + 1}/${parts.length}` : title,
+      artist: author,
+      album: title,
+      art: bookCover(coverId),
+      book: { startAt: i === at ? startAt : undefined },
+    }));
+    player.play(queue, place?.played ? 0 : at);
+  };
+  return (
+    <button type="button" onClick={() => void listen()} className={ACTION}>
+      <Headphones aria-hidden className="size-4" />
+      Listen
+    </button>
+  );
+}
 
 function Failed({ error }: { error: Error }) {
   return <p className="mx-auto max-w-xl px-4 pt-24 text-center text-danger">{error.message}</p>;
@@ -48,7 +109,13 @@ export function BookPage({ olid }: { olid: string }) {
             )}
           </p>
           <Facts className="mt-7 max-w-3xl" fields={[{ label: "First published", value: b.year, mono: true }]} />
-          <div className="mt-7 flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            {b.ebook?.state === "available" && <EbookActions titleId={b.ebook.title_id} />}
+            {b.audiobook?.state === "available" && (
+              <AudiobookActions titleId={b.audiobook.title_id} title={b.title} author={b.authors[0] ?? ""} coverId={b.cover_id} />
+            )}
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-3">
             <RequestButton tmdbId={0} kind="ebook" olid={b.olid} local={b.ebook} label="ebook" />
             <RequestButton tmdbId={0} kind="audiobook" olid={b.olid} local={b.audiobook} label="audiobook" />
           </div>

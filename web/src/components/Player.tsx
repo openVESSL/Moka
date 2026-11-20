@@ -1,6 +1,6 @@
-import { Disc3, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import { Disc3, Pause, Play, RotateCcw, RotateCw, SkipBack, SkipForward, X } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { cover } from "../api/client";
+import { api, cover } from "../api/client";
 
 export type QueueItem = {
   fileId: number;
@@ -9,7 +9,21 @@ export type QueueItem = {
   album: string;
   /** Album MusicBrainz id, for the cover. */
   mbid?: string | null;
+  /** Cover URL, when it is not an album's. */
+  art?: string;
+  /** An audiobook part: where to start, and the place is saved as it plays. */
+  book?: { startAt?: number };
 };
+
+const SAVE_EVERY_S = 15;
+
+/** Saves the place in an audiobook: this part, at this second. */
+function saveBookPlace(fileId: number, seconds: number, finished: boolean) {
+  void api.PUT("/api/v1/files/{id}/progress", {
+    params: { path: { id: fileId } },
+    body: { position_seconds: Math.floor(seconds), played: finished, bookmark: String(fileId) },
+  });
+}
 
 type Player = {
   current?: QueueItem;
@@ -35,7 +49,7 @@ function clock(s: number) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-/** Holds the music queue and one <audio> element shared by every page. */
+/** Holds the music or audiobook queue and one <audio> element shared by every page. */
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audio = useRef<HTMLAudioElement>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -44,7 +58,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [failed, setFailed] = useState(false);
+  const lastSave = useRef(0);
   const current = queue[index];
+  const art = current?.art ?? cover(current?.mbid);
 
   const play = useCallback((q: QueueItem[], i: number) => {
     setQueue(q);
@@ -70,8 +86,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
     [queue.length],
   );
+  const jump = (seconds: number) => {
+    const a = audio.current;
+    if (a) a.currentTime = Math.max(0, Math.min(a.currentTime + seconds, a.duration || a.currentTime + seconds));
+  };
   const close = () => {
-    audio.current?.pause();
+    const a = audio.current;
+    if (a && current?.book) saveBookPlace(current.fileId, a.currentTime, false);
+    a?.pause();
     setQueue([]);
     setIndex(0);
   };
@@ -81,6 +103,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const a = audio.current;
     if (!a || !current) return;
     a.src = streamUrl(current.fileId);
+    const start = current.book?.startAt;
+    if (start) a.addEventListener("loadedmetadata", () => (a.currentTime = start), { once: true });
+    lastSave.current = start ?? 0;
     void a.play().catch(() => setFailed(true));
   }, [current]);
 
@@ -91,13 +116,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       title: current.title,
       artist: current.artist,
       album: current.album,
-      artwork: current.mbid ? [{ src: cover(current.mbid) ?? "", sizes: "500x500", type: "image/jpeg" }] : [],
+      artwork: art ? [{ src: art, sizes: "500x500", type: "image/jpeg" }] : [],
     });
     navigator.mediaSession.setActionHandler("play", toggle);
     navigator.mediaSession.setActionHandler("pause", toggle);
     navigator.mediaSession.setActionHandler("previoustrack", () => step(-1));
     navigator.mediaSession.setActionHandler("nexttrack", () => step(1));
-  }, [current, toggle, step]);
+  }, [current, art, toggle, step]);
 
   const value = useMemo(() => ({ current, playing, play, toggle }), [current, playing, play, toggle]);
 
@@ -108,10 +133,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         ref={audio}
         preload="auto"
         onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+        onPause={(e) => {
+          setPlaying(false);
+          if (current?.book && !e.currentTarget.ended) saveBookPlace(current.fileId, e.currentTarget.currentTime, false);
+        }}
+        onTimeUpdate={(e) => {
+          const t = e.currentTarget.currentTime;
+          setTime(t);
+          if (current?.book && Math.abs(t - lastSave.current) >= SAVE_EVERY_S) {
+            lastSave.current = t;
+            saveBookPlace(current.fileId, t, false);
+          }
+        }}
         onDurationChange={(e) => setDuration(e.currentTarget.duration)}
-        onEnded={() => (index < queue.length - 1 ? step(1) : setPlaying(false))}
+        onEnded={() => {
+          const last = index >= queue.length - 1;
+          // an audiobook carries on at the start of the next part, or is finished
+          if (current?.book) saveBookPlace(last ? current.fileId : queue[index + 1].fileId, 0, last);
+          if (last) setPlaying(false);
+          else step(1);
+        }}
         onError={() => setFailed(true)}
       />
       {current && (
@@ -137,9 +178,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             <div className="flex h-20 items-center gap-3 px-4 sm:gap-4 sm:px-6">
               <div className="relative size-12 shrink-0 overflow-hidden rounded bg-raised">
                 <Disc3 aria-hidden className="absolute inset-0 m-auto size-5 text-faint" strokeWidth={1.5} />
-                {current.mbid && (
+                {art && (
                   <img
-                    src={cover(current.mbid)}
+                    src={art}
                     alt=""
                     className="relative size-full object-cover"
                     onError={(e) => (e.currentTarget.style.display = "none")}
@@ -156,7 +197,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 {clock(time)} / {clock(duration)}
               </span>
               <div className="flex items-center gap-1">
-                <button type="button" onClick={() => step(-1)} className="player-btn" aria-label="Previous track">
+                {current.book && (
+                  <button type="button" onClick={() => jump(-15)} className="player-btn" aria-label="Back 15 seconds">
+                    <RotateCcw aria-hidden className="size-5" />
+                  </button>
+                )}
+                <button type="button" onClick={() => step(-1)} className="player-btn" aria-label={current.book ? "Previous part" : "Previous track"}>
                   <SkipBack aria-hidden className="size-5" />
                 </button>
                 <button
@@ -172,10 +218,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                   onClick={() => step(1)}
                   disabled={index >= queue.length - 1}
                   className="player-btn"
-                  aria-label="Next track"
+                  aria-label={current.book ? "Next part" : "Next track"}
                 >
                   <SkipForward aria-hidden className="size-5" />
                 </button>
+                {current.book && (
+                  <button type="button" onClick={() => jump(30)} className="player-btn" aria-label="Forward 30 seconds">
+                    <RotateCw aria-hidden className="size-5" />
+                  </button>
+                )}
               </div>
               <button type="button" onClick={close} className="player-btn" aria-label="Close player">
                 <X aria-hidden className="size-5" />

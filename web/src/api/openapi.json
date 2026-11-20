@@ -4117,6 +4117,13 @@
           "played"
         ],
         "properties": {
+          "bookmark": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For books: where the reader stopped (an EPUB location) or the\naudiobook part playing. Left as it was when not sent."
+          },
           "played": {
             "type": "boolean"
           },

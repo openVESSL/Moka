@@ -95,6 +95,28 @@ pub async fn progress(pool: &Pool, user_id: i64, title_id: i64) -> Result<(f64, 
     Ok(row.unwrap_or((0.0, false)))
 }
 
+/// Where a user stopped in a book: an EPUB location, or the audiobook part.
+pub async fn bookmark(pool: &Pool, user_id: i64, title_id: i64) -> Result<Option<String>, Error> {
+    let row: Option<Option<String>> =
+        sqlx::query_scalar("SELECT bookmark FROM user_title_data WHERE user_id = ? AND title_id = ?")
+            .bind(user_id)
+            .bind(title_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.flatten())
+}
+
+/// Saves a bookmark next to the position (see `set_progress`, which must run first).
+pub async fn set_bookmark(pool: &Pool, user_id: i64, title_id: i64, bookmark: &str) -> Result<(), Error> {
+    sqlx::query("UPDATE user_title_data SET bookmark = ? WHERE user_id = ? AND title_id = ?")
+        .bind(bookmark)
+        .bind(user_id)
+        .bind(title_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Saves where a user is in a film. Marking it played counts one more play.
 pub async fn set_progress(
     pool: &Pool,
@@ -171,6 +193,10 @@ mod tests {
         super::set_progress(&pool, u.id, t.id, 120.5, false).await.unwrap();
         super::set_progress(&pool, u.id, t.id, 5000.0, true).await.unwrap();
         assert_eq!(super::progress(&pool, u.id, t.id).await.unwrap(), (5000.0, true));
+        assert_eq!(super::bookmark(&pool, u.id, t.id).await.unwrap(), None);
+        super::set_bookmark(&pool, u.id, t.id, "epubcfi(/6/4!/4/2)").await.unwrap();
+        super::set_progress(&pool, u.id, t.id, 10.0, false).await.unwrap();
+        assert_eq!(super::bookmark(&pool, u.id, t.id).await.unwrap().as_deref(), Some("epubcfi(/6/4!/4/2)"));
     }
 
     #[tokio::test]

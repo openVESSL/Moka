@@ -1,3 +1,6 @@
 allowBuilds:
   # only refreshes a Google Fonts list at install time; not needed
   lfa-ponyfill: false
+  # print messages after install (pulled in by the EPUB reader); not needed
+  core-js: false
+  es5-ext: false

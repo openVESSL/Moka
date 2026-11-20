@@ -126,6 +126,12 @@ export const bookAuthorQuery = (olid: string) =>
     retry: false,
   });
 
+export const titleFilesQuery = (titleId: number) =>
+  queryOptions({
+    queryKey: ["titles", titleId, "files"],
+    queryFn: () => unwrap(api.GET("/api/v1/titles/{id}/files", { params: { path: { id: titleId } } })),
+  });
+
 export const booksQuery = queryOptions({
   queryKey: ["titles", "books"],
   queryFn: () => unwrap(api.GET("/api/v1/titles", { params: { query: { kind: "book" } } })),

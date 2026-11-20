@@ -406,6 +406,10 @@ pub async fn one(
 pub struct Progress {
     pub position_seconds: f64,
     pub played: bool,
+    /// For books: where the reader stopped (an EPUB location) or the
+    /// audiobook part playing. Left as it was when not sent.
+    #[serde(default)]
+    pub bookmark: Option<String>,
 }
 
 #[utoipa::path(get, path = "/api/v1/files/{id}/progress", tag = "titles", params(("id" = i64, Path)),
@@ -417,7 +421,8 @@ pub async fn get_progress(
 ) -> ApiResult<Json<Progress>> {
     let f = moka_db::library::file(&state.db, id).await?.ok_or(ApiError::NotFound("file"))?;
     let (position_seconds, played) = moka_db::library::progress(&state.db, user.0.id, f.title_id).await?;
-    Ok(Json(Progress { position_seconds, played }))
+    let bookmark = moka_db::library::bookmark(&state.db, user.0.id, f.title_id).await?;
+    Ok(Json(Progress { position_seconds, played, bookmark }))
 }
 
 /// Saves the signed-in user's position in the film this file belongs to.
@@ -432,7 +437,13 @@ pub async fn put_progress(
     if !p.position_seconds.is_finite() {
         return Err(ApiError::BadRequest("position must be a number of seconds".into()));
     }
+    if p.bookmark.as_deref().is_some_and(|b| b.len() > 1000) {
+        return Err(ApiError::BadRequest("bookmark is too long".into()));
+    }
     let f = moka_db::library::file(&state.db, id).await?.ok_or(ApiError::NotFound("file"))?;
     moka_db::library::set_progress(&state.db, user.0.id, f.title_id, p.position_seconds, p.played).await?;
+    if let Some(b) = &p.bookmark {
+        moka_db::library::set_bookmark(&state.db, user.0.id, f.title_id, b).await?;
+    }
     Ok(Json(p))
 }

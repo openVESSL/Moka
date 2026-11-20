@@ -13,7 +13,7 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
   const { data: m, error, isPending } = useQuery(movieQuery(tmdbId));
   const { data: me } = useQuery(meQuery);
   if (error) return <CatalogError error={error} />;
-  if (isPending) return <div className="h-[70vh] animate-pulse bg-slate-raised/50" />;
+  if (isPending) return <div className="h-[70vh] animate-pulse bg-raised/50" />;
 
   return (
     <main>
@@ -27,24 +27,24 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
         )}
         <div
           aria-hidden
-          className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,var(--color-slate)_6%,rgb(20_21_22/0.88)_45%,rgb(20_21_22/0.35)),linear-gradient(to_right,rgb(20_21_22/0.85),transparent_70%)]"
+          className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,var(--color-canvas)_6%,rgb(12_12_14/0.88)_45%,rgb(12_12_14/0.35)),linear-gradient(to_right,rgb(12_12_14/0.85),transparent_70%)]"
         />
-        <div className="mx-auto grid max-w-[110rem] gap-10 px-4 pt-28 pb-12 sm:px-8 md:grid-cols-[minmax(0,15rem)_1fr] md:items-end lg:pt-48">
+        <div className="mx-auto grid max-w-[110rem] gap-10 px-4 pt-16 pb-8 sm:px-8 md:grid-cols-[minmax(0,15rem)_1fr] md:items-end lg:pt-28">
           {m.poster_path && (
             <img
               src={img("w500", m.poster_path)}
               alt={`${m.title} poster`}
-              className="hidden w-full rounded-[3px] shadow-[0_24px_40px_-18px_rgb(0_0_0/0.95)] md:block"
+              className="hidden w-full rounded-md shadow-[0_24px_40px_-18px_rgb(0_0_0/0.95)] md:block"
             />
           )}
           <div className="min-w-0">
-            <h1 className="max-w-[18ch] font-slate text-[clamp(2.75rem,7vw,5.5rem)] leading-[0.88] font-extrabold tracking-[-0.02em] uppercase">
+            <h1 className="max-w-[18ch] text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.05] font-bold tracking-[-0.03em]">
               {m.title}
             </h1>
             {m.original_title && m.original_title !== m.title && (
-              <p className="mt-2 text-chalk-dim italic">{m.original_title}</p>
+              <p className="mt-2 text-muted italic">{m.original_title}</p>
             )}
-            {m.tagline && <p className="mt-4 max-w-[52ch] text-lg text-chalk-dim">{m.tagline}</p>}
+            {m.tagline && <p className="mt-4 max-w-[52ch] text-lg text-muted">{m.tagline}</p>}
             <SlateFields
               className="mt-7 max-w-3xl"
               fields={[
@@ -61,14 +61,14 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
         </div>
       </section>
 
-      <div className="mx-auto grid max-w-[110rem] gap-14 px-4 sm:px-8 lg:grid-cols-[minmax(0,42rem)_1fr]">
+      <div className="mx-auto grid max-w-[110rem] gap-10 px-4 sm:px-8 xl:grid-cols-[minmax(0,42rem)_minmax(0,1fr)]">
         <section aria-labelledby="story">
-          <h2 id="story" className="slate-label mb-3">
+          <h2 id="story" className="field-label mb-3">
             Story
           </h2>
-          <p className="max-w-[65ch] text-[17px] leading-relaxed text-chalk">{m.overview || "No synopsis yet."}</p>
+          <p className="max-w-[65ch] text-[17px] leading-relaxed text-fg">{m.overview || "No synopsis yet."}</p>
           {m.genres.length > 0 && (
-            <p className="mt-5 font-slate text-sm font-semibold tracking-[0.08em] text-chalk-dim uppercase">
+            <p className="mt-5 text-sm font-semibold text-muted">
               {m.genres.join(" · ")}
             </p>
           )}
@@ -77,7 +77,7 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
               href={`https://www.youtube.com/watch?v=${m.trailer_youtube_key}`}
               target="_blank"
               rel="noreferrer noopener"
-              className="btn-chalk mt-7"
+              className="btn mt-7"
             >
               Watch trailer <ArrowUpRight aria-hidden className="size-4" />
             </a>
@@ -86,14 +86,14 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
 
         {m.cast.length > 0 && (
           <section aria-labelledby="cast">
-            <h2 id="cast" className="slate-label mb-3">
+            <h2 id="cast" className="field-label mb-3">
               Cast
             </h2>
-            <ul className="grid grid-cols-1 border-t border-slate-line sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               {m.cast.map((p) => (
-                <li key={p.id} className="flex items-baseline justify-between gap-4 border-b border-slate-line py-2.5">
-                  <span className="font-slate text-[17px] font-semibold">{p.name}</span>
-                  <span className="truncate text-right text-sm text-chalk-faint">{p.role}</span>
+                <li key={p.id} className="flex min-w-0 items-baseline justify-between gap-4 border-b border-line py-2.5">
+                  <span className="truncate font-semibold">{p.name}</span>
+                  <span className="shrink-0 truncate text-right text-sm text-faint max-w-[50%]">{p.role}</span>
                 </li>
               ))}
             </ul>
@@ -104,12 +104,12 @@ export function MoviePage({ tmdbId }: { tmdbId: number }) {
       {m.local && <TitlePanel titleId={m.local.title_id} permissions={me?.permissions ?? 0} />}
 
       {m.recommendations.length > 0 && (
-        <section aria-labelledby="more" className="mx-auto mt-20 max-w-[110rem] px-4 sm:px-8">
-          <h2 id="more" className="mb-8 font-slate text-3xl font-extrabold uppercase">
+        <section aria-labelledby="more" className="mx-auto mt-10 max-w-[110rem] px-4 sm:px-8">
+          <h2 id="more" className="mb-8 text-lg font-semibold">
             If you liked this
           </h2>
           <Roll
-            numbered={false}
+           
             items={m.recommendations.map((r) => ({
               key: r.tmdb_id,
               tmdbId: r.tmdb_id,

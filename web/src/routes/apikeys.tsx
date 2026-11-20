@@ -27,23 +27,23 @@ export function ApiKeysSection() {
   return (
     <div className="mt-6">
       {fresh && (
-        <div className="mb-6 border border-slate-line p-4">
-          <p className="text-sm text-chalk-dim">Key for {fresh.name}. Copy it now: it will not be shown again.</p>
-          <input className="chalk-input data mt-2 text-base" readOnly value={fresh.key} onFocus={(e) => e.target.select()} />
+        <div className="mb-6 border border-line p-4">
+          <p className="text-sm text-muted">Key for {fresh.name}. Copy it now: it will not be shown again.</p>
+          <input className="field data mt-2 text-base" readOnly value={fresh.key} onFocus={(e) => e.target.select()} />
         </div>
       )}
       {keys && keys.length > 0 && (
-        <ul className="mb-6 border-t border-slate-line">
+        <ul className="mb-6 border-t border-line">
           {keys.map((k) => (
-            <li key={k.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-line py-3">
-              <span className="font-slate text-lg font-bold">{k.name}</span>
-              <span className="flex-1 text-sm text-chalk-dim">
+            <li key={k.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3">
+              <span className="text-lg font-bold">{k.name}</span>
+              <span className="flex-1 text-sm text-muted">
                 {k.last_used_at ? `Last used ${new Date(k.last_used_at * 1000).toLocaleString()}` : "Never used"}
               </span>
               <button
                 type="button"
                 aria-label={`Delete key ${k.name}`}
-                className="text-chalk-faint hover:text-grease-hot"
+                className="text-faint hover:text-danger"
                 onClick={() => remove.mutate(k.id)}
               >
                 <Trash2 aria-hidden className="size-4" />
@@ -60,14 +60,14 @@ export function ApiKeysSection() {
         className="flex flex-wrap items-end gap-x-5 gap-y-4"
       >
         <label className="block w-60">
-          <span className="slate-label">Name</span>
-          <input className="chalk-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Indexer manager" required />
+          <span className="field-label">Name</span>
+          <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Indexer manager" required />
         </label>
-        <button type="submit" className="btn-grease" disabled={add.isPending}>
+        <button type="submit" className="btn-primary" disabled={add.isPending}>
           Create key
         </button>
       </form>
-      {(add.error ?? remove.error) && <p className="mt-3 text-sm text-grease-hot">{(add.error ?? remove.error)?.message}</p>}
+      {(add.error ?? remove.error) && <p className="mt-3 text-sm text-danger">{(add.error ?? remove.error)?.message}</p>}
     </div>
   );
 }

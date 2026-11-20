@@ -230,7 +230,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
   }
 
   return (
-    <main className="fixed inset-0 z-50 bg-black text-chalk">
+    <main className="fixed inset-0 z-50 bg-black text-fg">
       <video
         ref={video}
         playsInline
@@ -273,13 +273,13 @@ export function WatchPage({ fileId }: { fileId: number }) {
       </button>
 
       {stream && stream.method !== "direct" && (
-        <p className="absolute top-5 right-5 max-w-sm text-right text-xs text-chalk-dim">
+        <p className="absolute top-5 right-5 max-w-sm text-right text-xs text-muted">
           {stream.method === "remux" ? "Repackaging for this browser" : "Converting for this browser"}:{" "}
           {stream.reasons.join(", ")}
         </p>
       )}
       {loading && !error && (
-        <div aria-live="polite" className="pointer-events-none absolute inset-0 grid place-items-center text-chalk-dim">
+        <div aria-live="polite" className="pointer-events-none absolute inset-0 grid place-items-center text-muted">
           Loading…
         </div>
       )}
@@ -287,7 +287,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
         <div role="alert" className="absolute inset-0 grid place-items-center">
           <div className="text-center">
             <p className="text-lg">{error}</p>
-            <button type="button" className="btn-chalk mt-4" onClick={() => open(now)}>
+            <button type="button" className="btn mt-4" onClick={() => open(now)}>
               Try again
             </button>
           </div>
@@ -315,16 +315,16 @@ export function WatchPage({ fileId }: { fileId: number }) {
             setNow(t);
             seek(t);
           }}
-          className="flex-1 accent-grease"
+          className="flex-1 accent-accent"
         />
-        <span className="data w-16 text-sm text-chalk-dim">{clock(duration)}</span>
+        <span className="data w-16 text-sm text-muted">{clock(duration)}</span>
         {tracks && tracks.length > 0 && (
           <div className="relative">
             <button
               type="button"
               aria-label="Subtitles"
               aria-expanded={subMenu}
-              className={subTrack ? "text-grease" : undefined}
+              className={subTrack ? "text-accent" : undefined}
               onClick={() => setSubMenu((m) => !m)}
             >
               <Captions aria-hidden className="size-5" />
@@ -348,7 +348,7 @@ export function WatchPage({ fileId }: { fileId: number }) {
                         }
                       }}
                       className={`w-full px-3 py-1.5 text-left hover:bg-white/10 ${
-                        (subTrack ?? "") === t.id ? "text-grease" : ""
+                        (subTrack ?? "") === t.id ? "text-accent" : ""
                       }`}
                     >
                       {t.label}

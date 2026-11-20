@@ -8,17 +8,17 @@ type TestResult = Schemas["TestResult"];
 function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
   return (
     <label className={`block ${className}`}>
-      <span className="slate-label">{label}</span>
+      <span className="field-label">{label}</span>
       {children}
     </label>
   );
 }
 
 function TestLine({ result, error }: { result?: TestResult; error?: Error | null }) {
-  if (error) return <p className="text-sm text-grease-hot">{error.message}</p>;
+  if (error) return <p className="text-sm text-danger">{error.message}</p>;
   if (!result) return null;
   return (
-    <p role="status" className={`text-sm ${result.ok ? "text-tape-available" : "text-grease-hot"}`}>
+    <p role="status" className={`text-sm ${result.ok ? "text-state-available" : "text-danger"}`}>
       {result.message}
     </p>
   );
@@ -53,7 +53,7 @@ export function LibrarySection() {
     >
       <Field label="Films folder" className="min-w-0 flex-1 basis-80">
         <input
-          className="chalk-input data text-base"
+          className="field data text-base"
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="/data/movies"
@@ -62,17 +62,17 @@ export function LibrarySection() {
       </Field>
       <Field label="Shows folder" className="min-w-0 flex-1 basis-80">
         <input
-          className="chalk-input data text-base"
+          className="field data text-base"
           value={shows}
           onChange={(e) => setShows(e.target.value)}
           placeholder="/data/tv"
           spellCheck={false}
         />
       </Field>
-      <button type="submit" className="btn-grease" disabled={save.isPending}>
+      <button type="submit" className="btn-primary" disabled={save.isPending}>
         {save.isPending ? "Checking…" : "Save"}
       </button>
-      <p role="status" className={`w-full text-sm ${save.error ? "text-grease-hot" : "text-tape-available"}`}>
+      <p role="status" className={`w-full text-sm ${save.error ? "text-danger" : "text-state-available"}`}>
         {save.error?.message ?? (save.isSuccess ? "Saved. The server can write there." : "")}
       </p>
     </form>
@@ -119,15 +119,15 @@ export function DownloadClientSection() {
   return (
     <div className="mt-6">
       {clients && clients.length > 0 && (
-        <ul className="mb-8 border-t border-slate-line">
+        <ul className="mb-8 border-t border-line">
           {clients.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-line py-3">
-              <span className="font-slate text-lg font-bold">{c.name}</span>
-              <span className="data min-w-0 flex-1 truncate text-sm text-chalk-dim">{c.base_url}</span>
-              <span className="data text-xs text-chalk-faint">category {c.category}</span>
+            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3">
+              <span className="text-lg font-bold">{c.name}</span>
+              <span className="data min-w-0 flex-1 truncate text-sm text-muted">{c.base_url}</span>
+              <span className="data text-xs text-faint">category {c.category}</span>
               <button
                 type="button"
-                className="text-chalk-faint hover:text-grease-hot"
+                className="text-faint hover:text-danger"
                 onClick={() => remove.mutate(c.id)}
                 aria-label={`Remove ${c.name}`}
               >
@@ -145,7 +145,7 @@ export function DownloadClientSection() {
         className="grid gap-6 sm:grid-cols-[10rem_1fr]"
       >
         <Field label="Client">
-          <select className="chalk-input bg-slate" value={form.kind} onChange={set("kind")}>
+          <select className="field bg-canvas" value={form.kind} onChange={set("kind")}>
             <option value="qbittorrent">qBittorrent</option>
             <option value="transmission">Transmission</option>
             <option value="sabnzbd">SABnzbd (Usenet)</option>
@@ -153,7 +153,7 @@ export function DownloadClientSection() {
         </Field>
         <Field label="Web address">
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             value={form.base_url}
             onChange={set("base_url")}
             placeholder={usenet ? "http://192.168.1.10:8080" : "http://192.168.1.10:8080"}
@@ -163,12 +163,12 @@ export function DownloadClientSection() {
         </Field>
         {!usenet && (
           <Field label="Username">
-            <input className="chalk-input" value={form.username} onChange={set("username")} autoComplete="off" />
+            <input className="field" value={form.username} onChange={set("username")} autoComplete="off" />
           </Field>
         )}
         <Field label={usenet ? "API key" : "Password"}>
           <input
-            className="chalk-input"
+            className="field"
             type="password"
             value={form.password}
             onChange={set("password")}
@@ -176,17 +176,17 @@ export function DownloadClientSection() {
           />
         </Field>
         <Field label="Category">
-          <input className="chalk-input data text-base" value={form.category} onChange={set("category")} />
+          <input className="field data text-base" value={form.category} onChange={set("category")} />
         </Field>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-          <button type="submit" className="btn-grease" disabled={add.isPending}>
+          <button type="submit" className="btn-primary" disabled={add.isPending}>
             {add.isPending ? "Adding…" : "Add client"}
           </button>
-          <button type="button" className="btn-chalk" disabled={test.isPending} onClick={() => test.mutate()}>
+          <button type="button" className="btn" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending ? "Testing…" : "Test connection"}
           </button>
           <TestLine result={test.data} error={test.error} />
-          {(add.error ?? remove.error) && <p className="text-sm text-grease-hot">{(add.error ?? remove.error)?.message}</p>}
+          {(add.error ?? remove.error) && <p className="text-sm text-danger">{(add.error ?? remove.error)?.message}</p>}
         </div>
       </form>
     </div>
@@ -232,20 +232,20 @@ export function IndexersSection() {
     <div className="mt-6">
       <ProwlarrImport />
       {indexers && indexers.length > 0 && (
-        <ul className="mb-8 border-t border-slate-line">
+        <ul className="mb-8 border-t border-line">
           {indexers.map((i) => (
-            <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-line py-3">
-              <span className="font-slate text-lg font-bold">{i.name}</span>
-              <span className="data text-xs text-chalk-faint uppercase">{i.kind}</span>
-              <span className="data min-w-0 flex-1 truncate text-sm text-chalk-dim">{i.base_url}</span>
+            <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3">
+              <span className="text-lg font-bold">{i.name}</span>
+              <span className="data text-xs text-faint">{i.kind}</span>
+              <span className="data min-w-0 flex-1 truncate text-sm text-muted">{i.base_url}</span>
               {paused(i.paused_until) && (
-                <span className="text-sm text-grease-hot" title={i.last_error ?? undefined}>
+                <span className="text-sm text-danger" title={i.last_error ?? undefined}>
                   Paused: {i.last_error}
                 </span>
               )}
               <button
                 type="button"
-                className="text-chalk-faint hover:text-grease-hot"
+                className="text-faint hover:text-danger"
                 onClick={() => remove.mutate(i.id)}
                 aria-label={`Remove ${i.name}`}
               >
@@ -263,17 +263,17 @@ export function IndexersSection() {
         className="grid gap-6 sm:grid-cols-[1fr_8rem]"
       >
         <Field label="Name">
-          <input className="chalk-input" value={form.name} onChange={set("name")} placeholder="My tracker" required />
+          <input className="field" value={form.name} onChange={set("name")} placeholder="My tracker" required />
         </Field>
         <Field label="Type">
-          <select className="chalk-input bg-slate" value={form.kind} onChange={set("kind")}>
+          <select className="field bg-canvas" value={form.kind} onChange={set("kind")}>
             <option value="torznab">Torznab</option>
             <option value="newznab">Newznab</option>
           </select>
         </Field>
         <Field label="Address" className="sm:col-span-2">
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             value={form.base_url}
             onChange={set("base_url")}
             placeholder="http://localhost:9117/api/v2.0/indexers/example/results/torznab"
@@ -283,7 +283,7 @@ export function IndexersSection() {
         </Field>
         <Field label="API key">
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             type="password"
             value={form.api_key}
             onChange={set("api_key")}
@@ -291,17 +291,17 @@ export function IndexersSection() {
           />
         </Field>
         <Field label="API path">
-          <input className="chalk-input data text-base" value={form.api_path} onChange={set("api_path")} />
+          <input className="field data text-base" value={form.api_path} onChange={set("api_path")} />
         </Field>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-          <button type="submit" className="btn-grease" disabled={add.isPending}>
+          <button type="submit" className="btn-primary" disabled={add.isPending}>
             {add.isPending ? "Adding…" : "Add indexer"}
           </button>
-          <button type="button" className="btn-chalk" disabled={test.isPending} onClick={() => test.mutate()}>
+          <button type="button" className="btn" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending ? "Testing…" : "Test"}
           </button>
           <TestLine result={test.data} error={test.error} />
-          {add.error && <p className="text-sm text-grease-hot">{add.error.message}</p>}
+          {add.error && <p className="text-sm text-danger">{add.error.message}</p>}
         </div>
       </form>
     </div>
@@ -325,24 +325,24 @@ export function ScanPanel() {
   }, [s, qc]);
 
   return (
-    <div className="mt-6 border-t border-slate-line pt-5">
+    <div className="mt-6 border-t border-line pt-5">
       <div className="flex flex-wrap items-center gap-4">
-        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate("movie")}>
+        <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("movie")}>
           {s?.running ? "Scanning…" : "Find films already on disk"}
         </button>
-        <button type="button" className="btn-chalk" disabled={start.isPending || s?.running} onClick={() => start.mutate("show")}>
+        <button type="button" className="btn" disabled={start.isPending || s?.running} onClick={() => start.mutate("show")}>
           Find shows already on disk
         </button>
         {s && (s.running || s.done > 0) && (
-          <span className="data text-sm text-chalk-dim">
+          <span className="data text-sm text-muted">
             {s.done}/{s.total} checked · {s.added} added · {s.already_known} known · {s.unmatched.length} not recognized
           </span>
         )}
       </div>
-      {start.error && <p className="mt-2 text-sm text-grease-hot">{start.error.message}</p>}
-      {s?.error && <p className="mt-2 text-sm text-grease-hot">{s.error}</p>}
+      {start.error && <p className="mt-2 text-sm text-danger">{start.error.message}</p>}
+      {s?.error && <p className="mt-2 text-sm text-danger">{s.error}</p>}
       {s && !s.running && s.unmatched.length > 0 && (
-        <details className="mt-3 text-sm text-chalk-dim">
+        <details className="mt-3 text-sm text-muted">
           <summary className="cursor-pointer">Not recognized ({s.unmatched.length})</summary>
           <p className="mt-2 max-w-[65ch]">
             Rename these folders to <span className="data">Title (Year)</span>, or add{" "}
@@ -389,21 +389,21 @@ export function JellyfinSection() {
       }}
       className="mt-6 grid gap-6 sm:grid-cols-2"
     >
-      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+      <label className="inline-flex items-center gap-2 text-sm text-muted sm:col-span-2">
         <input
           type="checkbox"
-          className="accent-grease"
+          className="accent-accent"
           checked={f.enabled}
           onChange={(e) => setF((x) => ({ ...x, enabled: e.target.checked }))}
         />
-        Use Jellyfin alongside Koda
+        Use Jellyfin alongside Moka
       </label>
       <Field label="Jellyfin address">
-        <input className="chalk-input data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:8096" />
+        <input className="field data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:8096" />
       </Field>
       <Field label="API key">
         <input
-          className="chalk-input data text-base"
+          className="field data text-base"
           type="password"
           value={f.api_key}
           onChange={text("api_key")}
@@ -411,26 +411,26 @@ export function JellyfinSection() {
           autoComplete="off"
         />
       </Field>
-      <Field label="Library path in Koda">
-        <input className="chalk-input data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/data/movies (only if different)" />
+      <Field label="Library path in Moka">
+        <input className="field data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/data/movies (only if different)" />
       </Field>
       <Field label="Same folder in Jellyfin">
-        <input className="chalk-input data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/media/movies" />
+        <input className="field data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/media/movies" />
       </Field>
-      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+      <label className="inline-flex items-center gap-2 text-sm text-muted sm:col-span-2">
         <input
           type="checkbox"
-          className="accent-grease"
+          className="accent-accent"
           checked={f.sync_watched}
           onChange={(e) => setF((x) => ({ ...x, sync_watched: e.target.checked }))}
         />
         Mark films watched in Jellyfin as watched here (people are matched by user name)
       </label>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button type="submit" className="btn-grease" disabled={save.isPending}>
+        <button type="submit" className="btn-primary" disabled={save.isPending}>
           {save.isPending ? "Checking…" : "Save"}
         </button>
-        <p role="status" className={`text-sm ${save.error ? "text-grease-hot" : "text-tape-available"}`}>
+        <p role="status" className={`text-sm ${save.error ? "text-danger" : "text-state-available"}`}>
           {save.error?.message ?? (save.isSuccess ? "Saved. New films will show up in Jellyfin right after import." : "")}
         </p>
       </div>
@@ -475,21 +475,21 @@ export function RadarrSection() {
       }}
       className="mt-6 grid gap-6 sm:grid-cols-2"
     >
-      <label className="inline-flex items-center gap-2 text-sm text-chalk-dim sm:col-span-2">
+      <label className="inline-flex items-center gap-2 text-sm text-muted sm:col-span-2">
         <input
           type="checkbox"
-          className="accent-grease"
+          className="accent-accent"
           checked={f.enabled}
           onChange={(e) => setF((x) => ({ ...x, enabled: e.target.checked }))}
         />
-        Let Radarr search and download (Koda's own search stops)
+        Let Radarr search and download (Moka's own search stops)
       </label>
       <Field label="Radarr address">
-        <input className="chalk-input data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:7878" />
+        <input className="field data text-base" value={f.url} onChange={text("url")} placeholder="http://192.168.1.10:7878" />
       </Field>
       <Field label="API key">
         <input
-          className="chalk-input data text-base"
+          className="field data text-base"
           type="password"
           value={f.api_key}
           onChange={text("api_key")}
@@ -500,7 +500,7 @@ export function RadarrSection() {
       {data && data.profiles.length > 0 && (
         <Field label="Quality profile">
           <select
-            className="chalk-input bg-slate"
+            className="field bg-canvas"
             value={f.quality_profile_id}
             onChange={(e) => setF((x) => ({ ...x, quality_profile_id: Number(e.target.value) }))}
           >
@@ -515,7 +515,7 @@ export function RadarrSection() {
       )}
       {data && data.root_folders.length > 0 && (
         <Field label="Root folder">
-          <select className="chalk-input bg-slate" value={f.root_folder} onChange={text("root_folder")}>
+          <select className="field bg-canvas" value={f.root_folder} onChange={text("root_folder")}>
             <option value="">First one ({data.root_folders[0]})</option>
             {data.root_folders.map((r) => (
               <option key={r} value={r}>
@@ -526,16 +526,16 @@ export function RadarrSection() {
         </Field>
       )}
       <Field label="Film folder in Radarr">
-        <input className="chalk-input data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/movies (only if different)" />
+        <input className="field data text-base" value={f.path_from} onChange={text("path_from")} placeholder="/movies (only if different)" />
       </Field>
-      <Field label="Same folder in Koda">
-        <input className="chalk-input data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/data/movies" />
+      <Field label="Same folder in Moka">
+        <input className="field data text-base" value={f.path_to} onChange={text("path_to")} placeholder="/data/movies" />
       </Field>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button type="submit" className="btn-grease" disabled={save.isPending}>
+        <button type="submit" className="btn-primary" disabled={save.isPending}>
           {save.isPending ? "Checking…" : "Save"}
         </button>
-        <p role="status" className={`text-sm ${save.error || data?.error ? "text-grease-hot" : "text-tape-available"}`}>
+        <p role="status" className={`text-sm ${save.error || data?.error ? "text-danger" : "text-state-available"}`}>
           {save.error?.message ??
             data?.error ??
             (save.isSuccess ? "Saved. Radarr's films are being added to the library." : "")}
@@ -555,8 +555,8 @@ export function ProwlarrImport() {
   });
   const r = run.data;
   return (
-    <details className="mb-8 border-y border-slate-line py-4">
-      <summary className="cursor-pointer font-slate font-bold tracking-[0.06em] uppercase">Import from Prowlarr</summary>
+    <details className="mb-8 border-y border-line py-4">
+      <summary className="cursor-pointer font-bold">Import from Prowlarr</summary>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -566,7 +566,7 @@ export function ProwlarrImport() {
       >
         <Field label="Prowlarr address" className="min-w-0 flex-1 basis-64">
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             value={f.url}
             onChange={(e) => setF((x) => ({ ...x, url: e.target.value }))}
             placeholder="http://192.168.1.10:9696"
@@ -575,7 +575,7 @@ export function ProwlarrImport() {
         </Field>
         <Field label="API key" className="w-64">
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             type="password"
             value={f.api_key}
             onChange={(e) => setF((x) => ({ ...x, api_key: e.target.value }))}
@@ -583,18 +583,18 @@ export function ProwlarrImport() {
             required
           />
         </Field>
-        <button type="submit" className="btn-grease" disabled={run.isPending}>
+        <button type="submit" className="btn-primary" disabled={run.isPending}>
           {run.isPending ? "Importing…" : "Import"}
         </button>
       </form>
-      {run.error && <p className="mt-3 text-sm text-grease-hot">{run.error.message}</p>}
+      {run.error && <p className="mt-3 text-sm text-danger">{run.error.message}</p>}
       {r && (
-        <p className="mt-3 text-sm text-chalk-dim">
+        <p className="mt-3 text-sm text-muted">
           {r.added.length} added, {r.updated.length} updated
           {r.skipped.length > 0 && <> · skipped: {r.skipped.join("; ")}</>}
         </p>
       )}
-      <p className="mt-2 text-xs text-chalk-faint">
+      <p className="mt-2 text-xs text-faint">
         Searches go through Prowlarr, so it must stay reachable. Run it again after changing indexers there.
       </p>
     </details>

@@ -39,16 +39,16 @@ export function UsersSection() {
 
   return (
     <div className="mt-6">
-      <ul className="border-t border-slate-line">
+      <ul className="border-t border-line">
         {users?.map((u) => (
-          <li key={u.id} className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-line py-3">
-            <span className="w-40 font-slate text-lg font-bold">{u.username}</span>
+          <li key={u.id} className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line py-3">
+            <span className="w-40 text-lg font-bold">{u.username}</span>
             <span className="flex flex-1 flex-wrap gap-x-4 gap-y-1">
               {PERMS.map((p) => (
-                <label key={p.bit} className="inline-flex items-center gap-1.5 text-sm text-chalk-dim">
+                <label key={p.bit} className="inline-flex items-center gap-1.5 text-sm text-muted">
                   <input
                     type="checkbox"
-                    className="accent-grease"
+                    className="accent-accent"
                     checked={(u.permissions & p.bit) !== 0}
                     onChange={(e) =>
                       setPerms.mutate({
@@ -64,7 +64,7 @@ export function UsersSection() {
             <button
               type="button"
               aria-label={`Delete ${u.username}`}
-              className="text-chalk-faint hover:text-grease-hot"
+              className="text-faint hover:text-danger"
               onClick={() => remove.mutate(u.id)}
             >
               <Trash2 aria-hidden className="size-4" />
@@ -80,9 +80,9 @@ export function UsersSection() {
         className="mt-6 flex flex-wrap items-end gap-x-5 gap-y-4"
       >
         <label className="block w-48">
-          <span className="slate-label">Name</span>
+          <span className="field-label">Name</span>
           <input
-            className="chalk-input"
+            className="field"
             value={form.username}
             onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
             autoComplete="off"
@@ -90,9 +90,9 @@ export function UsersSection() {
           />
         </label>
         <label className="block w-56">
-          <span className="slate-label">Password</span>
+          <span className="field-label">Password</span>
           <input
-            className="chalk-input"
+            className="field"
             type="password"
             value={form.password}
             onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
@@ -101,11 +101,11 @@ export function UsersSection() {
             required
           />
         </label>
-        <button type="submit" className="btn-grease" disabled={create.isPending}>
+        <button type="submit" className="btn-primary" disabled={create.isPending}>
           Add person
         </button>
       </form>
-      {error && <p className="mt-3 text-sm text-grease-hot">{error.message}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error.message}</p>}
     </div>
   );
 }

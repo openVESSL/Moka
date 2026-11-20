@@ -11,8 +11,7 @@ import { WebhooksSection } from "./webhooks";
 
 export function SettingsPage() {
   return (
-    <main className="mx-auto max-w-[56rem] px-4 pt-12 sm:px-8">
-      <h1 className="font-slate text-5xl leading-none font-extrabold uppercase">Settings</h1>
+    <Page title="Settings">
       <CatalogSection />
       <Section
         title="Quality"
@@ -28,6 +27,23 @@ export function SettingsPage() {
         <ScanPanel />
       </Section>
       <Section
+        title="Playback"
+        intro="When a browser cannot play a film as it is, Moka converts it on the fly. A graphics card does this faster and keeps the processor free. In Docker, the card must be passed to the container. If it fails, Moka uses the processor."
+      >
+        <PlaybackSection />
+      </Section>
+      <Section title="People" intro="Everyone who can sign in, and what each person may do.">
+        <UsersSection />
+      </Section>
+      <QuotaSection />
+    </Page>
+  );
+}
+
+export function ConnectionsPage() {
+  return (
+    <Page title="Connections">
+      <Section
         title="Download clients"
         intro="qBittorrent or Transmission for torrents, SABnzbd for Usenet. Downloads are added under their own category so you can tell them apart."
       >
@@ -41,24 +57,15 @@ export function SettingsPage() {
       </Section>
       <Section
         title="Jellyfin"
-        intro="Keep watching in Jellyfin if you like. Koda tells it about new films right after import and brings back what people watched there."
+        intro="Keep watching in Jellyfin if you like. Moka tells it about new films right after import and brings back what people watched there."
       >
         <JellyfinSection />
       </Section>
       <Section
-        title="Playback"
-        intro="When a browser cannot play a film as it is, Koda converts it on the fly. A graphics card does this faster and keeps the processor free. In Docker, the card must be passed to the container. If it fails, Koda uses the processor."
-      >
-        <PlaybackSection />
-      </Section>
-      <Section
         title="Radarr"
-        intro="Already use Radarr? Koda can sit in front of it: approved requests go to Radarr, which searches and downloads, and every film Radarr has shows up in Koda's library to watch."
+        intro="Already use Radarr? Moka can sit in front of it: approved requests go to Radarr, which searches and downloads, and every film Radarr has shows up in Moka's library to watch."
       >
         <RadarrSection />
-      </Section>
-      <Section title="People" intro="Everyone who can sign in, and what each person may do.">
-        <UsersSection />
       </Section>
       <Section
         title="Notifications"
@@ -68,20 +75,29 @@ export function SettingsPage() {
       </Section>
       <Section
         title="API keys"
-        intro="Let other apps connect to Koda. Apps that can talk to Radarr (indexer managers, request apps) can use this server's address and a key from here. A key acts as the admin who made it."
+        intro="Let other apps connect to Moka. Apps that can talk to Radarr (indexer managers, request apps) can use this server's address and a key from here. A key acts as the admin who made it."
       >
         <ApiKeysSection />
       </Section>
-      <QuotaSection />
+    </Page>
+  );
+}
+
+/** A narrow page with a small title, for settings-like screens. */
+export function Page({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <main className="mx-auto max-w-3xl px-4 pt-10 pb-20 sm:px-8">
+      <h1 className="text-3xl font-bold">{title}</h1>
+      {children}
     </main>
   );
 }
 
 function Section({ title, intro, children }: { title: string; intro: ReactNode; children: ReactNode }) {
   return (
-    <section className="mt-14 border-t border-slate-line pt-8">
-      <h2 className="font-slate text-2xl font-extrabold uppercase">{title}</h2>
-      <p className="mt-2 max-w-[60ch] text-chalk-dim">{intro}</p>
+    <section className="mt-6 card p-6 sm:p-7">
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="mt-1 max-w-[65ch] text-sm text-muted">{intro}</p>
       {children}
     </section>
   );
@@ -90,10 +106,10 @@ function Section({ title, intro, children }: { title: string; intro: ReactNode; 
 function SaveRow({ busy, error, saved, label = "Save" }: { busy: boolean; error?: string; saved: boolean; label?: string }) {
   return (
     <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2">
-      <button type="submit" className="btn-grease" disabled={busy}>
+      <button type="submit" className="btn-primary" disabled={busy}>
         {busy ? "Saving…" : label}
       </button>
-      <p role="status" aria-live="polite" className={`text-sm ${error ? "text-grease-hot" : "text-tape-available"}`}>
+      <p role="status" aria-live="polite" className={`text-sm ${error ? "text-danger" : "text-state-available"}`}>
         {error ?? (saved ? "Saved." : "")}
       </p>
     </div>
@@ -114,10 +130,11 @@ function CatalogSection() {
   }, [data]);
 
   const save = useMutation({
-    mutationFn: () =>
+    /** `null` keeps the saved key, `""` goes back to the built-in one. */
+    mutationFn: (tmdbKey: string | null) =>
       unwrap(
         api.PUT("/api/v1/settings/catalog", {
-          body: { tmdb_key: key || null, language, region: region || null },
+          body: { tmdb_key: tmdbKey, language, region: region || null },
         }),
       ),
     onSuccess: (v) => {
@@ -129,7 +146,7 @@ function CatalogSection() {
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    save.mutate();
+    save.mutate(key || null);
   }
 
   return (
@@ -137,28 +154,40 @@ function CatalogSection() {
       title="Catalog"
       intro={
         <>
-          Film listings, posters and details come from TMDB. Create a free API key in your TMDB account settings
-          and paste either the API key or the read access token here.
+          Film and show listings, posters and details come from TMDB and work out of the box. You can use your own
+          TMDB API key or read access token instead.
         </>
       }
     >
       <form onSubmit={submit} className="mt-6 grid gap-6 sm:grid-cols-[2fr_1fr_1fr]">
         <label className="block">
-          <span className="slate-label">TMDB key</span>
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="field-label">Own TMDB key (optional)</span>
+            {data?.tmdb_key_set && (
+              <button
+                type="button"
+                className="text-xs font-medium text-accent hover:text-accent-hot"
+                disabled={save.isPending}
+                onClick={() => save.mutate("")}
+              >
+                Use built-in key
+              </button>
+            )}
+          </span>
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             type="password"
             autoComplete="off"
             spellCheck={false}
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder={data?.tmdb_key_set ? "Saved. Paste a new one to replace it" : "Paste key or token"}
+            placeholder={data?.tmdb_key_set ? "Your key is saved. Paste a new one to replace it" : "Using the built-in key"}
           />
         </label>
         <label className="block">
-          <span className="slate-label">Language</span>
+          <span className="field-label">Language</span>
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
             placeholder="en-US"
@@ -167,9 +196,9 @@ function CatalogSection() {
           />
         </label>
         <label className="block">
-          <span className="slate-label">Region</span>
+          <span className="field-label">Region</span>
           <input
-            className="chalk-input data text-base uppercase"
+            className="field data text-base"
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Any"
@@ -220,20 +249,20 @@ function QuotaSection() {
         className="mt-6 flex flex-wrap items-end gap-x-4 gap-y-4"
       >
         <label className="block w-28">
-          <span className="slate-label">Films</span>
+          <span className="field-label">Films</span>
           <input
-            className="chalk-input data"
+            className="field data"
             inputMode="numeric"
             value={limit}
             onChange={(e) => setLimit(e.target.value.replace(/\D/g, ""))}
             placeholder="No limit"
           />
         </label>
-        <span className="pb-3 text-chalk-dim">every</span>
+        <span className="pb-3 text-muted">every</span>
         <label className="block w-24">
-          <span className="slate-label">Days</span>
+          <span className="field-label">Days</span>
           <input
-            className="chalk-input data"
+            className="field data"
             inputMode="numeric"
             value={days}
             onChange={(e) => setDays(e.target.value.replace(/\D/g, ""))}

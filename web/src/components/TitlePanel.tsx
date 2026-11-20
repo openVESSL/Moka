@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { Play, Search } from "lucide-react";
 import { api, unwrap, type Schemas } from "../api/client";
 import { STATE_HINT, isTitleState } from "../lib/states";
-import { GreaseCircle } from "./GreaseCircle";
 import { Tape } from "./Tape";
 
 const MANAGE_LIBRARY = 16;
@@ -51,22 +50,22 @@ export function TitlePanel({ titleId, permissions }: { titleId: number; permissi
   const releases = (search.data ?? last)?.releases ?? [];
 
   return (
-    <section aria-labelledby="report" className="mx-auto mt-14 max-w-[110rem] px-4 sm:px-8">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-slate-line py-5">
+    <section aria-labelledby="report" className="mx-auto mt-8 max-w-[110rem] px-4 sm:px-8">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-line py-5">
         <h2 id="report" className="sr-only">
           Status
         </h2>
         <Tape state={title.state} className="-rotate-2" />
-        <p className="min-w-0 flex-1 text-chalk-dim">
+        <p className="min-w-0 flex-1 text-muted">
           {title.state_reason ?? (isTitleState(title.state) ? STATE_HINT[title.state] : "")}
         </p>
         {file && (
-          <Link to="/watch/$fileId" params={{ fileId: String(file.id) }} className="btn-grease">
+          <Link to="/watch/$fileId" params={{ fileId: String(file.id) }} className="btn-primary">
             <Play aria-hidden className="size-4" fill="currentColor" /> Play
           </Link>
         )}
         {canManage && (
-          <button type="button" className="btn-chalk" disabled={search.isPending} onClick={() => search.mutate()}>
+          <button type="button" className="btn" disabled={search.isPending} onClick={() => search.mutate()}>
             <Search aria-hidden className="size-4" />
             {search.isPending ? "Searching…" : "Search releases"}
           </button>
@@ -74,19 +73,19 @@ export function TitlePanel({ titleId, permissions }: { titleId: number; permissi
       </div>
 
       {file && (
-        <p className="mt-3 data text-sm text-chalk-faint">
+        <p className="mt-3 data text-sm text-faint">
           {file.quality_label} · {size(file.size_bytes)}
           {file.release_group ? ` · ${file.release_group}` : ""}
         </p>
       )}
-      {search.error && <p className="mt-3 text-sm text-grease-hot">{search.error.message}</p>}
-      {grab.error && <p className="mt-3 text-sm text-grease-hot">{grab.error.message}</p>}
+      {search.error && <p className="mt-3 text-sm text-danger">{search.error.message}</p>}
+      {grab.error && <p className="mt-3 text-sm text-danger">{grab.error.message}</p>}
 
       {releases.length > 0 && (
         <ReleaseReport releases={releases} canGrab={canManage} grabbing={grab.isPending} onGrab={grab.mutate} />
       )}
       {(search.data ?? last)?.indexer_errors.map((e) => (
-        <p key={e} className="mt-2 text-sm text-grease-hot">
+        <p key={e} className="mt-2 text-sm text-danger">
           {e}
         </p>
       ))}
@@ -109,7 +108,7 @@ function ReleaseReport({
     <div className="mt-6 overflow-x-auto">
       <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
         <thead>
-          <tr className="slate-label border-b border-slate-line text-[10px]">
+          <tr className="field-label border-b border-line text-[10px]">
             <th scope="col" className="w-12 py-2 font-semibold">Take</th>
             <th scope="col" className="py-2 font-semibold">Release</th>
             <th scope="col" className="py-2 font-semibold">Quality</th>
@@ -121,18 +120,18 @@ function ReleaseReport({
         </thead>
         <tbody>
           {releases.map((r, i) => (
-            <tr key={r.index} className={`border-b border-slate-line/60 ${r.accepted ? "" : "text-chalk-faint"}`}>
+            <tr key={r.index} className={`border-b border-line/60 ${r.accepted ? "" : "text-faint"}`}>
               <td className="py-2.5">
                 <span className="relative data px-1.5">
                   {String(i + 1).padStart(2, "0")}
-                  {i === 0 && r.accepted && <GreaseCircle className="-inset-x-1 -inset-y-1.5" />}
+                  {i === 0 && r.accepted && <span className="ml-1 text-accent">best</span>}
                 </span>
               </td>
               <td className="max-w-[28rem] py-2.5 pr-4">
-                <span className={`block truncate data text-[13px] ${r.accepted ? "text-chalk" : ""}`} title={r.title}>
+                <span className={`block truncate data text-[13px] ${r.accepted ? "text-fg" : ""}`} title={r.title}>
                   {r.title}
                 </span>
-                <span className="text-xs text-chalk-faint">{r.indexer}</span>
+                <span className="text-xs text-faint">{r.indexer}</span>
               </td>
               <td className="py-2.5 pr-4 whitespace-nowrap">{r.quality_label ?? "–"}</td>
               <td className="py-2.5 text-right data whitespace-nowrap">{size(r.size_bytes)}</td>
@@ -140,9 +139,9 @@ function ReleaseReport({
               <td className="py-2.5 pl-4">
                 {r.accepted ? (
                   r.beats_next_by ? (
-                    <span className="text-tape-available">Ahead on {r.beats_next_by}</span>
+                    <span className="text-state-available">Ahead on {r.beats_next_by}</span>
                   ) : (
-                    <span className="text-tape-available">Acceptable</span>
+                    <span className="text-state-available">Acceptable</span>
                   )
                 ) : (
                   r.rejections.join(" · ")
@@ -152,7 +151,7 @@ function ReleaseReport({
                 <td className="py-2.5 pl-3 text-right">
                   <button
                     type="button"
-                    className="font-slate text-xs font-bold tracking-[0.1em] text-grease uppercase hover:text-grease-hot disabled:opacity-50"
+                    className="text-xs font-bold text-accent hover:text-accent-hot disabled:opacity-50"
                     disabled={grabbing}
                     onClick={() => onGrab(r.index)}
                   >

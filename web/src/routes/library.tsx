@@ -17,18 +17,18 @@ export function LibraryPage() {
   const titles = [...(data ?? []), ...(shows ?? []), ...(albums ?? [])];
 
   return (
-    <main className="mx-auto max-w-[110rem] px-4 pt-12 sm:px-8">
-      <h1 className="font-slate text-5xl leading-none font-extrabold uppercase">Library</h1>
+    <main className="mx-auto max-w-[110rem] px-4 pt-10 pb-20 sm:px-8">
+      <h1 className="text-3xl font-bold">Library</h1>
       {isPending ? (
         <div className="mt-10">
           <RollSkeleton count={12} />
         </div>
       ) : titles.length === 0 ? (
         <div className="mt-10 max-w-[52ch]">
-          <p className="text-lg text-chalk-dim">
+          <p className="text-lg text-muted">
             Nothing here yet. Films, shows and albums you request show up on this page as they move from wanted to ready.
           </p>
-          <Link to="/" className="btn-grease mt-6">
+          <Link to="/" className="btn-primary mt-6">
             Find a film
           </Link>
         </div>
@@ -37,16 +37,15 @@ export function LibraryPage() {
           const items = titles.filter((t) => (g.states as readonly string[]).includes(t.state));
           if (!items.length) return null;
           return (
-            <section key={g.title} className="mt-14" aria-labelledby={`g-${g.title}`}>
+            <section key={g.title} className="mt-8" aria-labelledby={`g-${g.title}`}>
               <h2
                 id={`g-${g.title}`}
-                className="mb-6 flex items-baseline gap-3 border-b border-slate-line pb-3 font-slate text-2xl font-extrabold uppercase"
+                className="mb-3 flex items-baseline gap-2 text-base font-semibold"
               >
                 {g.title}
-                <span className="data text-sm font-normal text-chalk-faint">{items.length}</span>
+                <span className="data text-sm font-normal text-faint">{items.length}</span>
               </h2>
               <Roll
-                numbered={false}
                 items={items.map((t) => ({
                   key: t.id,
                   tmdbId: t.tmdb_id,

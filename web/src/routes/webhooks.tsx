@@ -30,19 +30,19 @@ export function WebhooksSection() {
   return (
     <div className="mt-6">
       {hooks && hooks.length > 0 && (
-        <ul className="mb-6 border-t border-slate-line">
+        <ul className="mb-6 border-t border-line">
           {hooks.map((h) => (
-            <li key={h.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-line py-3">
-              <span className="font-slate text-lg font-bold">{h.name}</span>
-              <span className="data min-w-0 flex-1 truncate text-sm text-chalk-dim">{h.url}</span>
-              {tested[h.id] && <span className="text-sm text-chalk-dim">{tested[h.id]}</span>}
-              <button type="button" className="btn-chalk min-h-8 px-3 text-xs" onClick={() => test.mutate(h.id)}>
+            <li key={h.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3">
+              <span className="text-lg font-bold">{h.name}</span>
+              <span className="data min-w-0 flex-1 truncate text-sm text-muted">{h.url}</span>
+              {tested[h.id] && <span className="text-sm text-muted">{tested[h.id]}</span>}
+              <button type="button" className="btn min-h-8 px-3 text-xs" onClick={() => test.mutate(h.id)}>
                 Send test
               </button>
               <button
                 type="button"
                 aria-label={`Remove ${h.name}`}
-                className="text-chalk-faint hover:text-grease-hot"
+                className="text-faint hover:text-danger"
                 onClick={() => remove.mutate(h.id)}
               >
                 <Trash2 aria-hidden className="size-4" />
@@ -59,29 +59,29 @@ export function WebhooksSection() {
         className="flex flex-wrap items-end gap-x-5 gap-y-4"
       >
         <label className="block w-40">
-          <span className="slate-label">Name</span>
+          <span className="field-label">Name</span>
           <input
-            className="chalk-input"
+            className="field"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Discord"
           />
         </label>
         <label className="block min-w-0 flex-1 basis-72">
-          <span className="slate-label">Address</span>
+          <span className="field-label">Address</span>
           <input
-            className="chalk-input data text-base"
+            className="field data text-base"
             value={form.url}
             onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
             placeholder="https://discord.com/api/webhooks/..."
             required
           />
         </label>
-        <button type="submit" className="btn-grease" disabled={add.isPending}>
+        <button type="submit" className="btn-primary" disabled={add.isPending}>
           Add webhook
         </button>
       </form>
-      {(add.error ?? test.error) && <p className="mt-3 text-sm text-grease-hot">{(add.error ?? test.error)?.message}</p>}
+      {(add.error ?? test.error) && <p className="mt-3 text-sm text-danger">{(add.error ?? test.error)?.message}</p>}
     </div>
   );
 }

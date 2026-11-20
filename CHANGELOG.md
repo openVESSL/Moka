@@ -57,6 +57,13 @@ the steps to migrate.
 - Video conversion on a graphics card (NVENC, VAAPI, Quick Sync), with a
   fallback to the processor if the card fails.
 
+### Changed
+- The catalog works without setup: a built-in TMDB key is used unless an
+  admin adds their own in Settings.
+- New interface: side navigation (Home, Search, Library, Requests,
+  Connections, Settings, About), a home page with a lead title and one row
+  per list, and connection settings on their own page.
+
 ### Fixed
 - CI reads the pnpm version from `web/package.json`.
 - Web install no longer fails on a dependency's install script, which is

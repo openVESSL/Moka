@@ -8,7 +8,8 @@ import { MoviePage } from "./routes/movie";
 import { ShowPage } from "./routes/show";
 import { AlbumPage, ArtistPage } from "./routes/music";
 import { RequestsPage } from "./routes/requests";
-import { SettingsPage } from "./routes/settings";
+import { ConnectionsPage, SettingsPage } from "./routes/settings";
+import { AboutPage } from "./routes/about";
 import { Shell } from "./routes/Shell";
 import { WatchPage } from "./routes/watch";
 
@@ -60,7 +61,7 @@ const discover = createRoute({
   }),
   component: function Discover() {
     const { list, kind } = discover.useSearch();
-    return <DiscoverPage list={list ?? "trending"} kind={kind ?? "movie"} />;
+    return <DiscoverPage list={list} kind={kind ?? "movie"} />;
   },
 });
 
@@ -131,8 +132,14 @@ const watch = createRoute({
   },
 });
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: SettingsPage });
+const connections = createRoute({ getParentRoute: () => app, path: "/connections", component: ConnectionsPage });
+const about = createRoute({ getParentRoute: () => app, path: "/about", component: AboutPage });
 
-const tree = root.addChildren([setup, login, app.addChildren([discover, search, movie, show, artist, album, requests, library, settings, watch])]);
+const tree = root.addChildren([
+  setup,
+  login,
+  app.addChildren([discover, search, movie, show, artist, album, requests, library, settings, connections, about, watch]),
+]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({

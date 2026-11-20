@@ -172,9 +172,6 @@ importers:
       '@fontsource-variable/sofia-sans':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource-variable/sofia-sans-condensed':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@tanstack/react-query':
         specifier: ^5.108.0
         version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
@@ -246,9 +243,6 @@ packages:
 
   '@fontsource-variable/red-hat-mono@5.3.0':
     resolution: {integrity: sha512-/mEvTCcruJY64xRgx1gsmsYuGR7MtOduOsuyeHVJ07p+2gGvCqROauIwaTCcVHL4eBGi+Lns4EUIjrPZLCn5gQ==}
-
-  '@fontsource-variable/sofia-sans-condensed@5.3.0':
-    resolution: {integrity: sha512-pfyjEn5plOBRtnQqXMDVR49QSdP9hYzgUi7J0w1bW5UG01MqQO8WGT9xdbPSt0+eZ6zrmaNzmk8QKUSkVltGMg==}
 
   '@fontsource-variable/sofia-sans@5.3.0':
     resolution: {integrity: sha512-lVLpBgrjxSMjrrBF70Jr9qBLdFac5tDAvVn9oHlS+vAaVyhUN6dWmr0nNjWzwTh6tYIECP45h4zDfllQbXtqtA==}
@@ -939,8 +933,6 @@ snapshots:
     optional: true
 
   '@fontsource-variable/red-hat-mono@5.3.0': {}
-
-  '@fontsource-variable/sofia-sans-condensed@5.3.0': {}
 
   '@fontsource-variable/sofia-sans@5.3.0': {}
 

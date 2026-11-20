@@ -5,7 +5,7 @@ import { STATE_HINT, isTitleState } from "../lib/states";
 import { Tape } from "./Tape";
 
 /**
- * The one action on a film or show. Unknown films get the grease button; known ones
+ * The one action on a film or show. Unknown films get the accent button; known ones
  * show their tape and what happens next.
  */
 export function RequestButton({
@@ -27,13 +27,13 @@ export function RequestButton({
     return (
       <div className="flex items-center gap-3" aria-live="polite">
         {state === "available" ? (
-          <span className="inline-flex items-center gap-2 font-slate font-bold tracking-[0.08em] text-tape-available uppercase">
+          <span className="inline-flex items-center gap-2 font-bold text-state-available">
             <Check aria-hidden className="size-5" /> In your library
           </span>
         ) : (
           <>
             <Tape state={state} />
-            <span className="text-sm text-chalk-dim">{isTitleState(state) ? STATE_HINT[state] : null}</span>
+            <span className="text-sm text-muted">{isTitleState(state) ? STATE_HINT[state] : null}</span>
           </>
         )}
       </div>
@@ -44,7 +44,7 @@ export function RequestButton({
     <div className="flex flex-wrap items-center gap-3">
       <button
         type="button"
-        className="btn-grease"
+        className="btn-primary"
         disabled={request.isPending}
         onClick={() => request.mutate({ tmdbId, kind, mbid })}
       >
@@ -52,7 +52,7 @@ export function RequestButton({
         {request.isPending ? "Requesting…" : "Request"}
       </button>
       {request.error && (
-        <p role="alert" className="text-sm text-grease-hot">
+        <p role="alert" className="text-sm text-danger">
           {request.error.message}
         </p>
       )}

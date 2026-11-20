@@ -31,30 +31,30 @@ export function ProfileSection() {
 
   return (
     <div className="mt-6">
-      <ol className="border-t border-slate-line">
+      <ol className="border-t border-line">
         {p.qualities.map((k, i) => (
-          <li key={k} className="flex items-center gap-3 border-b border-slate-line py-2">
-            <span className="data w-6 text-xs text-chalk-faint">{i + 1}</span>
-            <span className="flex-1 font-slate font-semibold">{label(k)}</span>
-            <label className="inline-flex items-center gap-1.5 text-xs text-chalk-dim">
+          <li key={k} className="flex items-center gap-3 border-b border-line py-2">
+            <span className="data w-6 text-xs text-faint">{i + 1}</span>
+            <span className="flex-1 font-semibold">{label(k)}</span>
+            <label className="inline-flex items-center gap-1.5 text-xs text-muted">
               <input
                 type="radio"
                 name="cutoff"
-                className="accent-grease"
+                className="accent-accent"
                 checked={p.cutoff === k}
                 onChange={() => setP({ ...p, cutoff: k })}
               />
               stop upgrading here
             </label>
-            <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="text-chalk-dim disabled:opacity-30">
+            <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="text-muted disabled:opacity-30">
               <ArrowUp aria-hidden className="size-4" />
             </button>
-            <button type="button" aria-label="Move down" disabled={i === p.qualities.length - 1} onClick={() => move(i, 1)} className="text-chalk-dim disabled:opacity-30">
+            <button type="button" aria-label="Move down" disabled={i === p.qualities.length - 1} onClick={() => move(i, 1)} className="text-muted disabled:opacity-30">
               <ArrowDown aria-hidden className="size-4" />
             </button>
             <button
               type="button"
-              className="text-xs text-chalk-faint hover:text-grease-hot"
+              className="text-xs text-faint hover:text-danger"
               disabled={p.qualities.length === 1}
               onClick={() =>
                 setP({
@@ -71,9 +71,9 @@ export function ProfileSection() {
       </ol>
       <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-4">
         <label className="block">
-          <span className="slate-label">Add a quality</span>
+          <span className="field-label">Add a quality</span>
           <select
-            className="chalk-input bg-slate text-base"
+            className="field bg-canvas text-base"
             value=""
             onChange={(e) => e.target.value && setP({ ...p, qualities: [...p.qualities, e.target.value] })}
           >
@@ -86,28 +86,28 @@ export function ProfileSection() {
           </select>
         </label>
         <label className="block w-32">
-          <span className="slate-label">Min. seeders</span>
+          <span className="field-label">Min. seeders</span>
           <input
-            className="chalk-input data"
+            className="field data"
             inputMode="numeric"
             value={p.min_seeders}
             onChange={(e) => setP({ ...p, min_seeders: Number(e.target.value.replace(/\D/g, "")) || 0 })}
           />
         </label>
-        <label className="inline-flex items-center gap-2 pb-3 text-sm text-chalk-dim">
+        <label className="inline-flex items-center gap-2 pb-3 text-sm text-muted">
           <input
             type="checkbox"
-            className="accent-grease"
+            className="accent-accent"
             checked={p.upgrades_allowed}
             onChange={(e) => setP({ ...p, upgrades_allowed: e.target.checked })}
           />
           Replace with better releases when they appear
         </label>
-        <button type="button" className="btn-grease" disabled={save.isPending} onClick={() => save.mutate(p)}>
+        <button type="button" className="btn-primary" disabled={save.isPending} onClick={() => save.mutate(p)}>
           Save
         </button>
       </div>
-      <p role="status" className={`mt-3 text-sm ${save.error ? "text-grease-hot" : "text-tape-available"}`}>
+      <p role="status" className={`mt-3 text-sm ${save.error ? "text-danger" : "text-state-available"}`}>
         {save.error?.message ?? (save.isSuccess ? "Saved." : "")}
       </p>
     </div>

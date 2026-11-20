@@ -200,6 +200,11 @@ pub struct ShowDetails {
     /// e.g. "Returning Series", "Ended".
     #[serde(default)]
     pub status: Option<String>,
+    /// e.g. "Scripted", "Talk Show", "News", "Reality".
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub original_language: Option<String>,
     #[serde(default)]
     pub seasons: Vec<SeasonSummary>,
     #[serde(default)]
@@ -211,6 +216,18 @@ pub struct ShowDetails {
 }
 
 impl ShowDetails {
+    /// How releases of this show are numbered: `daily` (by air date),
+    /// `anime` (often by absolute episode) or `standard` (S01E02).
+    pub fn numbering(&self) -> &'static str {
+        if matches!(self.kind.as_deref(), Some("Talk Show" | "News")) {
+            "daily"
+        } else if self.original_language.as_deref() == Some("ja") && self.genres.iter().any(|g| g.id == 16) {
+            "anime"
+        } else {
+            "standard"
+        }
+    }
+
     pub fn year(&self) -> Option<i64> {
         year_of(self.first_air_date.as_deref())
     }

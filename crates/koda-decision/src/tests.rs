@@ -161,7 +161,12 @@ fn thrones(episodes: &[u32]) -> Target {
     Target {
         title: "Thrones".into(),
         runtime_minutes: Some(55),
-        episodes: Some(EpisodeTarget { season: 1, episodes: episodes.to_vec(), season_episodes: 10 }),
+        episodes: Some(EpisodeTarget {
+            season: 1,
+            episodes: episodes.to_vec(),
+            season_episodes: 10,
+            ..Default::default()
+        }),
         ..Default::default()
     }
 }
@@ -186,7 +191,7 @@ fn episodes_match_season_and_number() {
     assert_eq!(codes(by("Thrones.S02E02")), ["wrong_season"]);
     assert_eq!(codes(by("Thrones.S01.1080p")), ["season_pack"]);
     assert_eq!(codes(by("Other.Show")), ["wrong_film"]);
-    assert_eq!(codes(by("Thrones.2024")), ["numbering"]);
+    assert_eq!(codes(by("Thrones.2024")), ["wrong_episode"], "no episode aired that day");
 }
 
 #[test]
@@ -202,4 +207,36 @@ fn season_packs_are_sized_for_the_season() {
     assert_eq!(out[0].covers.len(), 10);
     let by = |t: &str| out.iter().find(|e| e.title.starts_with(t)).unwrap();
     assert_eq!(codes(by("Thrones.S01E01")), ["not_season_pack"]);
+}
+
+#[test]
+fn daily_and_anime_numbers_map_to_episodes() {
+    let mut daily = thrones(&[2]);
+    daily.title = "Late Show".into();
+    daily.episodes.as_mut().unwrap().air_dates = vec![(1, "2024-01-15".into()), (2, "2024-01-16".into())];
+    let cands = [
+        cand("Late.Show.2024.01.16.1080p.WEB-DL.x264-GRP", 2.0, 50),
+        cand("Late.Show.2024.01.15.1080p.WEB-DL.x264-GRP", 2.0, 50),
+    ];
+    let out = evaluate(&daily, &profile(), &cands);
+    let by = |t: &str| out.iter().find(|e| e.title.starts_with(t)).unwrap();
+    assert!(by("Late.Show.2024.01.16").accepted());
+    assert_eq!(by("Late.Show.2024.01.16").covers, [2]);
+    assert_eq!(codes(by("Late.Show.2024.01.15")), ["wrong_episode"], "aired, but not wanted");
+
+    // season 2 of an anime: absolute 13 is its first episode
+    let mut anime = thrones(&[1]);
+    anime.title = "Some Anime".into();
+    let e = anime.episodes.as_mut().unwrap();
+    e.season = 2;
+    e.absolute = vec![(13, 1), (14, 2)];
+    let cands = [
+        cand("[Group] Some Anime - 13 [1080p WEB-DL]", 2.0, 50),
+        cand("[Group] Some Anime - 05 [1080p WEB-DL]", 2.0, 50),
+    ];
+    let out = evaluate(&anime, &profile(), &cands);
+    let by = |t: &str| out.iter().find(|e| e.title.contains(t)).unwrap();
+    assert!(by("- 13").accepted(), "{:?}", by("- 13").rejections);
+    assert_eq!(by("- 13").covers, [1]);
+    assert_eq!(codes(by("- 05")), ["wrong_season"]);
 }

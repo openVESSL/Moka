@@ -107,11 +107,22 @@ pub struct TvQuery {
     pub season: u32,
     /// `None` searches the whole season.
     pub episode: Option<u32>,
+    /// Daily shows: the episode's air date, `YYYY-MM-DD`, searched instead of numbers.
+    pub air_date: Option<String>,
+    /// Anime: the episode's absolute number, searched as text too ("Title 13").
+    pub absolute: Option<u32>,
 }
 
 /// Newznab TV categories are 5000-5999; films are everything else.
 fn is_tv_category(c: u32) -> bool {
     (5000..6000).contains(&c)
+}
+
+/// The indexer's TV categories, or all of TV.
+fn tv_categories(cfg: &IndexerConfig) -> String {
+    let cats: Vec<String> =
+        cfg.categories.iter().copied().filter(|c| is_tv_category(*c)).map(|c| c.to_string()).collect();
+    if cats.is_empty() { "5000".into() } else { cats.join(",") }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -258,6 +269,41 @@ impl Client {
         caps: &Capabilities,
         q: &TvQuery,
     ) -> Result<Vec<Release>, Error> {
+        let mut found = self.search_tv_once(cfg, caps, q).await?;
+        // anime releases are often named "Title - 13": ask for that too
+        if let Some(n) = q.absolute {
+            let text = format!("{} {n:02}", search_text(&q.title));
+            for r in self.search_text(cfg, caps, &text).await? {
+                if !found.iter().any(|f| f.guid == r.guid) {
+                    found.push(r);
+                }
+            }
+        }
+        Ok(found)
+    }
+
+    async fn search_text(
+        &self,
+        cfg: &IndexerConfig,
+        caps: &Capabilities,
+        text: &str,
+    ) -> Result<Vec<Release>, Error> {
+        let mut params: Vec<(&str, String)> = vec![("t", "search".into()), ("q", text.to_owned())];
+        params.push(("cat", tv_categories(cfg)));
+        params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
+        params.push(("extended", "1".into()));
+        let body = self.get_xml(self.url(cfg, &params)?).await?;
+        parse_feed(&body, cfg.kind.protocol())
+    }
+
+    async fn search_tv_once(
+        &self,
+        cfg: &IndexerConfig,
+        caps: &Capabilities,
+        q: &TvQuery,
+    ) -> Result<Vec<Release>, Error> {
+        // daily shows: Newznab takes the year as season and "MM/DD" as episode
+        let daily = q.air_date.as_deref().and_then(|d| Some((d.get(..4)?, d.get(5..7)?, d.get(8..10)?)));
         let has = |p: &str| caps.tv_params.iter().any(|x| x == p);
         let mut params: Vec<(&str, String)> = Vec::new();
         if caps.tv_search && has("season") {
@@ -276,21 +322,28 @@ impl Client {
             if !by_id {
                 params.push(("q", search_text(&q.title)));
             }
-            params.push(("season", q.season.to_string()));
-            if let Some(e) = q.episode.filter(|_| has("ep")) {
-                params.push(("ep", e.to_string()));
+            match daily {
+                Some((y, m, d)) => {
+                    params.push(("season", y.to_owned()));
+                    params.push(("ep", format!("{m}/{d}")));
+                }
+                None => {
+                    params.push(("season", q.season.to_string()));
+                    if let Some(e) = q.episode.filter(|_| has("ep")) {
+                        params.push(("ep", e.to_string()));
+                    }
+                }
             }
         } else {
-            let marker = match q.episode {
-                Some(e) => format!("S{:02}E{:02}", q.season, e),
-                None => format!("S{:02}", q.season),
+            let marker = match (daily, q.episode) {
+                (Some((y, m, d)), _) => format!("{y} {m} {d}"),
+                (None, Some(e)) => format!("S{:02}E{:02}", q.season, e),
+                (None, None) => format!("S{:02}", q.season),
             };
             params.push(("t", "search".into()));
             params.push(("q", format!("{} {marker}", search_text(&q.title))));
         }
-        let cats: Vec<String> =
-            cfg.categories.iter().copied().filter(|c| is_tv_category(*c)).map(|c| c.to_string()).collect();
-        params.push(("cat", if cats.is_empty() { "5000".into() } else { cats.join(",") }));
+        params.push(("cat", tv_categories(cfg)));
         params.push(("limit", caps.limit_max.unwrap_or(100).min(100).to_string()));
         params.push(("extended", "1".into()));
 

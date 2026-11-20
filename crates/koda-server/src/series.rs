@@ -60,6 +60,50 @@ pub async fn tick(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// (season, episode, absolute number) of every regular episode of a show,
+/// counted from the first episode of season 1, as anime releases number them.
+fn absolute_numbers(all: &[Title]) -> Vec<(i64, i64, u32)> {
+    let mut regular: Vec<(i64, i64)> = all
+        .iter()
+        .filter_map(|t| Some((t.season_number?, t.episode_number?)))
+        .filter(|(s, _)| *s > 0)
+        .collect();
+    regular.sort();
+    regular.into_iter().zip(1..).map(|((s, e), n)| (s, e, n)).collect()
+}
+
+/// (episode, air date) and (absolute number, episode) pairs of a season.
+type SeasonNumbers = (Vec<(u32, String)>, Vec<(u32, u32)>);
+
+/// Air dates and absolute numbers of a season's episodes, for the decision.
+fn season_numbers(all: &[Title], season: i64) -> SeasonNumbers {
+    let dates = all
+        .iter()
+        .filter(|t| t.season_number == Some(season))
+        .filter_map(|t| Some((t.episode_number? as u32, t.release_date.clone()?)))
+        .collect();
+    let absolute = absolute_numbers(all)
+        .into_iter()
+        .filter(|(s, _, _)| *s == season)
+        .map(|(_, e, n)| (n, e as u32))
+        .collect();
+    (dates, absolute)
+}
+
+/// Daily shows are searched by air date, anime by absolute number too.
+fn number_query(query: &mut TvQuery, numbering: &str, ep: &Title, all: &[Title]) {
+    match numbering {
+        "daily" => query.air_date = ep.release_date.clone(),
+        "anime" => {
+            query.absolute = absolute_numbers(all)
+                .into_iter()
+                .find(|(s, e, _)| Some(*s) == ep.season_number && Some(*e) == ep.episode_number)
+                .map(|(_, _, n)| n)
+        }
+        _ => {}
+    }
+}
+
 fn aired(t: &Title) -> bool {
     let today = time::OffsetDateTime::now_utc().date().to_string();
     t.release_date.as_deref().is_some_and(|d| d <= today.as_str())
@@ -76,6 +120,9 @@ async fn search_season(state: &AppState, season_id: i64, first: &Title) -> anyho
     let wanted: Vec<&Title> =
         monitored.iter().copied().filter(|e| e.state() == TitleState::Wanted && aired(e)).collect();
     let number = season.season_number.unwrap_or(0) as u32;
+    let all = koda_db::titles::episodes_of_show(db, show.id).await?;
+    let numbering = koda_db::titles::show_numbering(db, show.id).await?;
+    let (air_dates, absolute) = season_numbers(&all, i64::from(number));
     let mut target = Target {
         title: show.title.clone(),
         year: show.year.and_then(|y| u16::try_from(y).ok()),
@@ -86,6 +133,8 @@ async fn search_season(state: &AppState, season_id: i64, first: &Title) -> anyho
             season: number,
             episodes: vec![],
             season_episodes: episodes.len() as u32,
+            air_dates,
+            absolute,
         }),
         ..Default::default()
     };
@@ -97,9 +146,12 @@ async fn search_season(state: &AppState, season_id: i64, first: &Title) -> anyho
         imdb_id: show.imdb_id.clone(),
         season: number,
         episode: None,
+        ..Default::default()
     };
 
-    let whole = wanted.len() > 1
+    // a daily show's "season" is a year of episodes: never searched as one pack
+    let whole = numbering != "daily"
+        && wanted.len() > 1
         && wanted.len() == monitored.len()
         && season.state() == TitleState::Wanted
         && season.next_search_at.is_none_or(|t| t <= now());
@@ -112,6 +164,7 @@ async fn search_season(state: &AppState, season_id: i64, first: &Title) -> anyho
 
     // one episode; a release may still hold a few wanted ones together
     query.episode = first.episode_number.map(|n| n as u32);
+    number_query(&mut query, &numbering, first, &all);
     if let Some(e) = target.episodes.as_mut() {
         e.episodes = wanted.iter().filter_map(|w| w.episode_number.map(|n| n as u32)).collect();
     }
@@ -129,6 +182,8 @@ pub async fn search_episode(state: &AppState, ep: &Title) -> anyhow::Result<crat
         koda_db::titles::by_id(db, show_id).await?.ok_or_else(|| anyhow::anyhow!("The show was removed"))?;
     let siblings = koda_db::titles::children(db, ep.parent_id.unwrap_or(0)).await?.len() as u32;
     let (number, episode) = (ep.season_number.unwrap_or(0) as u32, ep.episode_number.unwrap_or(0) as u32);
+    let all = koda_db::titles::episodes_of_show(db, show.id).await?;
+    let (air_dates, absolute) = season_numbers(&all, i64::from(number));
     let files = koda_db::library::files_for_title(db, ep.id).await?;
     let target = Target {
         title: show.title.clone(),
@@ -137,17 +192,25 @@ pub async fn search_episode(state: &AppState, ep: &Title) -> anyhow::Result<crat
         tmdb_id: show.tmdb_id,
         runtime_minutes: ep.runtime_minutes.or(show.runtime_minutes).and_then(|m| u32::try_from(m).ok()),
         existing: files.first().and_then(|f| f.quality.as_deref()).and_then(Quality::from_key),
-        episodes: Some(EpisodeTarget { season: number, episodes: vec![episode], season_episodes: siblings }),
+        episodes: Some(EpisodeTarget {
+            season: number,
+            episodes: vec![episode],
+            season_episodes: siblings,
+            air_dates,
+            absolute,
+        }),
         ..Default::default()
     };
-    let query = TvQuery {
+    let mut query = TvQuery {
         title: show.title.clone(),
         tvdb_id: koda_db::titles::tvdb_id(db, show.id).await?,
         tmdb_id: show.tmdb_id,
         imdb_id: show.imdb_id.clone(),
         season: number,
         episode: Some(episode),
+        ..Default::default()
     };
+    number_query(&mut query, &koda_db::titles::show_numbering(db, show.id).await?, ep, &all);
     crate::pipeline::search_with(state, ep.id, show.quality_profile_id, Query::Tv(query), target).await
 }
 
@@ -267,6 +330,7 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
     }
     let by_number: HashMap<(i64, i64), &Title> =
         targets.iter().filter_map(|t| Some(((t.season_number?, t.episode_number?), t))).collect();
+    let all = koda_db::titles::episodes_of_show(db, show.id).await.map_err(err)?;
 
     let src = source.clone();
     let files = tokio::task::spawn_blocking(move || crate::pipeline::videos(&src))
@@ -279,7 +343,7 @@ pub async fn import(state: &AppState, unit: &Title, g: &koda_db::grabs::Grab) ->
     let mut done: HashSet<i64> = HashSet::new();
     let mut placed = Vec::new();
     for (_, video) in &files {
-        let eps = match_file(video, &by_number, &targets, files.len());
+        let eps = match_file(video, &by_number, &targets, files.len(), &all);
         let eps: Vec<&Title> = eps.into_iter().filter(|t| !done.contains(&t.id)).collect();
         let Some(first) = eps.first() else { continue };
         let ext = video.extension().and_then(|e| e.to_str()).unwrap_or("mkv").to_ascii_lowercase();
@@ -353,6 +417,7 @@ fn match_file<'a>(
     by_number: &HashMap<(i64, i64), &'a Title>,
     targets: &'a [Title],
     files: usize,
+    all: &[Title],
 ) -> Vec<&'a Title> {
     let name = video.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let parsed = koda_parser::parse_episode(name).or_else(|| {
@@ -363,9 +428,23 @@ fn match_file<'a>(
             .and_then(|n| n.to_str())
             .and_then(koda_parser::parse_episode)
     });
-    if let Some(p) = parsed.filter(|p| !p.episodes.is_empty()) {
-        let season = i64::from(p.seasons.first().copied().unwrap_or(0));
-        return p.episodes.iter().filter_map(|e| by_number.get(&(season, i64::from(*e))).copied()).collect();
+    if let Some(p) = parsed {
+        // daily and anime names point at an episode through its date or absolute number
+        let keys: Vec<(i64, i64)> = if let Some(date) = &p.air_date {
+            all.iter()
+                .filter(|t| t.release_date.as_deref() == Some(date))
+                .filter_map(|t| Some((t.season_number?, t.episode_number?)))
+                .collect()
+        } else if !p.absolute.is_empty() {
+            let abs = absolute_numbers(all);
+            p.absolute.iter().filter_map(|a| abs.iter().find(|x| x.2 == *a).map(|x| (x.0, x.1))).collect()
+        } else {
+            let season = i64::from(p.seasons.first().copied().unwrap_or(0));
+            p.episodes.iter().map(|e| (season, i64::from(*e))).collect()
+        };
+        if !keys.is_empty() {
+            return keys.iter().filter_map(|k| by_number.get(k).copied()).collect();
+        }
     }
     match (files, targets) {
         (1, [only]) => vec![only],
@@ -424,15 +503,31 @@ mod tests {
         let by: HashMap<(i64, i64), &Title> =
             targets.iter().map(|t| ((t.season_number.unwrap(), t.episode_number.unwrap()), t)).collect();
         let ids = |v: Vec<&Title>| v.iter().map(|t| t.id).collect::<Vec<_>>();
-        assert_eq!(ids(match_file(Path::new("/dl/Thrones.S01E02.1080p.mkv"), &by, &targets, 2)), [2]);
         assert_eq!(
-            ids(match_file(Path::new("/dl/Thrones.S01E01E02.1080p/x1f3.mkv"), &by, &targets, 1)),
+            ids(match_file(Path::new("/dl/Thrones.S01E02.1080p.mkv"), &by, &targets, 2, &targets)),
+            [2]
+        );
+        assert_eq!(
+            ids(match_file(Path::new("/dl/Thrones.S01E01E02.1080p/x1f3.mkv"), &by, &targets, 1, &targets)),
             [1, 2]
         );
-        assert!(match_file(Path::new("/dl/Thrones.S02E01.mkv"), &by, &targets, 2).is_empty());
+        assert!(match_file(Path::new("/dl/Thrones.S02E01.mkv"), &by, &targets, 2, &targets).is_empty());
+        assert_eq!(
+            ids(match_file(Path::new("/dl/[Grp] Thrones - 02 [1080p].mkv"), &by, &targets, 2, &targets)),
+            [2]
+        );
+        let mut dated = targets.clone();
+        dated[0].release_date = Some("2011-04-17".into());
+        let by_d: HashMap<(i64, i64), &Title> =
+            dated.iter().map(|t| ((t.season_number.unwrap(), t.episode_number.unwrap()), t)).collect();
+        assert_eq!(ids(match_file(Path::new("/dl/Thrones.2011.04.17.mkv"), &by_d, &dated, 2, &dated)), [1]);
         let one = vec![e1.clone()];
         let by1: HashMap<(i64, i64), &Title> = HashMap::from([((1, 1), &one[0])]);
-        assert_eq!(ids(match_file(Path::new("/dl/abc123.mkv"), &by1, &one, 1)), [1], "one file, one episode");
+        assert_eq!(
+            ids(match_file(Path::new("/dl/abc123.mkv"), &by1, &one, 1, &one)),
+            [1],
+            "one file, one episode"
+        );
     }
 }
 

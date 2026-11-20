@@ -59,6 +59,11 @@ pub struct EpisodeTarget {
     pub episodes: Vec<u32>,
     /// Episodes in the season, to size a season pack.
     pub season_episodes: u32,
+    /// Air date (`YYYY-MM-DD`) of each episode in the season, for daily shows.
+    pub air_dates: Vec<(u32, String)>,
+    /// Absolute number of each episode in the season (anime), counted from the
+    /// first episode of season 1.
+    pub absolute: Vec<(u32, u32)>,
 }
 
 /// The film or show being searched for. For a show, `runtime_minutes` is
@@ -150,13 +155,9 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
                 (Some(p), None) => rules(target, profile, runtime, c, p),
                 (Some(p), Some(want)) => {
                     let e = episode.as_ref().expect("parsed with episode");
-                    covers = if e.is_season_pack() {
-                        (1..=want.season_episodes).collect()
-                    } else {
-                        e.episodes.clone()
-                    };
+                    let (held, mut out) = episode_rules(want, e);
+                    covers = held;
                     let minutes = runtime * (covers.len().max(1) as u32);
-                    let mut out = episode_rules(want, e);
                     out.extend(rules(target, profile, minutes, c, p));
                     out
                 }
@@ -189,26 +190,48 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
     out
 }
 
-/// Why a release is not the season or episodes wanted, if it is not.
-fn episode_rules(want: &EpisodeTarget, e: &ParsedEpisode) -> Vec<Rejection> {
-    if e.seasons.is_empty() {
-        let what = if e.air_date.is_some() { "air date" } else { "absolute episode number" };
-        return vec![reject("numbering", format!("Numbered by {what}, which is not supported yet"), true)];
-    }
-    if e.seasons != [want.season] {
+/// The episodes a release holds (numbers inside the season), and why it is
+/// not the season or episodes wanted, if it is not. Air dates and absolute
+/// numbers are turned into episode numbers first.
+fn episode_rules(want: &EpisodeTarget, e: &ParsedEpisode) -> (Vec<u32>, Vec<Rejection>) {
+    let one = |r: Rejection| (vec![], vec![r]);
+    let held: Vec<u32> = if let Some(date) = &e.air_date {
+        match want.air_dates.iter().find(|(_, d)| d == date) {
+            Some((n, _)) => vec![*n],
+            None => {
+                return one(reject("wrong_episode", format!("Nothing in this season aired on {date}"), true));
+            }
+        }
+    } else if !e.absolute.is_empty() {
+        let mapped: Vec<u32> = e
+            .absolute
+            .iter()
+            .filter_map(|a| want.absolute.iter().find(|(x, _)| x == a).map(|(_, n)| *n))
+            .collect();
+        if mapped.len() != e.absolute.len() {
+            let nums: Vec<String> = e.absolute.iter().map(u32::to_string).collect();
+            return one(reject(
+                "wrong_season",
+                format!("Episode {} is not in season {}", nums.join("-"), want.season),
+                true,
+            ));
+        }
+        mapped
+    } else if e.seasons != [want.season] {
         let s: Vec<String> = e.seasons.iter().map(|s| format!("S{s:02}")).collect();
-        return vec![reject(
-            "wrong_season",
-            format!("Holds {}, not S{:02}", s.join(", "), want.season),
-            true,
-        )];
-    }
-    match (want.episodes.is_empty(), e.is_season_pack()) {
+        return one(reject("wrong_season", format!("Holds {}, not S{:02}", s.join(", "), want.season), true));
+    } else if e.is_season_pack() {
+        (1..=want.season_episodes).collect()
+    } else {
+        e.episodes.clone()
+    };
+    let pack = e.is_season_pack();
+    let rejections = match (want.episodes.is_empty(), pack) {
         (true, false) => vec![reject("not_season_pack", "A single episode, not the whole season", true)],
         (false, true) => {
             vec![reject("season_pack", "The whole season, but only some episodes are wanted", true)]
         }
-        (false, false) => match e.episodes.iter().find(|n| !want.episodes.contains(n)) {
+        (false, false) => match held.iter().find(|n| !want.episodes.contains(n)) {
             Some(n) => vec![reject(
                 "wrong_episode",
                 format!("Episode S{:02}E{n:02} is not wanted", want.season),
@@ -217,7 +240,8 @@ fn episode_rules(want: &EpisodeTarget, e: &ParsedEpisode) -> Vec<Rejection> {
             None => vec![],
         },
         (true, true) => vec![],
-    }
+    };
+    (held, rejections)
 }
 
 fn rules(

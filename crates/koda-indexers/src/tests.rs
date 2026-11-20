@@ -58,6 +58,10 @@ async fn mock() -> String {
                 }
                 match q.get("t").map(String::as_str) {
                     Some("caps") => CAPS.into_response(),
+                    Some("tvsearch") if q.get("season").map(String::as_str) == Some("2024") => {
+                        assert_eq!(q.get("ep").map(String::as_str), Some("01/15"), "daily: month/day");
+                        FEED.into_response()
+                    }
                     Some("tvsearch") => {
                         assert_eq!(q.get("tvdbid").map(String::as_str), Some("121361"));
                         assert_eq!(q.get("season").map(String::as_str), Some("1"));
@@ -66,7 +70,8 @@ async fn mock() -> String {
                         FEED.into_response()
                     }
                     Some("search") => {
-                        assert_eq!(q.get("q").map(String::as_str), Some("Thrones S01"));
+                        let text = q.get("q").map(String::as_str).unwrap_or("");
+                        assert!(["Thrones S01", "Thrones 13"].contains(&text), "{text}");
                         FEED.into_response()
                     }
                     Some("movie") => {
@@ -222,6 +227,24 @@ async fn tv_search_by_id_or_text() {
         ..Default::default()
     };
     assert_eq!(c.search_tv(&cfg, &caps, &q).await.unwrap().len(), 2);
+
+    // daily by date; anime also as "Title 13", with duplicates dropped
+    let q = TvQuery {
+        title: "Thrones".into(),
+        air_date: Some("2024-01-15".into()),
+        season: 2024,
+        ..Default::default()
+    };
+    assert_eq!(c.search_tv(&cfg, &caps, &q).await.unwrap().len(), 2);
+    let q = TvQuery {
+        title: "Thrones".into(),
+        tvdb_id: Some(121361),
+        season: 1,
+        episode: Some(2),
+        absolute: Some(13),
+        ..Default::default()
+    };
+    assert_eq!(c.search_tv(&cfg, &caps, &q).await.unwrap().len(), 2, "same releases twice count once");
 
     // an indexer without TV search gets "Title S01"
     let plain = Capabilities { search: true, ..Default::default() };

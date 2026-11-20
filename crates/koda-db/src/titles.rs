@@ -191,7 +191,8 @@ async fn insert_part(
             title = excluded.title, overview = excluded.overview, year = excluded.year,
             runtime_minutes = excluded.runtime_minutes, release_date = excluded.release_date,
             poster_path = COALESCE(excluded.poster_path, poster_path),
-            backdrop_path = COALESCE(excluded.backdrop_path, backdrop_path)",
+            backdrop_path = COALESCE(excluded.backdrop_path, backdrop_path),
+            metadata_json = COALESCE(excluded.metadata_json, metadata_json)",
     )
     .bind(kind.as_str())
     .bind(parent)
@@ -233,6 +234,17 @@ pub async fn due_episodes(pool: &Pool, limit: i64) -> Result<Vec<Title>, Error> 
     .bind(limit)
     .fetch_all(pool)
     .await
+}
+
+/// How a show's releases are numbered: `daily`, `anime` or `standard`.
+pub async fn show_numbering(pool: &Pool, id: i64) -> Result<String, Error> {
+    let n: Option<String> =
+        sqlx::query_scalar("SELECT json_extract(metadata_json, '$.numbering') FROM titles WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+    Ok(n.unwrap_or_else(|| "standard".into()))
 }
 
 /// TheTVDB id of a show, when the catalog gave one.

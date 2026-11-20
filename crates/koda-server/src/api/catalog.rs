@@ -373,7 +373,7 @@ pub(crate) async fn new_show(state: &AppState, tmdb_id: i64) -> ApiResult<koda_d
             release_date: d.first_air_date.clone(),
             poster_path: d.poster_path.clone(),
             backdrop_path: d.backdrop_path.clone(),
-            metadata_json: None,
+            metadata_json: Some(serde_json::json!({ "numbering": d.numbering() }).to_string()),
         },
         seasons,
     })

@@ -39,6 +39,9 @@ the steps to migrate.
 - A show's state follows its episodes (on the way, in the library), and each
   episode on the show page opens its own status, player, release search
   and grab.
+- Daily shows (talk shows, news) are searched and imported by air date, and
+  anime also by absolute episode number (`Show - 13`), alongside the usual
+  `S01E02`.
 - Shows are refreshed from the catalog twice a day: new episodes and air
   dates arrive on their own and are searched once they air.
 - Existing show folders can be brought into the library: episodes on disk

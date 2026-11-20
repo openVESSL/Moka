@@ -1,6 +1,6 @@
 # Architecture
 
-Status: describes the code as it is (films, shows, music) and the direction after it.
+Status: describes the code as it is (films, shows, music, books) and the direction after it.
 
 ## Goals
 
@@ -28,14 +28,15 @@ Status: describes the code as it is (films, shows, music) and the direction afte
                       │  requests ─▶ titles (state machine) ◀─ background loop (pipeline + series)    │
                       │                 │                        │                                    │
                       │   catalogs ◀────┘          indexers ◀────┤                                    │
-                      │   (TMDB, MusicBrainz)      download ◀────┤                                    │
+                      │   (TMDB, MusicBrainz,      download ◀────┤                                    │
+                      │    Open Library)                         │                                    │
                       │                            import   ◀────┘                                    │
                       │                            playback (FFmpeg subprocess, HLS)                  │
                       │                                                                               │
                       │                     SQLite                                                    │
                       └───────────────────────────────────────────────────────────────────────────────┘
                           │             │                │                       │
-                      TMDB API     MusicBrainz     Torznab/Newznab     qBittorrent · Transmission · SABnzbd
+             TMDB · MusicBrainz · Open Library     Torznab/Newznab     qBittorrent · Transmission · SABnzbd
 ```
 
 A modular monolith: crates in one Cargo workspace, one database, one data model. There is no sync between components because there is only one component.
@@ -57,11 +58,14 @@ The central object, one table for everything that can be requested, downloaded o
 | `artist` | none | created with its first album |
 | `album` | artist | the unit of search and import for music |
 | `track` | album | disc in `season_number`, position in `episode_number` |
+| `author` | none | created with its first book |
+| `ebook`, `audiobook` | author | the units of search and import for books; one book can be both |
 
 | Field | Notes |
 |---|---|
 | `tmdb_id`, `imdb_id`, `tvdb_id` | external ids for films and shows. `(kind, tmdb_id)` is unique |
 | `mbid` | MusicBrainz id for music. `(kind, mbid)` is unique |
+| `olid` | Open Library id for books (`OL…W`) and authors (`OL…A`). `(kind, olid)` is unique |
 | `season_number`, `episode_number` | episodes and tracks |
 | `title`, `original_title`, `year`, `overview`, `runtime_minutes`, `release_date` | cached metadata; `release_date` is the air date for episodes |
 | `poster_path`, `backdrop_path` | TMDB image paths, served through the image proxy |
@@ -119,13 +123,13 @@ Secrets are write-only through the API and encrypted at rest.
 
 | Crate | Responsibility |
 |---|---|
-| `moka-core` | shared types: title kinds and states, video and audio quality, permissions |
+| `moka-core` | shared types: title kinds and states, video and audio quality, ebook format, permissions |
 | `moka-db` | SQLx pool, migrations (with a backup before each upgrade), every SQL query, secret sealing |
-| `moka-parser` | release names: films, episodes (`S01E02`, `1x02`, season packs, air dates, absolute numbers), albums |
-| `moka-metadata` | TMDB (films, shows, seasons) and MusicBrainz (artists, albums, tracks) clients |
-| `moka-indexers` | Torznab/Newznab: capabilities, film and TV search, feeds, `.torrent`/magnet fetching, backoff |
+| `moka-parser` | release names: films, episodes (`S01E02`, `1x02`, season packs, air dates, absolute numbers), albums, books (checked for an author and title rather than split) |
+| `moka-metadata` | TMDB (films, shows, seasons), MusicBrainz (artists, albums, tracks) and Open Library (books, authors) clients |
+| `moka-indexers` | Torznab/Newznab: capabilities, film, TV, music and book search, feeds, `.torrent`/magnet fetching, backoff |
 | `moka-download` | qBittorrent, Transmission, SABnzbd behind one client type |
-| `moka-decision` | accept/reject rules and ranking, for films, episodes, season packs and albums (by audio format) |
+| `moka-decision` | accept/reject rules and ranking, for films, episodes, season packs, albums (by audio format) and books (by ebook format, M4B first for audiobooks) |
 | `moka-net` | outgoing HTTP guard: blocks link-local, metadata and other forbidden addresses on every hop |
 | `moka-server` | the binary: API, auth, background loop, import, playback, compatibility layer, embedded web app |
 | `web/` | React app |
@@ -172,7 +176,9 @@ every pass (a few seconds while something moves, a minute when idle, at once whe
 - **Placing files**: hardlink when the download and library are on the same filesystem (the torrent keeps seeding, no extra space), copy otherwise. Subtitles next to the video come along.
 - **Films**: the biggest video (samples skipped) goes to `{films}/{Title} ({Year}) {tmdb-ID}/{Title} ({Year}) {tmdb-ID} - {Quality}.{ext}`.
 - **Episodes**: every video in the download is matched to an episode by its name (season/episode, air date or absolute number) and placed at `{shows}/{Show} ({Year}) {tmdb-ID}/Season NN/{Show} - S01E02 - {Name} - {Quality}.{ext}`. Episodes the download did not hold go back to `wanted`.
-- **Existing libraries**: a scan recognizes film folders and show folders (TMDB id in the name, else title + year) and album folders (`Artist/Album (Year)`, matched by name on MusicBrainz), and adds them as available, leaving the files in place.
+- **Albums**: audio files are matched to tracks by number, then by title, and placed at `{music}/{Artist}/{Album} ({Year})/NN - {Title}.{ext}` with `cover.jpg`.
+- **Books**: an ebook keeps the best format in the download (EPUB, AZW3, MOBI by default) at `{ebooks}/{Author}/{Title} ({Year})/{Title}.{ext}`; an audiobook keeps every audio file under `{audiobooks}/{Author}/{Title} ({Year})/`. Both get `cover.jpg`.
+- **Existing libraries**: a scan recognizes film folders and show folders (TMDB id in the name, else title + year), album folders (`Artist/Album (Year)`, matched by name on MusicBrainz) and books (`Author/Title (Year)` folders or `Author/Title` files, matched on Open Library), and adds them as available, leaving the files in place.
 
 ## 7. Playback
 
@@ -189,7 +195,7 @@ The browser posts what it can decode; the server answers with one method and the
 
 - **Native** `/api/v1`: JSON, `snake_case`, OpenAPI generated from the code; the web app uses a TypeScript client generated from it (CI fails on drift). Live updates on `GET /api/v1/events` (SSE).
 - **Auth**: session cookie for the browser; API keys for other apps (`Authorization: Bearer`, `X-Api-Key` or `?apikey=`). Permissions are a bitmask: `admin`, `manage_requests`, `request`, `auto_approve`, `manage_library`, `play`. A test checks every route needs sign-in.
-- **Main groups**: `auth`, `me`, `catalog` (films, shows, music), `requests`, `titles` (state, releases, grab, files, episodes/tracks, follow), `files` (stream, play, subtitles, fonts, progress), `hls`, `indexers`, `download-clients`, `quality-profiles`, `settings`, `webhooks`, `api-keys`, `library/scan`, `images` (TMDB artwork and album covers through a disk cache).
+- **Main groups**: `auth`, `me`, `catalog` (films, shows, music, books), `requests`, `titles` (state, releases, grab, files, episodes/tracks, follow), `files` (stream, play, subtitles, fonts, progress), `hls`, `indexers`, `download-clients`, `quality-profiles`, `settings`, `webhooks`, `api-keys`, `library/scan`, `images` (TMDB artwork, album covers, book covers and author photos through a disk cache). Progress holds seconds and, for books, a bookmark (EPUB location or audiobook part).
 - **Compatibility** `/api/v3`: the routes that indexer managers, request apps and subtitle apps already speak for films and shows (indexers, profiles, root folders, movie/series lookup and add, episodes, episode files, queue, history, commands). Outgoing webhooks can also take the import formats those subtitle apps listen for.
 - **Next**: a media-server compatible API so existing phone and TV apps can browse and play from Moka.
 
@@ -203,26 +209,25 @@ The browser posts what it can decode; the server answers with one method and the
 ## 10. Frontend
 
 - React + Vite + TanStack Router + TanStack Query + Tailwind. The build is embedded in the binary.
-- Pages: setup, login, discover (films/shows), search (films, shows, artists), film, show (seasons, per-episode panel), artist, album (tracks with play), requests, library, settings, player.
-- Music player: one `<audio>` element in the app shell playing the album's files directly, with a queue, seeking and Media Session controls.
+- Pages: setup, login, discover (films/shows), search (films, shows, artists, books), film, show (seasons, per-episode panel), artist, album (tracks with play), book (ebook and audiobook side by side), author, reader, requests, library, settings, player.
+- Audio player: one `<audio>` element in the app shell playing album or audiobook files directly, with a queue, seeking and Media Session controls; audiobooks resume where they stopped and skip 15/30 seconds.
+- Reader: EPUB pages rendered in the browser (loaded only on the reader page), with contents, text size and the place saved per user.
 - Player: `<video>` + hls.js, JASSUB for styled subtitles, custom controls.
 - The current look is a placeholder; a full redesign comes before 1.0.
 
 ## 11. Status and roadmap
 
-**Done**: films end to end; security basics; working next to existing servers and apps; full browser playback; shows end to end (requests, season packs, daily and anime numbering, import, refresh, existing folders, compatibility layer); music end to end (catalog, album requests, search by audio format, import of tracks matched by number or title, playback in the browser).
+**Done**: films end to end; security basics; working next to existing servers and apps; full browser playback; shows end to end (requests, season packs, daily and anime numbering, import, refresh, existing folders, compatibility layer); music end to end (catalog, album requests, search by audio format, import of tracks matched by number or title, existing folders, playback in the browser); books end to end (catalog, ebook and audiobook requests, search, import, existing folders, reader and audiobook playback).
 
 **Next, in order**:
-1. Music: bring in an existing music folder.
-2. Ebooks and audiobooks.
-3. Media-server compatible API for existing phone and TV apps.
-4. Redesign, then 1.0.
+1. Media-server compatible API for existing phone and TV apps.
+2. Redesign, then 1.0.
 
 ## 12. Testing
 
-- **Parser**: table-driven tests over real-world name shapes (films, episodes, albums).
+- **Parser**: table-driven tests over real-world name shapes (films, episodes, albums, books).
 - **Clients** (catalogs, indexers, download clients): local mock HTTP servers.
 - **Decision**: pure functions, unit tests.
 - **Database**: migrations on in-memory SQLite.
-- **End to end**: a fake indexer and a fake qBittorrent carry a film and a season pack from wanted to the library; API tests drive requests, the compatibility layer and sign-in on every route.
+- **End to end**: a fake indexer and a fake qBittorrent carry a film, a season pack, an album and an ebook from wanted to the library; API tests drive requests, the compatibility layer and sign-in on every route.
 - **FFmpeg**: tests marked `ignored` with `ffmpeg` in the name run real conversions (in CI and in Docker locally).

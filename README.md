@@ -1,6 +1,6 @@
 # Moka
 
-Self-hosted media library manager. One program for films, shows and music: browse a catalog, request a title, let it be fetched through the download client and indexers you configure, imported into your library, and played in the browser.
+Self-hosted media library manager. One program for films, shows, music and books: browse a catalog, request a title, let it be fetched through the download client and indexers you configure, imported into your library, and played in the browser.
 
 Moka ships with no content sources. You connect your own download clients and indexers.
 
@@ -18,8 +18,9 @@ Working in development builds, not yet tested widely:
 - In-browser player: direct play, remux or conversion with FFmpeg (optionally on a graphics card), subtitles inside or next to the file.
 - Works next to other self-hosted media apps through their usual APIs and webhooks.
 - Music: catalog, album requests, release choice by audio format, import into `Artist/Album (Year)/` with the cover, and playback in the browser.
+- Books: catalog from Open Library, ebook and audiobook requests, release choice by format, import into `Author/Title (Year)/`, an EPUB reader and audiobook playback in the browser that remember where you stopped.
 
-Planned: ebooks and audiobooks, an API that existing phone and TV apps can connect to, a new interface.
+Planned: an API that existing phone and TV apps can connect to, a new interface.
 
 ## Stack
 

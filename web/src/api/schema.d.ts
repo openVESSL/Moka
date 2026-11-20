@@ -895,6 +895,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/{id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["tracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -979,6 +995,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A track of an album, with the file to play when it is in the library. */
+        AlbumTrack: {
+            /** Format: int64 */
+            disc?: number | null;
+            /** Format: int64 */
+            file_id?: number | null;
+            /**
+             * Format: int64
+             * @description Position across the album, from 1.
+             */
+            number?: number | null;
+            state: string;
+            title: string;
+            /** Format: int64 */
+            title_id: number;
+        };
         ApiKeyView: {
             /** Format: int64 */
             created_at: number;
@@ -1552,7 +1584,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             imdb_id?: string | null;
-            /** @description movie | show | season | episode */
+            /** @description movie | show | season | episode | artist | album | track */
             kind: string;
             /** Format: int64 */
             last_search_at?: number | null;
@@ -3276,6 +3308,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ReleasesView"];
                 };
+            };
+        };
+    };
+    tracks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlbumTrack"][];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

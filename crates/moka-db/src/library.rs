@@ -181,3 +181,27 @@ mod tests {
         assert!(p.qualities.contains("webdl-1080p"));
     }
 }
+
+/// A track of an album in the library, with its newest file if it has one.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AlbumTrack {
+    pub title_id: i64,
+    pub disc: Option<i64>,
+    /// Position across the album, from 1.
+    pub number: Option<i64>,
+    pub title: String,
+    pub state: String,
+    pub file_id: Option<i64>,
+}
+
+pub async fn album_tracks(pool: &Pool, album_id: i64) -> Result<Vec<AlbumTrack>, Error> {
+    sqlx::query_as(
+        "SELECT t.id AS title_id, t.season_number AS disc, t.episode_number AS number, t.title, t.state,
+            (SELECT m.id FROM media_files m WHERE m.title_id = t.id ORDER BY m.id DESC LIMIT 1) AS file_id
+         FROM titles t WHERE t.parent_id = ? AND t.kind = 'track'
+         ORDER BY t.season_number, t.episode_number",
+    )
+    .bind(album_id)
+    .fetch_all(pool)
+    .await
+}

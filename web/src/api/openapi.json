@@ -2101,6 +2101,40 @@
         }
       }
     },
+    "/api/v1/titles/{id}/tracks": {
+      "get": {
+        "tags": [
+          "titles"
+        ],
+        "operationId": "tracks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumTrack"
+                  }
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/users": {
       "get": {
         "tags": [
@@ -2317,6 +2351,49 @@
   },
   "components": {
     "schemas": {
+      "AlbumTrack": {
+        "type": "object",
+        "description": "A track of an album, with the file to play when it is in the library.",
+        "required": [
+          "title_id",
+          "title",
+          "state"
+        ],
+        "properties": {
+          "disc": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "file_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Position across the album, from 1."
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ApiKeyView": {
         "type": "object",
         "required": [
@@ -4356,7 +4433,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "movie | show | season | episode"
+            "description": "movie | show | season | episode | artist | album | track"
           },
           "last_search_at": {
             "type": [

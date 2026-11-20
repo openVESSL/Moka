@@ -549,6 +549,8 @@ mod flow {
         );
         assert_eq!(file.quality.as_deref(), Some("flac"));
         assert_eq!(std::fs::read(&file.path).unwrap(), vec![2u8; 1024]);
+        let listed = moka_db::library::album_tracks(&db, a.id).await.unwrap();
+        assert_eq!(listed.iter().map(|t| t.file_id.is_some()).collect::<Vec<_>>(), [true, true, false]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

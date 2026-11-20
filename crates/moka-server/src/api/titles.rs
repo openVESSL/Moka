@@ -15,6 +15,7 @@ pub fn router() -> Router<AppState> {
         .route("/titles", get(list))
         .route("/titles/{id}", get(one))
         .route("/titles/{id}/episodes", get(episodes))
+        .route("/titles/{id}/tracks", get(tracks))
         .route("/titles/{id}/monitored", axum::routing::put(set_monitored))
         .route("/titles/{id}/search", axum::routing::post(search_now))
         .route("/titles/{id}/releases", get(releases))
@@ -194,7 +195,7 @@ pub async fn stream(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Title {
     pub id: i64,
-    /// movie | show | season | episode
+    /// movie | show | season | episode | artist | album | track
     pub kind: String,
     /// Season of an episode, show of a season.
     pub parent_id: Option<i64>,
@@ -343,6 +344,44 @@ pub async fn episodes(
         _ => return Err(ApiError::BadRequest("only shows and albums have episodes or tracks".into())),
     };
     Ok(Json(rows.into_iter().map(Title::from).collect()))
+}
+
+/// A track of an album, with the file to play when it is in the library.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AlbumTrack {
+    pub title_id: i64,
+    pub disc: Option<i64>,
+    /// Position across the album, from 1.
+    pub number: Option<i64>,
+    pub title: String,
+    pub state: String,
+    pub file_id: Option<i64>,
+}
+
+#[utoipa::path(get, path = "/api/v1/titles/{id}/tracks", tag = "titles", params(("id" = i64, Path)),
+    responses((status = 200, body = [AlbumTrack]), (status = 404)))]
+pub async fn tracks(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Vec<AlbumTrack>>> {
+    let album = moka_db::titles::by_id(&state.db, id).await?.ok_or(ApiError::NotFound("title"))?;
+    if album.kind != "album" {
+        return Err(ApiError::BadRequest("only albums have tracks".into()));
+    }
+    let rows = moka_db::library::album_tracks(&state.db, id).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|t| AlbumTrack {
+                title_id: t.title_id,
+                disc: t.disc,
+                number: t.number,
+                title: t.title,
+                state: t.state,
+                file_id: t.file_id,
+            })
+            .collect(),
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/titles/{id}", tag = "titles", params(("id" = i64, Path)),

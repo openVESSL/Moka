@@ -5,7 +5,7 @@ import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { ApiKeysSection } from "./apikeys";
 import { PlaybackSection } from "./playback";
 import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, RadarrSection, ScanPanel } from "./connectors";
-import { ProfileSection } from "./profile";
+import { MusicProfileSection, ProfileSection } from "./profile";
 import { UsersSection } from "./users";
 import { WebhooksSection } from "./webhooks";
 
@@ -18,10 +18,11 @@ export function SettingsPage() {
         intro="Which releases are acceptable, best first. The first acceptable one found is downloaded; better ones replace it until the stop point."
       >
         <ProfileSection />
+        <MusicProfileSection />
       </Section>
       <Section
         title="Library"
-        intro="Where finished films are placed. Keep it on the same disk as your downloads so imports are instant and take no extra space."
+        intro="Where finished films, shows and albums are placed. Keep them on the same disk as your downloads so imports are instant and take no extra space."
       >
         <LibrarySection />
         <ScanPanel />

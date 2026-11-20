@@ -4,6 +4,7 @@ import { House, Inbox, Info, Library, LogOut, Menu, Plug, Search, Settings, X, t
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { meQuery, titlesQuery } from "../api/queries";
+import { PlayerProvider } from "../components/Player";
 import { StateBadge } from "../components/StateBadge";
 import { Wordmark } from "../components/Wordmark";
 
@@ -38,6 +39,7 @@ export function Shell() {
     : [];
 
   return (
+    <PlayerProvider>
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-canvas/80 px-3 backdrop-blur-xl md:hidden">
         <button
@@ -95,6 +97,7 @@ export function Shell() {
         <Outlet />
       </div>
     </div>
+    </PlayerProvider>
   );
 }
 

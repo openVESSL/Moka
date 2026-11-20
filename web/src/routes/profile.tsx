@@ -113,3 +113,72 @@ export function ProfileSection() {
     </div>
   );
 }
+
+/** Audio formats music may be downloaded in. The server ranks them best first. */
+export function MusicProfileSection() {
+  const qc = useQueryClient();
+  const { data: saved } = useQuery({
+    queryKey: ["settings", "music"],
+    queryFn: () => unwrap(api.GET("/api/v1/settings/music")),
+  });
+  const [picked, setPicked] = useState<string[]>([]);
+  const [seeders, setSeeders] = useState(1);
+  useEffect(() => {
+    setPicked(saved?.qualities ?? []);
+    setSeeders(saved?.min_seeders ?? 1);
+  }, [saved]);
+  const save = useMutation({
+    mutationFn: () =>
+      unwrap(api.PUT("/api/v1/settings/music", { body: { qualities: picked, min_seeders: seeders } })),
+    onSuccess: (v) => qc.setQueryData(["settings", "music"], v),
+  });
+  if (!saved) return null;
+
+  return (
+    <div className="mt-10">
+      <h3 className="text-base font-semibold">Music</h3>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
+        Formats an album may be downloaded in, best first. The best one found wins.
+      </p>
+      <ul className="mt-4 grid max-w-2xl gap-x-6 sm:grid-cols-2">
+        {saved.formats.map((f) => (
+          <li key={f.key}>
+            <label className="flex items-center gap-2.5 border-b border-line py-2.5">
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={picked.includes(f.key)}
+                onChange={(e) =>
+                  setPicked(e.target.checked ? [...picked, f.key] : picked.filter((k) => k !== f.key))
+                }
+              />
+              <span className="font-semibold">{f.label}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-4">
+        <label className="block w-32">
+          <span className="field-label">Min. seeders</span>
+          <input
+            className="field data"
+            inputMode="numeric"
+            value={seeders}
+            onChange={(e) => setSeeders(Number(e.target.value.replace(/\D/g, "")) || 0)}
+          />
+        </label>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={save.isPending || picked.length === 0}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </button>
+      </div>
+      <p role="status" className={`mt-3 text-sm ${save.error ? "text-danger" : "text-state-available"}`}>
+        {save.error?.message ?? (picked.length === 0 ? "Pick at least one format." : save.isSuccess ? "Saved." : "")}
+      </p>
+    </div>
+  );
+}

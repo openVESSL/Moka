@@ -33,13 +33,15 @@ export function LibrarySection() {
   });
   const [path, setPath] = useState("");
   const [shows, setShows] = useState("");
+  const [music, setMusic] = useState("");
   useEffect(() => {
     setPath(data?.movies_path ?? "");
     setShows(data?.shows_path ?? "");
+    setMusic(data?.music_path ?? "");
   }, [data]);
   const save = useMutation({
     mutationFn: () =>
-      unwrap(api.PUT("/api/v1/settings/library", { body: { movies_path: path, shows_path: shows } })),
+      unwrap(api.PUT("/api/v1/settings/library", { body: { movies_path: path, shows_path: shows, music_path: music } })),
     onSuccess: (v) => qc.setQueryData(["settings", "library"], v),
   });
 
@@ -66,6 +68,15 @@ export function LibrarySection() {
           value={shows}
           onChange={(e) => setShows(e.target.value)}
           placeholder="/data/tv"
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Music folder" className="min-w-0 flex-1 basis-80">
+        <input
+          className="field data text-base"
+          value={music}
+          onChange={(e) => setMusic(e.target.value)}
+          placeholder="/data/music"
           spellCheck={false}
         />
       </Field>

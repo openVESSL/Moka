@@ -101,6 +101,12 @@ export const albumQuery = (mbid: string) =>
     retry: false,
   });
 
+export const albumTracksQuery = (titleId: number) =>
+  queryOptions({
+    queryKey: ["titles", titleId, "tracks"],
+    queryFn: () => unwrap(api.GET("/api/v1/titles/{id}/tracks", { params: { path: { id: titleId } } })),
+  });
+
 export const albumsQuery = queryOptions({
   queryKey: ["titles", "albums"],
   queryFn: () => unwrap(api.GET("/api/v1/titles", { params: { query: { kind: "album" } } })),

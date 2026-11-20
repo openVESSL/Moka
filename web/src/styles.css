@@ -91,6 +91,73 @@
 }
 
 @layer components {
+  /* round icon buttons in the music player */
+  .player-btn {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    color: var(--color-muted);
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .player-btn:hover:not(:disabled) {
+    color: var(--color-fg);
+    background: rgb(255 255 255 / 0.06);
+  }
+  .player-btn:disabled {
+    opacity: 0.35;
+  }
+
+  /* the player's position bar: a thin line on the top edge that grows on hover */
+  .seek {
+    appearance: none;
+    height: 14px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .seek::-webkit-slider-runnable-track {
+    height: 3px;
+    background: linear-gradient(to right, var(--color-accent) var(--seek), var(--color-line-strong) var(--seek));
+    transition: height 0.15s;
+  }
+  .seek::-moz-range-track {
+    height: 3px;
+    background: var(--color-line-strong);
+  }
+  .seek::-moz-range-progress {
+    height: 3px;
+    background: var(--color-accent);
+  }
+  .seek::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4.5px;
+    border-radius: 9999px;
+    background: var(--color-fg);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .seek::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 9999px;
+    background: var(--color-fg);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  /* one rule per engine: a selector list with an unknown pseudo-element is dropped whole */
+  .seek:hover::-webkit-slider-thumb,
+  .seek:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+  }
+  .seek:hover::-moz-range-thumb,
+  .seek:focus-visible::-moz-range-thumb {
+    opacity: 1;
+  }
+
   /* Field label above an input or a value. */
   .field-label {
     display: block;

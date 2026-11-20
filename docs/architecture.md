@@ -197,7 +197,7 @@ The browser posts what it can decode; the server answers with one method and the
 - **Auth**: session cookie for the browser; API keys for other apps (`Authorization: Bearer`, `X-Api-Key` or `?apikey=`). Permissions are a bitmask: `admin`, `manage_requests`, `request`, `auto_approve`, `manage_library`, `play`. A test checks every route needs sign-in.
 - **Main groups**: `auth`, `me`, `catalog` (films, shows, music, books), `requests`, `titles` (state, releases, grab, files, episodes/tracks, follow), `files` (stream, play, subtitles, fonts, progress), `hls`, `indexers`, `download-clients`, `quality-profiles`, `settings`, `webhooks`, `api-keys`, `library/scan`, `images` (TMDB artwork, album covers, book covers and author photos through a disk cache). Progress holds seconds and, for books, a bookmark (EPUB location or audiobook part).
 - **Compatibility** `/api/v3`: the routes that indexer managers, request apps and subtitle apps already speak for films and shows (indexers, profiles, root folders, movie/series lookup and add, episodes, episode files, queue, history, commands). Outgoing webhooks can also take the import formats those subtitle apps listen for.
-- **Next**: a media-server compatible API so existing phone and TV apps can browse and play from Moka.
+- **Apps** `/jellyfin`: the API that phone and TV apps made for Jellyfin speak, as an adapter over the same data (`api/jf/`). Ids are 32-digit hex GUIDs whose first 8 digits say what they point at (title, library view, user, file); positions are ticks; paths match in any case. Sign-in gives a long-lived session token; artwork is public (the apps load it without a token) and HLS segments are reached through their random session id. Films and shows only: the app's device profile decides between the file as it is and a converted HLS stream started from the requested point; text subtitles are served as WebVTT.
 
 ## 9. Configuration and files
 
@@ -220,7 +220,7 @@ The browser posts what it can decode; the server answers with one method and the
 **Done**: films end to end; security basics; working next to existing servers and apps; full browser playback; shows end to end (requests, season packs, daily and anime numbering, import, refresh, existing folders, compatibility layer); music end to end (catalog, album requests, search by audio format, import of tracks matched by number or title, existing folders, playback in the browser); books end to end (catalog, ebook and audiobook requests, search, import, existing folders, reader and audiobook playback).
 
 **Next, in order**:
-1. Media-server compatible API for existing phone and TV apps.
+1. Apps: try real phone and TV apps against `/jellyfin`, then music and books there.
 2. Redesign, then 1.0.
 
 ## 12. Testing

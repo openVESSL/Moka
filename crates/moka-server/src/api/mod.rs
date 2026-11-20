@@ -15,6 +15,7 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 pub mod auth;
+pub mod books;
 pub mod catalog;
 pub mod connectors;
 pub mod images;
@@ -47,6 +48,9 @@ pub mod webhooks;
         catalog::discover_shows,
         catalog::search_shows,
         catalog::show,
+        books::search,
+        books::book,
+        books::author,
         music::search,
         music::artist,
         music::album,
@@ -135,6 +139,7 @@ pub fn router() -> Router<AppState> {
         .merge(play::router())
         .merge(settings::router())
         .merge(images::router())
+        .merge(books::router())
         .merge(music::router())
         .merge(keys::router())
         .fallback(|| async { ApiError::NotFound("endpoint") });

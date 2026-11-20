@@ -429,6 +429,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn books_are_requested_as_ebook_and_audiobook() {
+        let ol = axum::Router::new()
+            .route(
+                "/search.json",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({ "docs": [{ "key": "/works/OL1W", "title": "The Hobbit",
+                        "author_name": ["J.R.R. Tolkien"], "author_key": ["OL9A"], "first_publish_year": 1937, "cover_i": 42 }] }))
+                }),
+            )
+            .route(
+                "/works/OL1W.json",
+                axum::routing::get(|| async { axum::Json(serde_json::json!({ "description": "There and back." })) }),
+            )
+            .route(
+                "/authors/OL9A.json",
+                axum::routing::get(|| async { axum::Json(serde_json::json!({ "name": "J.R.R. Tolkien" })) }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, ol).await.unwrap() });
+
+        let db = moka_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        moka_db::users::create(&db, "guest", &pw, moka_core::Permissions::DEFAULT_USER).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db, config, Default::default());
+        state.set_books(moka_metadata::books::OpenLibrary::with_base_url(&base));
+        let app = app(state);
+        let guest = login(&app, "guest", "password1").await;
+        let get = |uri: String| {
+            let app = app.clone();
+            let guest = guest.clone();
+            async move { body_json(app.oneshot(authed("GET", &uri, &guest, "")).await.unwrap()).await }
+        };
+
+        let found = get("/api/v1/catalog/books/search?q=hobbit".into()).await;
+        assert_eq!((found[0]["olid"].as_str(), found[0]["cover_id"].as_i64()), (Some("OL1W"), Some(42)));
+        assert!(found[0]["ebook"].is_null());
+
+        let res = app
+            .clone()
+            .oneshot(authed("POST", "/api/v1/requests", &guest, r#"{"kind":"ebook","olid":"OL1W"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let req = body_json(res).await;
+        assert_eq!((req["kind"].as_str(), req["olid"].as_str()), (Some("ebook"), Some("OL1W")));
+
+        let page = get("/api/v1/catalog/books/book/OL1W".into()).await;
+        assert_eq!(page["description"], "There and back.");
+        assert_eq!((page["ebook"]["state"].as_str(), page["audiobook"].is_null()), (Some("requested"), true));
+        let author = get("/api/v1/catalog/books/author/OL9A".into()).await;
+        assert_eq!(author["author"]["name"], "J.R.R. Tolkien");
+        assert_eq!(author["books"][0]["ebook"]["state"], "requested");
+        let books = get("/api/v1/titles?kind=book".into()).await;
+        assert_eq!(books[0]["olid"], "OL1W");
+
+        let res = app
+            .clone()
+            .oneshot(authed("GET", "/api/v1/catalog/books/book/..%2Fadmin", &guest, ""))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn admin_manages_users_but_keeps_one_admin() {
         let db = moka_db::memory().await;
         let pw = auth::hash_password("password1").unwrap();
@@ -510,6 +580,8 @@ mod tests {
             "GET /api/v1/events",
             "GET /api/v1/images/w342/abc.jpg",
             "GET /api/v1/images/cover/00000000-0000-0000-0000-000000000000",
+            "GET /api/v1/images/book/1",
+            "GET /api/v1/images/author/1",
             "GET /api/v1/files/1/stream",
             "GET /api/v1/hls/abc/index.m3u8",
             "GET /api/v3/system/status",

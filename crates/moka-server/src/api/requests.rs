@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing::get, routing::post};
-use moka_core::{Permissions, TitleState};
+use moka_core::{Permissions, TitleKind, TitleState};
 use moka_db::requests::{RequestRow, RequestStatus};
 use moka_db::titles::NewTitle;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,11 @@ pub struct NewRequest {
     /// MusicBrainz album (release group) id, for albums.
     #[serde(default)]
     pub mbid: Option<String>,
-    /// `movie` (default), `show` or `album`. A show is requested whole; specials are left out.
+    /// Open Library work id, for ebooks and audiobooks.
+    #[serde(default)]
+    pub olid: Option<String>,
+    /// `movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is
+    /// requested whole; specials are left out.
     #[serde(default)]
     pub kind: RequestKind,
 }
@@ -49,6 +53,8 @@ pub enum RequestKind {
     Movie,
     Show,
     Album,
+    Ebook,
+    Audiobook,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -58,7 +64,9 @@ pub struct Request {
     pub tmdb_id: Option<i64>,
     /// MusicBrainz id, for albums.
     pub mbid: Option<String>,
-    /// movie | show | album
+    /// Open Library id, for ebooks and audiobooks.
+    pub olid: Option<String>,
+    /// movie | show | album | ebook | audiobook
     pub kind: String,
     pub title: String,
     pub year: Option<i64>,
@@ -81,6 +89,7 @@ impl From<RequestRow> for Request {
             title_id: r.title_id,
             tmdb_id: r.tmdb_id,
             mbid: r.mbid,
+            olid: r.olid,
             kind: r.kind,
             title: r.title,
             year: r.year,
@@ -170,6 +179,12 @@ pub async fn create(
             let mbid = body.mbid.as_deref().ok_or_else(|| ApiError::BadRequest("mbid is missing".into()))?;
             let album = crate::api::music::new_album(&state, mbid).await?;
             moka_db::titles::upsert_album(db, &album, initial).await?
+        }
+        RequestKind::Ebook | RequestKind::Audiobook => {
+            let olid = body.olid.as_deref().ok_or_else(|| ApiError::BadRequest("olid is missing".into()))?;
+            let book = crate::api::books::new_book(&state, olid).await?;
+            let kind = if body.kind == RequestKind::Ebook { TitleKind::Ebook } else { TitleKind::Audiobook };
+            moka_db::titles::upsert_book(db, &book, kind, initial).await?
         }
     };
 

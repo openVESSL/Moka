@@ -29,6 +29,7 @@ pub struct AppState {
     pub streams: crate::streaming::Sessions,
     tmdb: Arc<RwLock<Tmdb>>,
     music: Arc<RwLock<moka_metadata::music::MusicBrainz>>,
+    books: Arc<RwLock<moka_metadata::books::OpenLibrary>>,
     cache: Arc<Mutex<HashMap<String, (Instant, serde_json::Value)>>>,
 }
 
@@ -96,6 +97,7 @@ impl AppState {
             streams: Default::default(),
             tmdb: Arc::new(RwLock::new(catalog.client())),
             music: Arc::default(),
+            books: Arc::default(),
             cache: Arc::default(),
         }
     }
@@ -106,6 +108,15 @@ impl AppState {
 
     pub fn music(&self) -> moka_metadata::music::MusicBrainz {
         self.music.read().expect("music lock").clone()
+    }
+
+    pub fn books(&self) -> moka_metadata::books::OpenLibrary {
+        self.books.read().expect("books lock").clone()
+    }
+
+    #[cfg(test)]
+    pub fn set_books(&self, client: moka_metadata::books::OpenLibrary) {
+        *self.books.write().expect("books lock") = client;
     }
 
     #[cfg(test)]

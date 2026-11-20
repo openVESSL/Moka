@@ -102,6 +102,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/books/author/{olid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["book_author"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/books/book/{olid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["book_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/books/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["search_books"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/discover/{list}": {
         parameters: {
             query?: never;
@@ -1031,6 +1079,43 @@ export interface components {
             /** @description True until the first admin account exists. */
             needs_setup: boolean;
         };
+        Book: {
+            audiobook?: components["schemas"]["LocalState"] | null;
+            /** @description Open Library author ids, in the order of `authors`. */
+            author_olids: string[];
+            authors: string[];
+            /**
+             * Format: int64
+             * @description Cover for `/api/v1/images/book/{cover_id}`.
+             */
+            cover_id?: number | null;
+            ebook?: components["schemas"]["LocalState"] | null;
+            /** @description Open Library work id, `OL27482W`. */
+            olid: string;
+            title: string;
+            /** Format: int64 */
+            year?: number | null;
+        };
+        BookAuthor: {
+            bio?: string | null;
+            birth_date?: string | null;
+            death_date?: string | null;
+            name: string;
+            olid: string;
+            /**
+             * Format: int64
+             * @description Photo for `/api/v1/images/author/{photo_id}`.
+             */
+            photo_id?: number | null;
+        };
+        BookAuthorPage: {
+            author: components["schemas"]["BookAuthor"];
+            books: components["schemas"]["Book"][];
+        };
+        BookPage: components["schemas"]["Book"] & {
+            description?: string | null;
+            subjects: string[];
+        };
         CatalogItem: {
             backdrop_path?: string | null;
             local?: components["schemas"]["LocalState"] | null;
@@ -1350,10 +1435,15 @@ export interface components {
             name: string;
         };
         NewRequest: {
-            /** @description `movie` (default), `show` or `album`. A show is requested whole; specials are left out. */
+            /**
+             * @description `movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is
+             *     requested whole; specials are left out.
+             */
             kind?: components["schemas"]["RequestKind"];
             /** @description MusicBrainz album (release group) id, for albums. */
             mbid?: string | null;
+            /** @description Open Library work id, for ebooks and audiobooks. */
+            olid?: string | null;
             /**
              * Format: int64
              * @description TMDB id, for films and shows.
@@ -1530,11 +1620,13 @@ export interface components {
             decided_at?: number | null;
             /** Format: int64 */
             id: number;
-            /** @description movie | show | album */
+            /** @description movie | show | album | ebook | audiobook */
             kind: string;
             /** @description MusicBrainz id, for albums. */
             mbid?: string | null;
             note?: string | null;
+            /** @description Open Library id, for ebooks and audiobooks. */
+            olid?: string | null;
             poster_path?: string | null;
             requested_by: string;
             /** @description pending | approved | declined */
@@ -1550,7 +1642,7 @@ export interface components {
             year?: number | null;
         };
         /** @enum {string} */
-        RequestKind: "movie" | "show" | "album";
+        RequestKind: "movie" | "show" | "album" | "ebook" | "audiobook";
         ScanRequest: {
             /**
              * @description `movie` (default), `show` or `album`. Episodes of a new show that
@@ -1585,7 +1677,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             imdb_id?: string | null;
-            /** @description movie | show | season | episode | artist | album | track */
+            /** @description movie | show | season | episode | artist | album | track | author | ebook | audiobook */
             kind: string;
             /** Format: int64 */
             last_search_at?: number | null;
@@ -1595,10 +1687,12 @@ export interface components {
             monitored: boolean;
             /** Format: int64 */
             next_search_at?: number | null;
+            /** @description Open Library id, for books. */
+            olid?: string | null;
             overview?: string | null;
             /**
              * Format: int64
-             * @description Season of an episode, show of a season.
+             * @description Season of an episode, show of a season, artist of an album, author of a book.
              */
             parent_id?: number | null;
             poster_path?: string | null;
@@ -1827,6 +1921,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    book_author: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                olid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookAuthorPage"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    book_page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                olid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookPage"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_books: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Book"][];
                 };
             };
         };
@@ -3120,7 +3289,7 @@ export interface operations {
         parameters: {
             query?: {
                 state?: string | null;
-                /** @description `movie` (default) or `show`. */
+                /** @description `movie` (default), `show`, `album` or `book` (ebooks and audiobooks). */
                 kind?: string | null;
             };
             header?: never;

@@ -43,6 +43,9 @@ pub async fn start(
 ) -> ApiResult<Json<ScanStatus>> {
     user.require(Permissions::MANAGE_LIBRARY)?;
     let body = body.map(|Json(b)| b).unwrap_or_default();
+    if matches!(body.kind, RequestKind::Ebook | RequestKind::Audiobook) {
+        return Err(ApiError::BadRequest("books cannot be scanned yet".into()));
+    }
     let path = match body.path.filter(|p| !p.trim().is_empty()) {
         Some(p) => p.trim().to_owned(),
         None => {
@@ -54,6 +57,7 @@ pub async fn start(
                 RequestKind::Movie => lib.movies_path,
                 RequestKind::Show => lib.shows_path,
                 RequestKind::Album => lib.music_path,
+                RequestKind::Ebook | RequestKind::Audiobook => String::new(),
             }
         }
     };

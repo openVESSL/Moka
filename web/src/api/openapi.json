@@ -177,6 +177,98 @@
         }
       }
     },
+    "/api/v1/catalog/books/author/{olid}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "book_author",
+        "parameters": [
+          {
+            "name": "olid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookAuthorPage"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/catalog/books/book/{olid}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "book_page",
+        "parameters": [
+          {
+            "name": "olid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookPage"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/catalog/books/search": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "search_books",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Book"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/catalog/discover/{list}": {
       "get": {
         "tags": [
@@ -1832,7 +1924,7 @@
           {
             "name": "kind",
             "in": "query",
-            "description": "`movie` (default) or `show`.",
+            "description": "`movie` (default), `show`, `album` or `book` (ebooks and audiobooks).",
             "required": false,
             "schema": {
               "type": [
@@ -2454,6 +2546,160 @@
             "description": "True until the first admin account exists."
           }
         }
+      },
+      "Book": {
+        "type": "object",
+        "required": [
+          "olid",
+          "title",
+          "authors",
+          "author_olids"
+        ],
+        "properties": {
+          "audiobook": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocalState",
+                "description": "The audiobook, when it is in the library or requested."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author_olids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Open Library author ids, in the order of `authors`."
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cover_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Cover for `/api/v1/images/book/{cover_id}`."
+          },
+          "ebook": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocalState",
+                "description": "The ebook, when it is in the library or requested."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "olid": {
+            "type": "string",
+            "description": "Open Library work id, `OL27482W`."
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "BookAuthor": {
+        "type": "object",
+        "required": [
+          "olid",
+          "name"
+        ],
+        "properties": {
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "death_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "olid": {
+            "type": "string"
+          },
+          "photo_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Photo for `/api/v1/images/author/{photo_id}`."
+          }
+        }
+      },
+      "BookAuthorPage": {
+        "type": "object",
+        "required": [
+          "author",
+          "books"
+        ],
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/BookAuthor"
+          },
+          "books": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Book"
+            }
+          }
+        }
+      },
+      "BookPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Book"
+          },
+          {
+            "type": "object",
+            "required": [
+              "subjects"
+            ],
+            "properties": {
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "subjects": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
       },
       "CatalogItem": {
         "type": "object",
@@ -3673,7 +3919,7 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "`movie` (default), `show` or `album`. A show is requested whole; specials are left out."
+            "description": "`movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is\nrequested whole; specials are left out."
           },
           "mbid": {
             "type": [
@@ -3681,6 +3927,13 @@
               "null"
             ],
             "description": "MusicBrainz album (release group) id, for albums."
+          },
+          "olid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Open Library work id, for ebooks and audiobooks."
           },
           "tmdb_id": {
             "type": "integer",
@@ -4247,7 +4500,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "movie | show | album"
+            "description": "movie | show | album | ebook | audiobook"
           },
           "mbid": {
             "type": [
@@ -4261,6 +4514,13 @@
               "string",
               "null"
             ]
+          },
+          "olid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Open Library id, for ebooks and audiobooks."
           },
           "poster_path": {
             "type": [
@@ -4307,7 +4567,9 @@
         "enum": [
           "movie",
           "show",
-          "album"
+          "album",
+          "ebook",
+          "audiobook"
         ]
       },
       "ScanRequest": {
@@ -4433,7 +4695,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "movie | show | season | episode | artist | album | track"
+            "description": "movie | show | season | episode | artist | album | track | author | ebook | audiobook"
           },
           "last_search_at": {
             "type": [
@@ -4460,6 +4722,13 @@
             ],
             "format": "int64"
           },
+          "olid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Open Library id, for books."
+          },
           "overview": {
             "type": [
               "string",
@@ -4472,7 +4741,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Season of an episode, show of a season."
+            "description": "Season of an episode, show of a season, artist of an album, author of a book."
           },
           "poster_path": {
             "type": [

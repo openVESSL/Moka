@@ -195,12 +195,14 @@ pub async fn stream(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Title {
     pub id: i64,
-    /// movie | show | season | episode | artist | album | track
+    /// movie | show | season | episode | artist | album | track | author | ebook | audiobook
     pub kind: String,
-    /// Season of an episode, show of a season.
+    /// Season of an episode, show of a season, artist of an album, author of a book.
     pub parent_id: Option<i64>,
     /// MusicBrainz id, for music.
     pub mbid: Option<String>,
+    /// Open Library id, for books.
+    pub olid: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     /// Searched for automatically (specials are not, by default).
@@ -232,6 +234,7 @@ impl From<moka_db::titles::Title> for Title {
             kind: t.kind,
             parent_id: t.parent_id,
             mbid: t.mbid,
+            olid: t.olid,
             season_number: t.season_number,
             episode_number: t.episode_number,
             monitored: t.monitored,
@@ -257,7 +260,7 @@ impl From<moka_db::titles::Title> for Title {
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ListQuery {
     pub state: Option<String>,
-    /// `movie` (default) or `show`.
+    /// `movie` (default), `show`, `album` or `book` (ebooks and audiobooks).
     pub kind: Option<String>,
 }
 
@@ -299,7 +302,12 @@ pub async fn list(
             .into_iter()
             .filter(|t| filter.is_none_or(|f| t.state() == f))
             .collect(),
-        Some(_) => return Err(ApiError::BadRequest("kind must be movie, show or album".into())),
+        Some("book") => moka_db::titles::books(&state.db)
+            .await?
+            .into_iter()
+            .filter(|t| filter.is_none_or(|f| t.state() == f))
+            .collect(),
+        Some(_) => return Err(ApiError::BadRequest("kind must be movie, show, album or book".into())),
     };
     Ok(Json(rows.into_iter().map(Title::from).collect()))
 }

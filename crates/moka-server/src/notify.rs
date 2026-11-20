@@ -86,7 +86,15 @@ impl TitleInfo {
             imdb_id: t.imdb_id.clone(),
             title: t.title.clone(),
             year: t.year,
-            poster_url: t.poster_path.as_ref().map(|p| format!("{}/w500{p}", moka_metadata::IMAGE_BASE_URL)),
+            poster_url: match t.kind.as_str() {
+                "album" => t.mbid.as_deref().map(|m| moka_metadata::music::cover_url(m, 500)),
+                "ebook" | "audiobook" => t
+                    .poster_path
+                    .as_deref()
+                    .and_then(|p| p.parse().ok())
+                    .map(|id| moka_metadata::books::cover_url(id, 'L')),
+                _ => t.poster_path.as_ref().map(|p| format!("{}/w500{p}", moka_metadata::IMAGE_BASE_URL)),
+            },
             detail,
             file_id: None,
             episode_files: Vec::new(),

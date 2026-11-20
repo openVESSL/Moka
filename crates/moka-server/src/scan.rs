@@ -80,6 +80,9 @@ pub fn start(state: &AppState, root: PathBuf, kind: RequestKind) -> bool {
             RequestKind::Movie => run(&state, &root).await,
             RequestKind::Show => run_shows(&state, &root).await,
             RequestKind::Album => run_albums(&state, &root).await,
+            RequestKind::Ebook | RequestKind::Audiobook => {
+                Err(anyhow::anyhow!("Books cannot be scanned yet"))
+            }
         };
         if let Err(e) = done {
             state.scan.lock().expect("scan lock").error = Some(e.to_string());

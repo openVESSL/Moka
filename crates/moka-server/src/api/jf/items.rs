@@ -77,17 +77,33 @@ async fn theme_media() -> Json<Value> {
 }
 
 /// Everything one request needs, read once: video titles, their files and
-/// what this user did with them.
+/// Everything one request needs, read once: titles, their files, what this
+/// user did with them, and who holds whom (with a file somewhere below).
 pub(super) struct Library {
     pub titles: HashMap<i64, Title>,
     pub files: HashMap<i64, Vec<MediaFile>>,
     pub data: HashMap<i64, UserData>,
     pub server_id: String,
+    /// Episodes with a file, in order: all, by season, by show.
+    episodes_all: Vec<i64>,
+    episodes_by_season: HashMap<i64, Vec<i64>>,
+    episodes_by_show: HashMap<i64, Vec<i64>>,
+    /// Tracks with a file, in order: all, by album.
+    tracks_all: Vec<i64>,
+    tracks_by_album: HashMap<i64, Vec<i64>>,
+    /// Albums with a track file, by title: all, by artist.
+    albums_all: Vec<i64>,
+    albums_by_artist: HashMap<i64, Vec<i64>>,
+    /// When each title arrived: its newest file, or the newest below it.
+    added_at: HashMap<i64, i64>,
+    /// A track's number on its disc (positions count across the album).
+    track_numbers: HashMap<i64, i64>,
 }
 
 impl Library {
     pub async fn load(state: &AppState, user_id: i64) -> ApiResult<Self> {
-        let titles = moka_db::titles::app_titles(&state.db).await?.into_iter().map(|t| (t.id, t)).collect();
+        let titles: HashMap<i64, Title> =
+            moka_db::titles::app_titles(&state.db).await?.into_iter().map(|t| (t.id, t)).collect();
         let mut files: HashMap<i64, Vec<MediaFile>> = HashMap::new();
         for f in moka_db::library::all_files(&state.db).await? {
             files.entry(f.title_id).or_default().push(f);
@@ -97,7 +113,104 @@ impl Library {
             .into_iter()
             .map(|d| (d.title_id, d))
             .collect();
-        Ok(Self { titles, files, data, server_id: server_id(state).await? })
+        let mut lib = Self {
+            titles,
+            files,
+            data,
+            server_id: server_id(state).await?,
+            episodes_all: Vec::new(),
+            episodes_by_season: HashMap::new(),
+            episodes_by_show: HashMap::new(),
+            tracks_all: Vec::new(),
+            tracks_by_album: HashMap::new(),
+            albums_all: Vec::new(),
+            albums_by_artist: HashMap::new(),
+            added_at: HashMap::new(),
+            track_numbers: HashMap::new(),
+        };
+        lib.index();
+        Ok(lib)
+    }
+
+    /// Fills the parent and child lists, arrival times and track numbers.
+    fn index(&mut self) {
+        let parent = |id: Option<i64>| id.and_then(|p| self.titles.get(&p));
+        let mut added: HashMap<i64, i64> = HashMap::new();
+        let mut bump = |id: i64, at: i64| {
+            let e = added.entry(id).or_insert(at);
+            *e = (*e).max(at);
+        };
+        let mut episodes: Vec<&Title> = Vec::new();
+        let mut tracks: Vec<&Title> = Vec::new();
+        for t in self.titles.values() {
+            let Some(f) = self.files.get(&t.id).and_then(|f| f.first()) else { continue };
+            bump(t.id, f.added_at);
+            match t.kind.as_str() {
+                "episode" => episodes.push(t),
+                "track" => tracks.push(t),
+                _ => {}
+            }
+            // the season and show, or album and artist, arrived with it
+            let up = parent(t.parent_id);
+            if let Some(up) = up {
+                bump(up.id, f.added_at);
+                if let Some(top) = parent(up.parent_id) {
+                    bump(top.id, f.added_at);
+                }
+            }
+        }
+        episodes.sort_by_key(|e| (e.season_number, e.episode_number, e.id));
+        tracks.sort_by_key(|t| (t.parent_id, t.season_number, t.episode_number, t.id));
+        let mut by_season: HashMap<i64, Vec<i64>> = HashMap::new();
+        let mut by_show: HashMap<i64, Vec<i64>> = HashMap::new();
+        for e in &episodes {
+            if let Some(season) = parent(e.parent_id) {
+                by_season.entry(season.id).or_default().push(e.id);
+                if let Some(show) = parent(season.parent_id) {
+                    by_show.entry(show.id).or_default().push(e.id);
+                }
+            }
+        }
+        let mut by_album: HashMap<i64, Vec<i64>> = HashMap::new();
+        for t in &tracks {
+            if let Some(a) = t.parent_id {
+                by_album.entry(a).or_default().push(t.id);
+            }
+        }
+        let mut albums: Vec<&Title> = by_album.keys().filter_map(|a| self.titles.get(a)).collect();
+        albums.sort_by_key(|a| (sort_name(&a.title), a.id));
+        let mut by_artist: HashMap<i64, Vec<i64>> = HashMap::new();
+        for a in &albums {
+            if let Some(artist) = a.parent_id {
+                by_artist.entry(artist).or_default().push(a.id);
+            }
+        }
+        // numbers count every track of the album, with a file or not
+        let mut all_tracks: Vec<&Title> = self.titles.values().filter(|t| t.kind == "track").collect();
+        all_tracks.sort_by_key(|t| (t.parent_id, t.season_number, t.episode_number, t.id));
+        let mut numbers = HashMap::new();
+        let mut last: Option<(Option<i64>, Option<i64>)> = None;
+        let mut n = 0;
+        for t in all_tracks {
+            let disc = (t.parent_id, t.season_number);
+            n = if last == Some(disc) { n + 1 } else { 1 };
+            last = Some(disc);
+            numbers.insert(t.id, n);
+        }
+
+        self.episodes_all = episodes.iter().map(|e| e.id).collect();
+        self.tracks_all = tracks.iter().map(|t| t.id).collect();
+        self.albums_all = albums.iter().map(|a| a.id).collect();
+        self.episodes_by_season = by_season;
+        self.episodes_by_show = by_show;
+        self.tracks_by_album = by_album;
+        self.albums_by_artist = by_artist;
+        self.added_at = added;
+        self.track_numbers = numbers;
+    }
+
+    fn ids(&self, ids: Option<&Vec<i64>>) -> Vec<&Title> {
+        ids.map(|l| l.iter().filter_map(|id| self.titles.get(id)).collect()).unwrap_or_default()
     }
 
     pub fn file(&self, id: i64) -> Option<&MediaFile> {
@@ -116,95 +229,72 @@ impl Library {
         t.parent_id.and_then(|p| self.titles.get(&p))
     }
 
-    /// The show an episode or season belongs to.
-    pub fn show_of(&self, t: &Title) -> Option<&Title> {
-        match t.kind.as_str() {
-            "episode" => self.parent(t).and_then(|s| self.parent(s)),
-            "season" => self.parent(t),
-            _ => None,
+    /// Episodes with a file, in season and episode order.
+    pub fn episodes(&self, show: Option<i64>, season: Option<i64>) -> Vec<&Title> {
+        match (show, season) {
+            (_, Some(s)) => {
+                let list = self.ids(self.episodes_by_season.get(&s));
+                list.into_iter().filter(|e| show.is_none_or(|sh| self.show_id(e) == Some(sh))).collect()
+            }
+            (Some(sh), None) => self.ids(self.episodes_by_show.get(&sh)),
+            (None, None) => self.ids(Some(&self.episodes_all)),
         }
     }
 
-    /// Episodes with a file, in season and episode order.
-    pub fn episodes(&self, show: Option<i64>, season: Option<i64>) -> Vec<&Title> {
-        let mut out: Vec<&Title> = self
-            .kind("episode")
-            .filter(|e| self.file(e.id).is_some())
-            .filter(|e| season.is_none_or(|s| e.parent_id == Some(s)))
-            .filter(|e| show.is_none_or(|s| self.show_of(e).is_some_and(|x| x.id == s)))
-            .collect();
-        out.sort_by_key(|e| (e.season_number, e.episode_number, e.id));
-        out
+    fn show_id(&self, episode: &Title) -> Option<i64> {
+        self.parent(episode).and_then(|s| s.parent_id)
     }
 
     /// Seasons with at least one episode file, in order.
     pub fn seasons(&self, show: Option<i64>) -> Vec<&Title> {
-        let with: std::collections::HashSet<i64> =
-            self.episodes(show, None).iter().filter_map(|e| e.parent_id).collect();
-        let mut out: Vec<&Title> = self.kind("season").filter(|s| with.contains(&s.id)).collect();
+        let mut out: Vec<&Title> = self
+            .episodes_by_season
+            .keys()
+            .filter_map(|s| self.titles.get(s))
+            .filter(|s| show.is_none_or(|sh| s.parent_id == Some(sh)))
+            .collect();
         out.sort_by_key(|s| (s.parent_id, s.season_number));
         out
     }
 
     /// Shows with at least one episode file.
     pub fn shows(&self) -> Vec<&Title> {
-        let with: std::collections::HashSet<i64> =
-            self.episodes(None, None).iter().filter_map(|e| self.show_of(e)).map(|s| s.id).collect();
-        self.kind("show").filter(|s| with.contains(&s.id)).collect()
+        self.episodes_by_show.keys().filter_map(|s| self.titles.get(s)).collect()
     }
 
     /// Tracks with a file, by album, disc and position.
     pub fn tracks(&self, album: Option<i64>) -> Vec<&Title> {
-        let mut out: Vec<&Title> = self
-            .kind("track")
-            .filter(|t| self.file(t.id).is_some())
-            .filter(|t| album.is_none_or(|a| t.parent_id == Some(a)))
-            .collect();
-        out.sort_by_key(|t| (t.parent_id, t.season_number, t.episode_number, t.id));
-        out
+        match album {
+            Some(a) => self.ids(self.tracks_by_album.get(&a)),
+            None => self.ids(Some(&self.tracks_all)),
+        }
     }
 
     /// Albums with at least one track file, by title.
     pub fn albums(&self, artist: Option<i64>) -> Vec<&Title> {
-        let with: std::collections::HashSet<i64> =
-            self.tracks(None).iter().filter_map(|t| t.parent_id).collect();
-        let mut out: Vec<&Title> = self
-            .kind("album")
-            .filter(|a| with.contains(&a.id))
-            .filter(|a| artist.is_none_or(|x| a.parent_id == Some(x)))
-            .collect();
-        out.sort_by_key(|a| sort_name(&a.title));
-        out
+        match artist {
+            Some(a) => self.ids(self.albums_by_artist.get(&a)),
+            None => self.ids(Some(&self.albums_all)),
+        }
     }
 
     /// Artists with at least one album in the library.
     pub fn artists(&self) -> Vec<&Title> {
-        let with: std::collections::HashSet<i64> =
-            self.albums(None).iter().filter_map(|a| a.parent_id).collect();
-        self.kind("artist").filter(|a| with.contains(&a.id)).collect()
+        self.albums_by_artist.keys().filter_map(|a| self.titles.get(a)).collect()
     }
 
-    /// A track's number on its disc (positions count across the album).
     fn track_number(&self, t: &Title) -> Option<i64> {
-        let disc = t.season_number;
-        let pos = t.episode_number?;
-        let before = self
-            .kind("track")
-            .filter(|x| {
-                x.parent_id == t.parent_id && x.season_number == disc && x.episode_number <= Some(pos)
-            })
-            .count();
-        Some(before as i64)
+        self.track_numbers.get(&t.id).copied()
     }
 
     /// Whether apps may see this title.
     pub fn visible(&self, t: &Title) -> bool {
         match t.kind.as_str() {
             "movie" | "episode" | "track" => self.file(t.id).is_some(),
-            "season" => !self.episodes(None, Some(t.id)).is_empty(),
-            "show" => !self.episodes(Some(t.id), None).is_empty(),
-            "album" => !self.tracks(Some(t.id)).is_empty(),
-            "artist" => !self.albums(Some(t.id)).is_empty(),
+            "season" => self.episodes_by_season.contains_key(&t.id),
+            "show" => self.episodes_by_show.contains_key(&t.id),
+            "album" => self.tracks_by_album.contains_key(&t.id),
+            "artist" => self.albums_by_artist.contains_key(&t.id),
             _ => false,
         }
     }
@@ -213,19 +303,19 @@ impl Library {
         self.data.get(&id).is_some_and(|d| d.played)
     }
 
-    /// When the title arrived: its newest file, else when it was added.
-    fn added(&self, t: &Title) -> i64 {
+    /// Watched: the title itself, or every episode of a show or season.
+    pub fn watched(&self, t: &Title) -> bool {
+        let all = |eps: Vec<&Title>| !eps.is_empty() && eps.iter().all(|e| self.played(e.id));
         match t.kind.as_str() {
-            "show" => {
-                self.episodes(Some(t.id), None).iter().map(|e| self.added(e)).max().unwrap_or(t.created_at)
-            }
-            "season" => {
-                self.episodes(None, Some(t.id)).iter().map(|e| self.added(e)).max().unwrap_or(t.created_at)
-            }
-            "album" => self.tracks(Some(t.id)).iter().map(|e| self.added(e)).max().unwrap_or(t.created_at),
-            "artist" => self.albums(Some(t.id)).iter().map(|a| self.added(a)).max().unwrap_or(t.created_at),
-            _ => self.file(t.id).map(|f| f.added_at).unwrap_or(t.created_at),
+            "show" => all(self.episodes(Some(t.id), None)),
+            "season" => all(self.episodes(None, Some(t.id))),
+            _ => self.played(t.id),
         }
+    }
+
+    /// When the title arrived: its newest file, or the newest below it.
+    fn added(&self, t: &Title) -> i64 {
+        self.added_at.get(&t.id).copied().unwrap_or(t.created_at)
     }
 
     fn runtime_seconds(&self, t: &Title) -> Option<f64> {
@@ -609,10 +699,7 @@ fn select<'a>(lib: &'a Library, q: &Q) -> Vec<&'a Title> {
 
 fn keep(lib: &Library, q: &Q, t: &Title) -> bool {
     let d = lib.data.get(&t.id);
-    let played = match t.kind.as_str() {
-        "show" | "season" => lib.dto(t)["UserData"]["Played"].as_bool().unwrap_or(false),
-        _ => d.is_some_and(|d| d.played),
-    };
+    let played = lib.watched(t);
     let resumable = d.is_some_and(|d| d.position_seconds > 0.0 && !d.played);
     let favorite = d.is_some_and(|d| d.favorite);
     let filters = q.list("filters");
@@ -696,7 +783,7 @@ async fn latest(u: AppUser, State(state): State<AppState>, q: Q) -> ApiResult<Js
         }
     };
     if q.flag("isplayed") == Some(false) {
-        list.retain(|t| !lib.dto(t)["UserData"]["Played"].as_bool().unwrap_or(false));
+        list.retain(|t| !lib.watched(t));
     }
     list.sort_by_key(|t| std::cmp::Reverse(lib.added(t)));
     let limit = q.int("limit").filter(|l| *l > 0).unwrap_or(16) as usize;
@@ -880,10 +967,14 @@ async fn image_at(
 }
 
 /// Artwork through the image cache. Apps load images in plain image views
-/// that send no token, so artwork is public, as the ids are not secret
-/// anyway and the pictures come from a public catalog.
+/// that send no token, so artwork of titles in the library is public: the
+/// pictures come from public catalogs.
 async fn artwork(state: &AppState, id: &str, kind: &str, q: &Q) -> Response {
     let Some((IdKind::Title, n)) = parse_guid(id) else { return StatusCode::NOT_FOUND.into_response() };
+    // only what apps can list: requested or wanted titles stay private
+    if !moka_db::library::in_library(&state.db, n).await.unwrap_or(false) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let Ok(Some(t)) = moka_db::titles::by_id(&state.db, n).await else {
         return StatusCode::NOT_FOUND.into_response();
     };

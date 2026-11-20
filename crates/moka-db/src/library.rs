@@ -105,6 +105,33 @@ pub async fn user_data(pool: &Pool, user_id: i64) -> Result<Vec<UserData>, Error
     .await
 }
 
+/// Saves where a user is in a title, keeping whether it was watched.
+pub async fn set_position(pool: &Pool, user_id: i64, title_id: i64, position: f64) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO user_title_data (user_id, title_id, position_seconds, last_played_at) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(user_id, title_id) DO UPDATE SET position_seconds = ?3, last_played_at = ?4",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(position.max(0.0))
+    .bind(crate::now())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Whether a title has a file in the library, itself or below it (a
+/// season's episodes, a show's, an album's tracks, an artist's).
+pub async fn in_library(pool: &Pool, title_id: i64) -> Result<bool, Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM media_files m JOIN titles t ON t.id = m.title_id
+           WHERE t.id = ?1 OR t.parent_id = ?1 OR t.parent_id IN (SELECT id FROM titles WHERE parent_id = ?1))",
+    )
+    .bind(title_id)
+    .fetch_one(pool)
+    .await
+}
+
 /// Marks or unmarks a title as a favorite for one user.
 pub async fn set_favorite(pool: &Pool, user_id: i64, title_id: i64, favorite: bool) -> Result<(), Error> {
     sqlx::query(
@@ -243,6 +270,11 @@ mod tests {
         super::set_bookmark(&pool, u.id, t.id, "epubcfi(/6/4!/4/2)").await.unwrap();
         super::set_progress(&pool, u.id, t.id, 10.0, false).await.unwrap();
         assert_eq!(super::bookmark(&pool, u.id, t.id).await.unwrap().as_deref(), Some("epubcfi(/6/4!/4/2)"));
+        super::set_progress(&pool, u.id, t.id, 0.0, true).await.unwrap();
+        super::set_position(&pool, u.id, t.id, 42.0).await.unwrap();
+        assert_eq!(super::progress(&pool, u.id, t.id).await.unwrap(), (42.0, true), "watched stays watched");
+        super::set_progress(&pool, u.id, t.id, 10.0, false).await.unwrap();
+        assert!(!super::in_library(&pool, t.id).await.unwrap());
         super::set_favorite(&pool, u.id, t.id, true).await.unwrap();
         let d = super::user_data(&pool, u.id).await.unwrap();
         assert_eq!((d.len(), d[0].favorite, d[0].played, d[0].position_seconds), (1, true, false, 10.0));

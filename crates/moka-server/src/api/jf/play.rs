@@ -40,8 +40,8 @@ pub(super) fn routes() -> Router<AppState> {
         .route("/users/{uid}/favoriteitems/{id}", post(user_favorite).delete(user_unfavorite))
 }
 
-/// HLS sessions started for apps, by the app's play session id, so a new
-/// start or a stop ends the previous conversion.
+/// The conversion running for each user and file (`user:file`), so a new
+/// start or a stop ends the previous one.
 static APP_STREAMS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
 
 fn split(list: Option<&str>) -> Vec<String> {
@@ -444,11 +444,10 @@ async fn master(u: AppUser, State(state): State<AppState>, Path(id): Path<String
                 .map_err(|e| ApiError::BadRequest(e.to_string()))?,
             Err(e) => return Err(ApiError::BadRequest(e.to_string())),
         };
-        if let Some(play) = q.get("playsessionid") {
-            let old = APP_STREAMS.lock().expect("app streams").insert(play.to_owned(), session.clone());
-            if let Some(old) = old {
-                state.streams.stop(&old).await;
-            }
+        let key = format!("{}:{}", u.user.id, f.id);
+        let old = APP_STREAMS.lock().expect("app streams").insert(key, session.clone());
+        if let Some(old) = old {
+            state.streams.stop(&old).await;
         }
         ApiResult::Ok(session)
     };
@@ -540,16 +539,19 @@ async fn progress(u: AppUser, State(state): State<AppState>, body: axum::body::B
     if let Some((t, at)) = report(&state, &body).await
         && at > 0.0
     {
-        let _ = moka_db::library::set_progress(&state.db, u.user.id, t.id, at, false).await;
+        // watching again does not undo "watched"
+        let _ = moka_db::library::set_position(&state.db, u.user.id, t.id, at).await;
     }
     StatusCode::NO_CONTENT
 }
 
-/// Stopping near the end counts as watched.
+/// The end of playback: its conversion stops and the place is kept.
 async fn stopped(u: AppUser, State(state): State<AppState>, body: axum::body::Bytes) -> StatusCode {
     let body: Value = serde_json::from_slice(&body).unwrap_or_default();
-    if let Some(play) = field(&body, "PlaySessionId").and_then(Value::as_str) {
-        let running = APP_STREAMS.lock().expect("app streams").remove(play);
+    let item = field(&body, "ItemId").and_then(Value::as_str).unwrap_or("");
+    let source = field(&body, "MediaSourceId").and_then(Value::as_str);
+    if let Ok((_, f)) = resolve(&state, item, source).await {
+        let running = APP_STREAMS.lock().expect("app streams").remove(&format!("{}:{}", u.user.id, f.id));
         if let Some(s) = running {
             state.streams.stop(&s).await;
         }
@@ -561,9 +563,12 @@ async fn stopped(u: AppUser, State(state): State<AppState>, body: axum::body::By
             .and_then(|f| f.duration_seconds)
             .or_else(|| t.runtime_minutes.map(|m| m as f64 * 60.0))
             .unwrap_or(0.0);
-        let done = length > 0.0 && at >= length * 0.9;
-        let _ = moka_db::library::set_progress(&state.db, u.user.id, t.id, if done { 0.0 } else { at }, done)
-            .await;
+        // stopping near the end counts as watched; a stop with no position changes nothing
+        if length > 0.0 && at >= length * 0.9 {
+            let _ = moka_db::library::set_progress(&state.db, u.user.id, t.id, 0.0, true).await;
+        } else if at > 0.0 {
+            let _ = moka_db::library::set_position(&state.db, u.user.id, t.id, at).await;
+        }
     }
     StatusCode::NO_CONTENT
 }

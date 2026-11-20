@@ -7,13 +7,15 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use moka_core::{AudioQuality, Modifier, Quality, Revision};
+use moka_core::{AudioQuality, EbookFormat, Modifier, Quality, Revision};
 use moka_indexers::{Protocol, Release};
 use moka_parser::{ParsedEpisode, ParsedRelease, normalize_title, parse_episode, parse_movie};
 use serde::{Deserialize, Serialize};
 
 mod album;
+mod book;
 pub use album::{AlbumTarget, AudioProfile, evaluate_album};
+pub use book::{BookProfile, BookTarget, evaluate_book};
 
 /// Runtime assumed when the catalog does not know it yet.
 pub const DEFAULT_RUNTIME_MINUTES: u32 = 110;
@@ -109,8 +111,10 @@ pub struct Evaluated {
     pub title: String,
     pub parsed: Option<ParsedRelease>,
     pub quality: Option<Quality>,
-    /// Audio quality, for an album.
+    /// Audio quality, for an album or an audiobook.
     pub audio: Option<AudioQuality>,
+    /// File format, for an ebook.
+    pub ebook: Option<EbookFormat>,
     pub score: i32,
     /// Episodes the release holds, for a show.
     pub covers: Vec<u32>,
@@ -124,14 +128,21 @@ impl Evaluated {
         self.rejections.is_empty()
     }
 
-    /// The quality as stored with a grab: `webdl-1080p` for video, `flac` for audio.
+    /// The quality as stored with a grab: `webdl-1080p` for video, `flac` for
+    /// audio, `epub` for an ebook.
     pub fn quality_key(&self) -> Option<String> {
-        self.quality.map(|q| q.key()).or_else(|| self.audio.map(|a| a.to_string()))
+        self.quality
+            .map(|q| q.key())
+            .or_else(|| self.audio.map(|a| a.to_string()))
+            .or_else(|| self.ebook.map(|f| f.to_string()))
     }
 
     /// The quality as shown to people.
     pub fn quality_label(&self) -> Option<String> {
-        self.quality.map(|q| q.to_string()).or_else(|| self.audio.map(|a| a.label().to_owned()))
+        self.quality
+            .map(|q| q.to_string())
+            .or_else(|| self.audio.map(|a| a.label().to_owned()))
+            .or_else(|| self.ebook.map(|f| f.label().to_owned()))
     }
 }
 
@@ -183,6 +194,7 @@ pub fn evaluate(target: &Target, profile: &Profile, candidates: &[Candidate]) ->
                 title: c.release.title.clone(),
                 quality: parsed.as_ref().map(|p| p.quality),
                 audio: None,
+                ebook: None,
                 parsed,
                 score,
                 covers,

@@ -9,8 +9,6 @@ use moka_core::EbookFormat;
 use regex::Regex;
 use serde::Serialize;
 
-use crate::normalize_title;
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParsedBook {
     pub year: Option<u16>,
@@ -43,27 +41,99 @@ pub fn parse_book(name: &str) -> ParsedBook {
     }
 }
 
-/// Whether a release name is about this book: it holds the whole title
-/// (the part before a subtitle or ", or" is enough) and the author's last
-/// name.
-pub fn book_matches(name: &str, author: &str, title: &str) -> bool {
-    let hay = format!(" {} ", normalize_title(name));
-    let has = |needle: &str| !needle.is_empty() && hay.contains(&format!(" {needle} "));
-    let surname = author_surname(author);
-    let main = title.split([':', ';']).next().unwrap_or(title);
-    let main = main.split(", or ").next().unwrap_or(main);
-    let titled = has(&normalize_title(title)) || has(&normalize_title(main));
-    titled && (surname.is_empty() || has(&surname))
+/// Words left out when names are compared.
+const SMALL: [&str; 5] = ["a", "an", "the", "and", "of"];
+
+/// Words that may follow a title without making it another book.
+const AFTER_TITLE: &[&str] = &[
+    "by",
+    "epub",
+    "kepub",
+    "mobi",
+    "azw",
+    "azw3",
+    "kf8",
+    "pdf",
+    "retail",
+    "ebook",
+    "ebooks",
+    "audiobook",
+    "audiobooks",
+    "unabridged",
+    "abridged",
+    "m4b",
+    "mp3",
+    "narrated",
+    "read",
+    "illustrated",
+];
+
+/// Lowercase, accent-free words of a name, each marked when a bracket,
+/// dash or comma comes right before it.
+fn tokens(s: &str) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut boundary = false;
+    let mut flush = |word: &mut String, boundary: &mut bool| {
+        let w = std::mem::take(word);
+        if !w.is_empty() && !SMALL.contains(&w.as_str()) {
+            out.push((w, *boundary));
+            *boundary = false;
+        }
+    };
+    for c in s.chars() {
+        let c = crate::fold_accent(c);
+        if c.is_alphanumeric() {
+            word.extend(c.to_lowercase());
+        } else {
+            flush(&mut word, &mut boundary);
+            if matches!(c, '(' | '[' | '{' | '-' | '–' | '—' | ',' | ':' | ';' | '/') {
+                boundary = true;
+            }
+        }
+    }
+    flush(&mut word, &mut boundary);
+    out
 }
 
-/// Last word of the author's name, "Tolkien" from "J.R.R. Tolkien" or
+/// Whether a release name is about this book: it holds the author's last
+/// name and the title (the part before a subtitle or ", or" is enough),
+/// not followed by more title words ("Dune" is not "Dune Messiah").
+pub fn book_matches(name: &str, author: &str, title: &str) -> bool {
+    let hay = tokens(name);
+    let author_words: Vec<String> = tokens(author).into_iter().map(|(w, _)| w).collect();
+    let surname = author_surname(author);
+    if !surname.is_empty() && !hay.iter().any(|(w, _)| *w == surname) {
+        return false;
+    }
+    let main = title.split([':', ';']).next().unwrap_or(title);
+    let short = main.split(", or ").next().unwrap_or(main);
+    [title, main, short].iter().any(|t| {
+        let want: Vec<String> = tokens(t).into_iter().map(|(w, _)| w).collect();
+        if want.is_empty() || want.len() > hay.len() {
+            return false;
+        }
+        (0..=hay.len() - want.len()).any(|i| {
+            let found = hay[i..i + want.len()].iter().zip(&want).all(|((w, _), x)| w == x);
+            found
+                && hay.get(i + want.len()).is_none_or(|(next, boundary)| {
+                    *boundary
+                        || (next.len() == 4 && next.bytes().all(|b| b.is_ascii_digit()))
+                        || AFTER_TITLE.contains(&next.as_str())
+                        || author_words.contains(next)
+                })
+        })
+    })
+}
+
+/// Last word of the author's name, "tolkien" from "J.R.R. Tolkien" or
 /// "Tolkien, J.R.R.".
 fn author_surname(author: &str) -> String {
     let name = match author.split_once(',') {
         Some((last, _)) => last,
         None => author,
     };
-    normalize_title(name).split_whitespace().last().unwrap_or("").to_owned()
+    tokens(name).pop().map(|(w, _)| w).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -97,5 +167,12 @@ mod tests {
         assert!(!hobbit("The Hobbit - Some Other Writer (epub)"), "wrong author");
         assert!(!hobbit("Tolkien - The Hobbitses (epub)"), "whole words only");
         assert!(book_matches("Dune - Frank Herbert", "Frank Herbert", "Dune: Deluxe Edition"));
+        let dune = |n: &str| book_matches(n, "Frank Herbert", "Dune");
+        assert!(!dune("Frank Herbert - Dune Messiah (epub)"), "a longer title is another book");
+        assert!(!dune("Frank.Herbert.-.Dune.Messiah.2005.RETAIL.ePub.eBook-GRP"));
+        assert!(dune("Frank.Herbert.-.Dune.2005.RETAIL.ePub.eBook-GRP"));
+        assert!(dune("Dune (Dune Chronicles 1) by Frank Herbert"));
+        let rings = |n: &str| book_matches(n, "J. R. R. Tolkien", "The Lord of the Rings");
+        assert!(rings("Tolkien - Lord of the Rings [epub]") && !rings("Tolkien - Lord of the Flies"));
     }
 }

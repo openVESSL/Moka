@@ -70,6 +70,7 @@ pub fn evaluate_album(
                 parsed: None,
                 quality: None,
                 audio: parsed.as_ref().map(|p| p.quality),
+                ebook: None,
                 score: 0,
                 covers: Vec::new(),
                 rejections,

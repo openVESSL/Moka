@@ -9,6 +9,12 @@ the steps to migrate.
 ## [Unreleased]
 
 ### Added
+- Discord bot: turn on Anchorr in Connections with just a bot token. People
+  search and request from Discord in their own name (their Discord ID is set
+  under Users), others through a guest account, and hear when their films and
+  shows are ready.
+- Shows can be requested season by season (`seasons` in a request); seasons
+  asked for later are added to the ones already followed.
 - Jellyfin alongside Moka: targeted library refresh after each import (with
   optional path mapping) and watched status synced back for matching user names.
 - Import of indexers from Prowlarr, torrent and Usenet, searched through Prowlarr.

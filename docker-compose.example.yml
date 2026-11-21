@@ -37,3 +37,17 @@ services:
     #           count: 1
     #           capabilities: [gpu, video]
     restart: unless-stopped
+
+  # Optional Discord bot. Turn it on in Moka under Connections > Discord bot,
+  # with just the bot token; Moka sets up the rest.
+  # anchorr:
+  #   image: nairdah/anchorr:latest
+  #   container_name: anchorr
+  #   environment:
+  #     - MOKA_URL=http://moka:8484
+  #     - TZ=Europe/Berlin
+  #   ports:
+  #     - "8282:8282"   # Anchorr's own dashboard: channels, roles, messages
+  #   volumes:
+  #     - ./anchorr:/usr/src/app/config
+  #   restart: unless-stopped

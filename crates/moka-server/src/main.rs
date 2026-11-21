@@ -586,6 +586,10 @@ mod tests {
             format!(r#"{{"enabled":true,"url":"{anchorr_url}","public_url":"https://moka.example.com"}}"#);
         let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, &body)).await.unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        // Anchorr not reachable: refused, and the retry below reuses the same key
+        let down = r#"{"enabled":true,"url":"http://127.0.0.1:9","discord_token":"bot-token"}"#;
+        let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, down)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         let body = format!(
             r#"{{"enabled":true,"url":"{anchorr_url}","public_url":"https://moka.example.com","discord_token":"bot-token"}}"#
         );
@@ -597,6 +601,7 @@ mod tests {
         let pair = paired.lock().unwrap().clone().expect("Anchorr was paired");
         assert_eq!(pair["discord_token"], "bot-token");
         let key = pair["api_key"].as_str().unwrap().to_owned();
+        assert_eq!(moka_db::users::api_keys(&db).await.unwrap().len(), 1, "a failed try leaves no extra key");
         let guest = pair["guest_user_id"].as_i64().unwrap();
 
         // the bot's key, acting for a user, with that user's rights only

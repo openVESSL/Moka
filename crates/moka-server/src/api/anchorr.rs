@@ -109,8 +109,11 @@ pub async fn put_anchorr(
         return Err(ApiError::BadRequest("enter the Discord bot token".into()));
     }
     let guild = b.guild_id.as_deref().map(str::trim).filter(|g| !g.is_empty());
+    let current_enabled = current.enabled;
     let next = AnchorrSettings { enabled: true, url, public_url, ..current };
     let next = crate::anchorr::ensure_accounts(&state, next).await?;
+    // kept even if Anchorr refuses, so a retry reuses the accounts and key instead of adding keys
+    AnchorrSettings { enabled: current_enabled, ..next.clone() }.save(&state.db).await?;
     let bot = crate::anchorr::pair(&state, &next, token, guild).await.map_err(ApiError::BadRequest)?;
     next.save(&state.db).await?;
     Ok(Json(AnchorrView {

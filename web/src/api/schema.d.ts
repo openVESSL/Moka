@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/anchorr/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Anchorr connecting itself from its own dashboard, signed in as a Moka admin:
+         *     creates (or reuses) the bot's account, guest account and key and returns them.
+         */
+        post: operations["connect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/anchorr/links": {
         parameters: {
             query?: never;
@@ -1133,6 +1153,17 @@ export interface components {
             /** Format: int64 */
             title_id: number;
         };
+        AnchorrConnect: {
+            /** @description Moka's address for links in Discord; empty keeps the saved one. */
+            public_url?: string;
+        };
+        /** @description What Anchorr keeps after connecting itself. The key is shown only here. */
+        AnchorrKeys: {
+            api_key: string;
+            /** Format: int64 */
+            guest_user_id: number;
+            public_url: string;
+        };
         AnchorrUpdate: {
             /** @description The Discord bot token. Needed the first time; omit to keep it. */
             discord_token?: string | null;
@@ -1150,6 +1181,11 @@ export interface components {
             enabled: boolean;
             /** @description Why Anchorr could not be asked, in plain words. */
             error?: string | null;
+            /**
+             * @description Anchorr connected itself from its own dashboard (no address to call back):
+             *     it asks Moka for new titles instead of being told.
+             */
+            from_anchorr: boolean;
             public_url: string;
             url: string;
         };
@@ -2019,6 +2055,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleEvent"][];
+                };
+            };
+        };
+    };
+    connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnchorrConnect"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnchorrKeys"];
                 };
             };
         };

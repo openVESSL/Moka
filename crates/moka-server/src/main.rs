@@ -714,6 +714,21 @@ mod tests {
         let body = format!(r#"{{"enabled":false,"url":"{anchorr_url}"}}"#);
         let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, &body)).await.unwrap();
         assert_eq!(body_json(res).await["enabled"], false);
+
+        // Anchorr can also connect itself from its own dashboard: same accounts, same key
+        let res = app.clone().oneshot(authed("POST", "/api/v1/anchorr/connect", &admin, "{}")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let keys = body_json(res).await;
+        assert_eq!(keys["api_key"], key.as_str());
+        assert_eq!(keys["guest_user_id"], guest);
+        assert_eq!(keys["public_url"], "https://moka.example.com");
+        let res = app.clone().oneshot(authed("GET", "/api/v1/anchorr", &admin, "")).await.unwrap();
+        let view = body_json(res).await;
+        assert_eq!((view["enabled"].as_bool(), view["from_anchorr"].as_bool()), (Some(true), Some(true)));
+        let ana_session = login(&app, "ana", "password1").await;
+        let res =
+            app.clone().oneshot(authed("POST", "/api/v1/anchorr/connect", &ana_session, "{}")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "only an admin connects Anchorr");
     }
 
     #[tokio::test]

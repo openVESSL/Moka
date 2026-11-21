@@ -18,6 +18,13 @@ function Field({ label, hint, children }: { label: string; hint?: ReactNode; chi
 function BotState({ view }: { view: View }) {
   const bot = view.bot;
   if (!view.enabled) return null;
+  if (view.from_anchorr)
+    return (
+      <p className="text-sm text-state-available">
+        Anchorr connected itself from its own dashboard and asks Moka for new titles every minute. Its Discord settings are
+        there.
+      </p>
+    );
   if (view.error) return <p className="text-sm text-danger">{view.error}</p>;
   if (!bot) return null;
   const guilds = bot.guilds ?? [];
@@ -114,7 +121,7 @@ export function AnchorrSection() {
         />
         Run the Discord bot
       </label>
-      {f.enabled && (
+      {f.enabled && !data?.from_anchorr && (
         <>
           <Field
             label="Discord bot token"

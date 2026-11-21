@@ -122,6 +122,7 @@ pub mod webhooks;
         keys::delete_key,
         anchorr::get_anchorr,
         anchorr::put_anchorr,
+        anchorr::connect,
         anchorr::links,
         anchorr::available,
     ),

@@ -95,6 +95,36 @@
         }
       }
     },
+    "/api/v1/anchorr/connect": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Anchorr connecting itself from its own dashboard, signed in as a Moka admin:\ncreates (or reuses) the bot's account, guest account and key and returns them.",
+        "operationId": "connect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnchorrConnect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnchorrKeys"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/anchorr/links": {
       "get": {
         "tags": [
@@ -2619,6 +2649,36 @@
           }
         }
       },
+      "AnchorrConnect": {
+        "type": "object",
+        "properties": {
+          "public_url": {
+            "type": "string",
+            "description": "Moka's address for links in Discord; empty keeps the saved one."
+          }
+        }
+      },
+      "AnchorrKeys": {
+        "type": "object",
+        "description": "What Anchorr keeps after connecting itself. The key is shown only here.",
+        "required": [
+          "api_key",
+          "guest_user_id",
+          "public_url"
+        ],
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "guest_user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "public_url": {
+            "type": "string"
+          }
+        }
+      },
       "AnchorrUpdate": {
         "type": "object",
         "required": [
@@ -2659,7 +2719,8 @@
         "required": [
           "enabled",
           "url",
-          "public_url"
+          "public_url",
+          "from_anchorr"
         ],
         "properties": {
           "bot": {
@@ -2682,6 +2743,10 @@
               "null"
             ],
             "description": "Why Anchorr could not be asked, in plain words."
+          },
+          "from_anchorr": {
+            "type": "boolean",
+            "description": "Anchorr connected itself from its own dashboard (no address to call back):\nit asks Moka for new titles instead of being told."
           },
           "public_url": {
             "type": "string"

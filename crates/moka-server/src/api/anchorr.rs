@@ -15,6 +15,7 @@ use crate::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/anchorr", get(get_anchorr).put(put_anchorr))
+        .route("/anchorr/connect", axum::routing::post(connect))
         .route("/anchorr/links", get(links))
         .route("/anchorr/available", get(available))
 }
@@ -25,6 +26,9 @@ pub struct AnchorrView {
     pub enabled: bool,
     pub url: String,
     pub public_url: String,
+    /// Anchorr connected itself from its own dashboard (no address to call back):
+    /// it asks Moka for new titles instead of being told.
+    pub from_anchorr: bool,
     /// What Anchorr reports, when it answers.
     pub bot: Option<BotStatus>,
     /// Why Anchorr could not be asked, in plain words.
@@ -57,7 +61,8 @@ fn http_url(raw: &str, what: &str) -> ApiResult<String> {
 }
 
 async fn view(state: &AppState, s: AnchorrSettings) -> AnchorrView {
-    let (bot, error) = if s.enabled {
+    let from_anchorr = s.enabled && s.url.is_empty();
+    let (bot, error) = if s.enabled && !from_anchorr {
         match crate::anchorr::status(state, &s).await {
             Ok(b) => (Some(b), None),
             Err(e) => (None, Some(e)),
@@ -65,7 +70,7 @@ async fn view(state: &AppState, s: AnchorrSettings) -> AnchorrView {
     } else {
         (None, None)
     };
-    AnchorrView { enabled: s.enabled, url: s.url, public_url: s.public_url, bot, error }
+    AnchorrView { enabled: s.enabled, url: s.url, public_url: s.public_url, from_anchorr, bot, error }
 }
 
 #[utoipa::path(get, path = "/api/v1/anchorr", tag = "settings", responses((status = 200, body = AnchorrView)))]
@@ -86,7 +91,12 @@ pub async fn put_anchorr(
 ) -> ApiResult<Json<AnchorrView>> {
     user.require(Permissions::ADMIN)?;
     let current = AnchorrSettings::load(&state.db).await?;
-    let url = http_url(&b.url, "Anchorr's address")?;
+    // turning it off needs no address (Anchorr may have connected itself)
+    let url = if b.url.trim().is_empty() && !b.enabled {
+        String::new()
+    } else {
+        http_url(&b.url, "Anchorr's address")?
+    };
     let public_url = if b.public_url.trim().is_empty() {
         String::new()
     } else {
@@ -99,6 +109,8 @@ pub async fn put_anchorr(
         {
             tracing::warn!(error = %e, "Anchorr did not confirm it stopped");
         }
+        // turning it off changes nothing else
+        let public_url = if public_url.is_empty() { current.public_url.clone() } else { public_url };
         let next = AnchorrSettings { enabled: false, url, public_url, ..current };
         next.save(&state.db).await?;
         return Ok(Json(view(&state, next).await));
@@ -117,11 +129,56 @@ pub async fn put_anchorr(
     let bot = crate::anchorr::pair(&state, &next, token, guild).await.map_err(ApiError::BadRequest)?;
     next.save(&state.db).await?;
     Ok(Json(AnchorrView {
+        from_anchorr: false,
         enabled: true,
         url: next.url,
         public_url: next.public_url,
         bot: Some(bot),
         error: None,
+    }))
+}
+
+#[derive(Debug, Default, Deserialize, ToSchema)]
+pub struct AnchorrConnect {
+    /// Moka's address for links in Discord; empty keeps the saved one.
+    #[serde(default)]
+    pub public_url: String,
+}
+
+/// What Anchorr keeps after connecting itself. The key is shown only here.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AnchorrKeys {
+    pub api_key: String,
+    pub guest_user_id: i64,
+    pub public_url: String,
+}
+
+/// Anchorr connecting itself from its own dashboard, signed in as a Moka admin:
+/// creates (or reuses) the bot's account, guest account and key and returns them.
+#[utoipa::path(post, path = "/api/v1/anchorr/connect", tag = "settings", request_body = AnchorrConnect,
+    responses((status = 200, body = AnchorrKeys)))]
+pub async fn connect(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(b): Json<AnchorrConnect>,
+) -> ApiResult<Json<AnchorrKeys>> {
+    user.require(Permissions::ADMIN)?;
+    let current = AnchorrSettings::load(&state.db).await?;
+    let public_url = if b.public_url.trim().is_empty() {
+        current.public_url.clone()
+    } else {
+        http_url(&b.public_url, "The public address")?
+    };
+    let next = crate::anchorr::ensure_accounts(
+        &state,
+        AnchorrSettings { enabled: true, url: String::new(), public_url, ..current },
+    )
+    .await?;
+    next.save(&state.db).await?;
+    Ok(Json(AnchorrKeys {
+        api_key: next.api_key,
+        guest_user_id: next.guest_user_id,
+        public_url: next.public_url,
     }))
 }
 

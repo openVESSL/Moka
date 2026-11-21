@@ -102,7 +102,7 @@ impl TitleInfo {
     }
 }
 
-fn now() -> i64 {
+pub fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -126,9 +126,21 @@ pub fn send(state: &AppState, event: Event, title: Option<TitleInfo>, user: Opti
                 .ok()
                 .and_then(|f| f.last().map(|f| f.id));
         }
+        if event == Event::Available
+            && let Some(t) = title.clone()
+        {
+            // on its own, so a slow or stopped Anchorr never holds up the webhooks
+            let state = state.clone();
+            tokio::spawn(async move { crate::anchorr::forward(&state, &t).await });
+        }
         let name = title.as_ref().map(|t| t.title.as_str()).unwrap_or("A film");
-        let payload =
-            Payload { event, occurred_at: now(), message: event.headline(name), title: title.clone(), user };
+        let payload = Payload {
+            event,
+            occurred_at: unix_now(),
+            message: event.headline(name),
+            title: title.clone(),
+            user,
+        };
         for h in hooks.into_iter().filter(|h| h.enabled && h.wants(event.as_str())) {
             if let Err(e) = deliver(&state.http, &h.url, &payload).await {
                 tracing::warn!(webhook = %h.name, error = %e, "webhook delivery failed");

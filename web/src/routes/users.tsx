@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, unwrap } from "../api/client";
 
 const PERMS = [
@@ -11,6 +11,24 @@ const PERMS = [
   { bit: 16, label: "Manage library" },
   { bit: 32, label: "Play" },
 ] as const;
+
+/** The person's Discord account, so the Discord bot requests in their name. Saved when the field is left. */
+function DiscordId({ id, value, onSave }: { id: number; value: string; onSave: (id: number, discord_id: string) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  return (
+    <input
+      className="field data w-48 text-sm"
+      value={v}
+      onChange={(e) => setV(e.target.value.trim())}
+      onBlur={() => v !== value && onSave(id, v)}
+      placeholder="Discord ID"
+      aria-label="Discord ID"
+      inputMode="numeric"
+      title="In Discord: Settings → Advanced → Developer Mode, then right-click the person → Copy User ID"
+    />
+  );
+}
 
 /** Accounts: create, set permissions, remove. */
 export function UsersSection() {
@@ -31,11 +49,16 @@ export function UsersSection() {
       unwrap(api.PUT("/api/v1/users/{id}", { params: { path: { id } }, body: { permissions } })),
     onSuccess: invalidate,
   });
+  const setDiscord = useMutation({
+    mutationFn: ({ id, discord_id }: { id: number; discord_id: string }) =>
+      unwrap(api.PUT("/api/v1/users/{id}", { params: { path: { id } }, body: { discord_id } })),
+    onSettled: invalidate,
+  });
   const remove = useMutation({
     mutationFn: (id: number) => unwrap(api.DELETE("/api/v1/users/{id}", { params: { path: { id } } })),
     onSuccess: invalidate,
   });
-  const error = create.error ?? setPerms.error ?? remove.error;
+  const error = create.error ?? setPerms.error ?? setDiscord.error ?? remove.error;
 
   return (
     <div className="mt-6">
@@ -61,6 +84,7 @@ export function UsersSection() {
                 </label>
               ))}
             </span>
+            <DiscordId id={u.id} value={u.discord_id ?? ""} onSave={(id, discord_id) => setDiscord.mutate({ id, discord_id })} />
             <button
               type="button"
               aria-label={`Delete ${u.username}`}

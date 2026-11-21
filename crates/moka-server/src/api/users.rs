@@ -15,6 +15,7 @@ pub fn router() -> Router<AppState> {
         .route("/users", get(list).post(create))
         .route("/users/{id}", put(update).delete(remove))
         .route("/me/password", put(change_own_password))
+        .route("/me/discord", put(set_own_discord))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -24,6 +25,8 @@ pub struct UserView {
     /// Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play.
     pub permissions: u32,
     pub created_at: i64,
+    /// Linked Discord account (numeric id), used by the Discord bot.
+    pub discord_id: Option<String>,
 }
 
 impl From<moka_db::users::User> for UserView {
@@ -33,6 +36,7 @@ impl From<moka_db::users::User> for UserView {
             username: u.username.clone(),
             permissions: u.permissions().0,
             created_at: u.created_at,
+            discord_id: u.discord_id.clone(),
         }
     }
 }
@@ -50,6 +54,14 @@ pub struct UserUpdate {
     pub permissions: Option<u32>,
     /// Sets a new password and signs the user out of every device.
     pub password: Option<String>,
+    /// Links a Discord account (its numeric id); an empty string unlinks it.
+    pub discord_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DiscordLink {
+    /// The Discord account's numeric id; empty to unlink.
+    pub discord_id: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -58,7 +70,27 @@ pub struct PasswordChange {
     pub new: String,
 }
 
-const ALL: u32 = 0b11_1111;
+const ALL: u32 = 0b111_1111;
+
+/// Links (or with an empty id unlinks) a Discord account, one Moka user per account.
+async fn link_discord(s: &AppState, user_id: i64, raw: &str) -> ApiResult<()> {
+    let id = raw.trim();
+    if id.is_empty() {
+        return Ok(moka_db::users::set_discord_id(&s.db, user_id, None).await?);
+    }
+    // Discord ids are snowflakes: 17 to 20 digits
+    if !(17..=20).contains(&id.len()) || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(ApiError::BadRequest("a Discord id is 17 to 20 digits (Discord: Copy User ID)".into()));
+    }
+    let taken = moka_db::users::list(&s.db)
+        .await?
+        .into_iter()
+        .any(|u| u.id != user_id && u.discord_id.as_deref() == Some(id));
+    if taken {
+        return Err(ApiError::Conflict("this Discord account is linked to another user".into()));
+    }
+    Ok(moka_db::users::set_discord_id(&s.db, user_id, Some(id)).await?)
+}
 
 fn check_password(p: &str) -> ApiResult<()> {
     if p.chars().count() < 8 {
@@ -116,6 +148,9 @@ pub async fn update(
         check_password(&pw)?;
         moka_db::users::set_password(&s.db, id, &hash_password(&pw)?).await?;
     }
+    if let Some(d) = b.discord_id {
+        link_discord(&s, id, &d).await?;
+    }
     let u = moka_db::users::by_id(&s.db, id).await?.ok_or(ApiError::NotFound("user"))?;
     Ok(Json(u.into()))
 }
@@ -144,4 +179,15 @@ pub async fn change_own_password(
     check_password(&b.new)?;
     moka_db::users::set_password(&s.db, user.0.id, &hash_password(&b.new)?).await?;
     Ok(())
+}
+
+/// Links the signed-in user's own Discord account, so the Discord bot requests in their name.
+#[utoipa::path(put, path = "/api/v1/me/discord", tag = "users", request_body = DiscordLink,
+    responses((status = 200), (status = 409, description = "linked to another user")))]
+pub async fn set_own_discord(
+    user: CurrentUser,
+    State(s): State<AppState>,
+    Json(b): Json<DiscordLink>,
+) -> ApiResult<()> {
+    link_discord(&s, user.0.id, &b.discord_id).await
 }

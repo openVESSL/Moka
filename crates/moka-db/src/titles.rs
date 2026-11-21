@@ -391,6 +391,39 @@ pub async fn set_monitored(pool: &Pool, id: i64, monitored: bool) -> Result<(), 
     Ok(())
 }
 
+/// Follows the given seasons of a show (and their episodes). With `only`, the
+/// other seasons are left out, for a show requested season by season.
+pub async fn follow_seasons(pool: &Pool, show_id: i64, seasons: &[i64], only: bool) -> Result<(), Error> {
+    let list = serde_json::to_string(seasons).unwrap_or_else(|_| "[]".into());
+    sqlx::query(
+        "UPDATE titles SET monitored = CASE
+                WHEN season_number IN (SELECT value FROM json_each(?2)) THEN 1
+                WHEN ?3 THEN 0 ELSE monitored END,
+            next_search_at = CASE
+                WHEN season_number IN (SELECT value FROM json_each(?2)) AND state = 'wanted' THEN ?4
+                ELSE next_search_at END
+         WHERE kind IN ('season', 'episode')
+           AND (parent_id = ?1 OR parent_id IN (SELECT id FROM titles WHERE parent_id = ?1))",
+    )
+    .bind(show_id)
+    .bind(list)
+    .bind(only)
+    .bind(now())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Films and episodes that arrived through a download since a moment, oldest first.
+pub async fn available_since(pool: &Pool, since: i64) -> Result<Vec<Title>, Error> {
+    sqlx::query_as(select_titles!(
+        "WHERE kind IN ('movie', 'episode') AND state = 'available' AND available_at >= ? ORDER BY available_at, id"
+    ))
+    .bind(since)
+    .fetch_all(pool)
+    .await
+}
+
 /// Searches a show's wanted, followed episodes on the next pass.
 pub async fn search_show_now(pool: &Pool, show_id: i64) -> Result<(), Error> {
     sqlx::query(
@@ -720,7 +753,9 @@ pub async fn transition(
         return Err(TransitionError::NotAllowed { from, to });
     }
     let updated = sqlx::query(
-        "UPDATE titles SET state = ?, state_reason = ?, updated_at = ? WHERE id = ? AND state = ?",
+        "UPDATE titles SET state = ?1, state_reason = ?2, updated_at = ?3,
+            available_at = CASE WHEN ?1 = 'available' THEN ?3 ELSE available_at END
+         WHERE id = ?4 AND state = ?5",
     )
     .bind(to.as_str())
     .bind(reason)

@@ -134,6 +134,16 @@ pub async fn open_count_for_title(pool: &Pool, title_id: i64) -> Result<i64, Err
 }
 
 /// Requests a user made in the last `days` days, declined ones excluded.
+/// Users with an open (pending or approved) request for the title.
+pub async fn requester_ids(pool: &Pool, title_id: i64) -> Result<Vec<i64>, Error> {
+    sqlx::query_scalar(
+        "SELECT user_id FROM requests WHERE title_id = ? AND status IN ('pending', 'approved') ORDER BY id",
+    )
+    .bind(title_id)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn count_recent_for_user(pool: &Pool, user_id: i64, days: i64) -> Result<i64, Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM requests WHERE user_id = ? AND status != 'declined' AND created_at > ?",

@@ -41,9 +41,12 @@ pub struct NewRequest {
     #[serde(default)]
     pub olid: Option<String>,
     /// `movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is
-    /// requested whole; specials are left out.
+    /// requested whole, specials left out, unless `seasons` names some.
     #[serde(default)]
     pub kind: RequestKind,
+    /// For a show: only these seasons. Seasons asked for earlier stay followed.
+    #[serde(default)]
+    pub seasons: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, ToSchema)]
@@ -171,8 +174,14 @@ pub async fn create(
     let initial = if auto { TitleState::Wanted } else { TitleState::Requested };
     let mut title = match body.kind {
         RequestKind::Show => {
+            let known = moka_db::titles::by_tmdb(db, TitleKind::Show, body.tmdb_id).await?.is_some();
             let show = crate::api::catalog::new_show(&state, body.tmdb_id).await?;
-            moka_db::titles::upsert_show(db, &show, initial).await?
+            let title = moka_db::titles::upsert_show(db, &show, initial).await?;
+            if !body.seasons.is_empty() {
+                // a new show follows only these; a known one adds them to what it follows
+                moka_db::titles::follow_seasons(db, title.id, &body.seasons, !known).await?;
+            }
+            title
         }
         RequestKind::Movie => movie_title(&state, body.tmdb_id, initial).await?,
         RequestKind::Album => {

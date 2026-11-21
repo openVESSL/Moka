@@ -13,6 +13,9 @@ impl Permissions {
     pub const AUTO_APPROVE: Self = Self(1 << 3);
     pub const MANAGE_LIBRARY: Self = Self(1 << 4);
     pub const PLAY: Self = Self(1 << 5);
+    /// An app that acts for other users (the Discord bot): its API key may
+    /// name a user to act as, and then has exactly that user's permissions.
+    pub const ACT_AS_USER: Self = Self(1 << 6);
 
     /// Default for a newly invited user.
     pub const DEFAULT_USER: Self = Self(Self::REQUEST.0 | Self::PLAY.0);

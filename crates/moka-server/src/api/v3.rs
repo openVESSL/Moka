@@ -543,6 +543,7 @@ async fn add_movie(
             mbid: None,
             olid: None,
             kind: Default::default(),
+            seasons: Vec::new(),
         }),
     )
     .await?;

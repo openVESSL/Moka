@@ -4,6 +4,7 @@ import { api, unwrap } from "../api/client";
 import { catalogSettingsQuery, quotaQuery } from "../api/queries";
 import { ApiKeysSection } from "./apikeys";
 import { PlaybackSection } from "./playback";
+import { AnchorrSection } from "./anchorr";
 import { DownloadClientSection, IndexersSection, JellyfinSection, LibrarySection, RadarrSection, ScanPanel } from "./connectors";
 import { MusicProfileSection, ProfileSection } from "./profile";
 import { UsersSection } from "./users";
@@ -61,6 +62,12 @@ export function ConnectionsPage() {
         intro="Keep watching in Jellyfin if you like. Moka tells it about new films right after import and brings back what people watched there."
       >
         <JellyfinSection />
+      </Section>
+      <Section
+        title="Discord bot"
+        intro="People search and request from your Discord server, and hear when their films and shows are ready. Paste a bot token and Moka sets up the rest: the bot's own account, and a guest account for people without a linked account (link someone by adding their Discord ID under Users)."
+      >
+        <AnchorrSection />
       </Section>
       <Section
         title="Radarr"

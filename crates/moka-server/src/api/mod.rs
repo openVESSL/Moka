@@ -14,6 +14,7 @@ use crate::auth::CurrentUser;
 use crate::error::ApiError;
 use crate::state::AppState;
 
+pub mod anchorr;
 pub mod auth;
 pub mod books;
 pub mod catalog;
@@ -90,6 +91,7 @@ pub mod webhooks;
         users::update,
         users::remove,
         users::change_own_password,
+        users::set_own_discord,
         play::play,
         play::stop,
         play::subtitles,
@@ -118,6 +120,10 @@ pub mod webhooks;
         keys::list_keys,
         keys::create_key,
         keys::delete_key,
+        anchorr::get_anchorr,
+        anchorr::put_anchorr,
+        anchorr::links,
+        anchorr::available,
     ),
     components(schemas(Health, crate::error::ErrorBody))
 )]
@@ -134,6 +140,7 @@ pub fn router() -> Router<AppState> {
         .merge(titles::router())
         .merge(connectors::router())
         .merge(users::router())
+        .merge(anchorr::router())
         .merge(webhooks::router())
         .merge(profiles::router())
         .merge(library::router())

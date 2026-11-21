@@ -43,6 +43,22 @@ pub fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(digest)
 }
 
+/// Header with which an app holding `ACT_AS_USER` names the user it acts for.
+pub const ACT_AS_HEADER: &str = "x-moka-user";
+
+/// The user an app acts for: that user exactly, never with more rights than
+/// they have, and never as an admin or as another acting app.
+async fn act_as(state: &AppState, owner: &User, target: &axum::http::HeaderValue) -> Result<User, ApiError> {
+    if !owner.permissions().has(Permissions::ACT_AS_USER) {
+        return Err(ApiError::Forbidden);
+    }
+    let id: i64 = target.to_str().ok().and_then(|v| v.trim().parse().ok()).ok_or(ApiError::Forbidden)?;
+    let mut user = moka_db::users::by_id(&state.db, id).await?.ok_or(ApiError::Forbidden)?;
+    let stripped = user.permissions().0 & !(Permissions::ADMIN.0 | Permissions::ACT_AS_USER.0);
+    user.permissions = moka_db::users::PermissionBits(Permissions(stripped));
+    Ok(user)
+}
+
 /// The signed-in user. Resolved from `Authorization: Bearer <api key>`,
 /// `X-Api-Key: <api key>` or the session cookie. Rejects with 401 when neither is valid.
 pub struct CurrentUser(pub User);
@@ -65,10 +81,13 @@ impl FromRequestParts<AppState> for CurrentUser {
             // the header other media apps send
             .or_else(|| parts.headers.get("x-api-key").and_then(|v| v.to_str().ok()))
         {
-            return moka_db::users::by_api_key(&state.db, &token_hash(key.trim()))
+            let owner = moka_db::users::by_api_key(&state.db, &token_hash(key.trim()))
                 .await?
-                .map(CurrentUser)
-                .ok_or(ApiError::Unauthorized);
+                .ok_or(ApiError::Unauthorized)?;
+            return match parts.headers.get(ACT_AS_HEADER) {
+                None => Ok(CurrentUser(owner)),
+                Some(target) => act_as(state, &owner, target).await.map(CurrentUser),
+            };
         }
 
         let jar = CookieJar::from_headers(&parts.headers);

@@ -10,6 +10,114 @@
     "version": "1"
   },
   "paths": {
+    "/api/v1/anchorr": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "get_anchorr",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnchorrView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Turns the bot on (creating its account and key and handing them to Anchorr),\nchanges its token or server, or turns it off.",
+        "operationId": "put_anchorr",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnchorrUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnchorrView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Anchorr refused or is unreachable"
+          }
+        }
+      }
+    },
+    "/api/v1/anchorr/available": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Films and episodes that arrived since a moment, for the bot to catch up\nafter being offline and to sum up the week.",
+        "operationId": "available",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Unix time in seconds.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TitleEvent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anchorr/links": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Users with a linked Discord account, for the bot to request in their name.",
+        "operationId": "links",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordLinkView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/api-keys": {
       "get": {
         "tags": [
@@ -1308,6 +1416,31 @@
         }
       }
     },
+    "/api/v1/me/discord": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Links the signed-in user's own Discord account, so the Discord bot requests in their name.",
+        "operationId": "set_own_discord",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordLink"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {},
+          "409": {
+            "description": "linked to another user"
+          }
+        }
+      }
+    },
     "/api/v1/me/password": {
       "put": {
         "tags": [
@@ -2486,6 +2619,78 @@
           }
         }
       },
+      "AnchorrUpdate": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "url"
+        ],
+        "properties": {
+          "discord_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Discord bot token. Needed the first time; omit to keep it."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "guild_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Discord server to work in, when the bot is in several."
+          },
+          "public_url": {
+            "type": "string",
+            "description": "Moka's address for links in Discord; empty for none."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where Moka reaches Anchorr, e.g. `http://anchorr:8282`."
+          }
+        }
+      },
+      "AnchorrView": {
+        "type": "object",
+        "description": "The connection as the UI sees it. The bot token and key never come back.",
+        "required": [
+          "enabled",
+          "url",
+          "public_url"
+        ],
+        "properties": {
+          "bot": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BotStatus",
+                "description": "What Anchorr reports, when it answers."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why Anchorr could not be asked, in plain words."
+          },
+          "public_url": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "ApiKeyView": {
         "type": "object",
         "required": [
@@ -2700,6 +2905,53 @@
             }
           }
         ]
+      },
+      "BotStatus": {
+        "type": "object",
+        "description": "What Anchorr reports about the bot.",
+        "properties": {
+          "announce_channel_set": {
+            "type": "boolean",
+            "description": "Whether new titles have a channel to be announced in."
+          },
+          "bot_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bot_online": {
+            "type": "boolean"
+          },
+          "dashboard_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Anchorr's own dashboard, for channels, roles and messages."
+          },
+          "guild_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The server the bot works in."
+          },
+          "guilds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Guild"
+            },
+            "description": "Servers the bot is in."
+          },
+          "invite_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Link that adds the bot to a Discord server with the rights it needs."
+          }
+        }
       },
       "CatalogItem": {
         "type": "object",
@@ -3196,6 +3448,38 @@
           }
         }
       },
+      "DiscordLink": {
+        "type": "object",
+        "required": [
+          "discord_id"
+        ],
+        "properties": {
+          "discord_id": {
+            "type": "string",
+            "description": "The Discord account's numeric id; empty to unlink."
+          }
+        }
+      },
+      "DiscordLinkView": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "username",
+          "discord_id"
+        ],
+        "properties": {
+          "discord_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "DownloadClient": {
         "type": "object",
         "required": [
@@ -3311,6 +3595,127 @@
           }
         }
       },
+      "EventEpisode": {
+        "type": "object",
+        "required": [
+          "id",
+          "season",
+          "episode",
+          "name"
+        ],
+        "properties": {
+          "episode": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "season": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "EventTitle": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "episodes"
+        ],
+        "properties": {
+          "backdrop_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "episodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventEpisode"
+            },
+            "description": "For a show: the episodes that arrived."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "imdb_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "`movie` or `show`."
+          },
+          "link": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title's page in Moka, when a public address is set."
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "poster_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "TMDB image paths (`/abc.jpg`)."
+          },
+          "runtime_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tmdb_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "Font": {
         "type": "object",
         "required": [
@@ -3338,6 +3743,21 @@
             "type": "integer",
             "description": "`index` from the release list.",
             "minimum": 0
+          }
+        }
+      },
+      "Guild": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -3607,6 +4027,12 @@
           "permissions"
         ],
         "properties": {
+          "discord_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "integer",
             "format": "int64"
@@ -3927,7 +4353,7 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "`movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is\nrequested whole; specials are left out."
+            "description": "`movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is\nrequested whole, specials left out, unless `seasons` names some."
           },
           "mbid": {
             "type": [
@@ -3942,6 +4368,14 @@
               "null"
             ],
             "description": "Open Library work id, for ebooks and audiobooks."
+          },
+          "seasons": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "For a show: only these seasons. Seasons asked for earlier stay followed."
           },
           "tmdb_id": {
             "type": "integer",
@@ -4819,6 +5253,37 @@
           }
         }
       },
+      "TitleEvent": {
+        "type": "object",
+        "description": "What Anchorr receives when titles arrive, and what it reads back to catch up.",
+        "required": [
+          "event",
+          "occurred_at",
+          "title",
+          "requester_user_ids"
+        ],
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Always `available`."
+          },
+          "occurred_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requester_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Users with an open request for the title, to tell them it is here."
+          },
+          "title": {
+            "$ref": "#/components/schemas/EventTitle"
+          }
+        }
+      },
       "Track": {
         "type": "object",
         "required": [
@@ -4871,6 +5336,13 @@
       "UserUpdate": {
         "type": "object",
         "properties": {
+          "discord_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Links a Discord account (its numeric id); an empty string unlinks it."
+          },
           "password": {
             "type": [
               "string",
@@ -4900,6 +5372,13 @@
           "created_at": {
             "type": "integer",
             "format": "int64"
+          },
+          "discord_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Linked Discord account (numeric id), used by the Discord bot."
           },
           "id": {
             "type": "integer",

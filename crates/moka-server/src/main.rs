@@ -2,6 +2,7 @@ use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+mod anchorr;
 mod api;
 mod auth;
 mod books;
@@ -499,6 +500,215 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn discord_bot_acts_for_linked_members_and_hears_about_new_titles() {
+        use std::sync::{Arc, Mutex};
+        // fake TMDB: one film, one show with two seasons of two episodes
+        let tmdb = axum::Router::new()
+            .route(
+                "/movie/603",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({"id": 603, "title": "The Matrix", "release_date": "1999-03-30", "runtime": 136}))
+                }),
+            )
+            .route(
+                "/tv/1399",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "id": 1399, "name": "Thrones", "first_air_date": "2011-04-17",
+                        "seasons": [{"id": 31, "season_number": 1, "name": "Season 1", "episode_count": 2},
+                                    {"id": 32, "season_number": 2, "name": "Season 2", "episode_count": 2}]
+                    }))
+                }),
+            )
+            .route(
+                "/tv/1399/season/{n}",
+                axum::routing::get(|axum::extract::Path(n): axum::extract::Path<i64>| async move {
+                    let eps: Vec<_> = (1..=2)
+                        .map(|e| serde_json::json!({"id": 300 + n * 10 + e, "season_number": n, "episode_number": e, "name": format!("Ep {e}")}))
+                        .collect();
+                    axum::Json(serde_json::json!({"id": 30 + n, "season_number": n, "name": "S", "episodes": eps}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let tmdb_base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, tmdb).await.unwrap() });
+
+        // fake Anchorr: remembers what Moka hands it and the events it receives
+        let paired: Arc<Mutex<Option<serde_json::Value>>> = Arc::default();
+        let events: Arc<Mutex<Vec<serde_json::Value>>> = Arc::default();
+        let status = serde_json::json!({"bot_online": true, "bot_name": "Popcorn", "invite_url": "https://discord.com/oauth2/authorize?client_id=1",
+                                        "guilds": [{"id": "9", "name": "Home"}], "guild_id": "9", "announce_channel_set": false});
+        let anchorr = {
+            let (paired, events, st) = (paired.clone(), events.clone(), status.clone());
+            let st2 = st.clone();
+            axum::Router::new()
+                .route(
+                    "/api/moka/pair",
+                    axum::routing::post(move |axum::Json(b): axum::Json<serde_json::Value>| {
+                        *paired.lock().unwrap() = Some(b);
+                        async move { axum::Json(st) }
+                    }),
+                )
+                .route("/api/moka/status", axum::routing::get(move || async move { axum::Json(st2) }))
+                .route(
+                    "/api/moka/events",
+                    axum::routing::post(move |axum::Json(b): axum::Json<serde_json::Value>| {
+                        events.lock().unwrap().push(b);
+                        async { axum::Json(serde_json::json!({"success": true})) }
+                    }),
+                )
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let anchorr_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, anchorr).await.unwrap() });
+
+        let db = moka_db::memory().await;
+        let pw = auth::hash_password("password1").unwrap();
+        let admin_id =
+            moka_db::users::create(&db, "admin", &pw, moka_core::Permissions::ADMIN).await.unwrap().id;
+        let ana =
+            moka_db::users::create(&db, "ana", &pw, moka_core::Permissions::DEFAULT_USER).await.unwrap();
+        let config = Config {
+            config_dir: std::env::temp_dir(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            database_url: "sqlite::memory:".into(),
+        };
+        let state = AppState::new(db.clone(), config, Default::default());
+        state.set_tmdb(moka_metadata::Tmdb::with_base_url(&tmdb_base, "k", "en-US", None));
+        let app = app(state.clone());
+        let admin = login(&app, "admin", "password1").await;
+
+        // turning the bot on needs the token the first time
+        let body =
+            format!(r#"{{"enabled":true,"url":"{anchorr_url}","public_url":"https://moka.example.com"}}"#);
+        let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, &body)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = format!(
+            r#"{{"enabled":true,"url":"{anchorr_url}","public_url":"https://moka.example.com","discord_token":"bot-token"}}"#
+        );
+        let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, &body)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let view = body_json(res).await;
+        assert_eq!(view["bot"]["bot_name"], "Popcorn");
+        assert!(!view.to_string().contains("bot-token"), "the token never comes back");
+        let pair = paired.lock().unwrap().clone().expect("Anchorr was paired");
+        assert_eq!(pair["discord_token"], "bot-token");
+        let key = pair["api_key"].as_str().unwrap().to_owned();
+        let guest = pair["guest_user_id"].as_i64().unwrap();
+
+        // the bot's key, acting for a user, with that user's rights only
+        let bot = |method: &str, uri: &str, as_user: Option<i64>, body: &str| {
+            let mut r = json(method, uri, body);
+            r.headers_mut().insert(header::AUTHORIZATION, format!("Bearer {key}").parse().unwrap());
+            if let Some(u) = as_user {
+                r.headers_mut().insert("x-moka-user", u.to_string().parse().unwrap());
+            }
+            r
+        };
+        let res =
+            app.clone().oneshot(bot("POST", "/api/v1/requests", None, r#"{"tmdb_id":603}"#)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "the bot itself cannot request");
+        let res = app.clone().oneshot(bot("GET", "/api/v1/users", Some(admin_id), "")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "acting for an admin gives no admin rights");
+        let res = app
+            .clone()
+            .oneshot(bot("POST", "/api/v1/requests", Some(ana.id), r#"{"tmdb_id":603}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let req = body_json(res).await;
+        assert_eq!((req["requested_by"].as_str(), req["status"].as_str()), (Some("ana"), Some("pending")));
+        let movie_id = req["title_id"].as_i64().unwrap();
+
+        // a key without the right cannot act for anyone
+        let ana_key = auth::new_token().unwrap();
+        moka_db::users::create_api_key(&db, ana.id, "own", &auth::token_hash(&ana_key)).await.unwrap();
+        let mut r = json("GET", "/api/v1/me", "");
+        r.headers_mut().insert(header::AUTHORIZATION, format!("Bearer {ana_key}").parse().unwrap());
+        r.headers_mut().insert("x-moka-user", guest.to_string().parse().unwrap());
+        assert_eq!(app.clone().oneshot(r).await.unwrap().status(), StatusCode::FORBIDDEN);
+
+        // the guest requests one season of a show
+        let res = app
+            .clone()
+            .oneshot(bot(
+                "POST",
+                "/api/v1/requests",
+                Some(guest),
+                r#"{"tmdb_id":1399,"kind":"show","seasons":[2]}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let show = body_json(res).await["title_id"].as_i64().unwrap();
+        let res = app
+            .clone()
+            .oneshot(authed("GET", &format!("/api/v1/titles/{show}/episodes"), &admin, ""))
+            .await
+            .unwrap();
+        let eps = body_json(res).await;
+        let followed: Vec<(i64, bool)> = eps
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["season_number"].as_i64().unwrap(), e["monitored"].as_bool().unwrap()))
+            .collect();
+        assert_eq!(followed, vec![(1, false), (1, false), (2, true), (2, true)]);
+
+        // Discord links: set by the admin, read by the bot
+        let res = app
+            .clone()
+            .oneshot(authed("PUT", &format!("/api/v1/users/{}", ana.id), &admin, r#"{"discord_id":"123"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "not a Discord id");
+        let res = app
+            .clone()
+            .oneshot(authed(
+                "PUT",
+                &format!("/api/v1/users/{}", ana.id),
+                &admin,
+                r#"{"discord_id":"123456789012345678"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res = app.clone().oneshot(bot("GET", "/api/v1/anchorr/links", None, "")).await.unwrap();
+        assert_eq!(
+            body_json(res).await,
+            serde_json::json!([{"user_id": ana.id, "username": "ana", "discord_id": "123456789012345678"}])
+        );
+        let res = app
+            .clone()
+            .oneshot(authed("GET", "/api/v1/anchorr/links", &login(&app, "ana", "password1").await, ""))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "people do not read everyone's links");
+
+        // the film arrives: Anchorr hears it, and can read it back later
+        for to in ["wanted", "searching", "grabbed", "downloading", "importing", "available"] {
+            moka_db::titles::transition(&db, movie_id, to.parse().unwrap(), None).await.unwrap();
+        }
+        let film = moka_db::titles::by_id(&db, movie_id).await.unwrap().unwrap();
+        crate::anchorr::forward(&state, &crate::notify::TitleInfo::from_title(&film, None)).await;
+        let got = events.lock().unwrap().clone();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["title"]["tmdb_id"], 603);
+        assert_eq!(got[0]["title"]["link"], "https://moka.example.com/movie/603");
+        assert_eq!(got[0]["requester_user_ids"], serde_json::json!([ana.id]));
+        let res =
+            app.clone().oneshot(bot("GET", "/api/v1/anchorr/available?since=0", None, "")).await.unwrap();
+        let back = body_json(res).await;
+        assert_eq!(back.as_array().unwrap().len(), 1);
+        assert_eq!(back[0]["title"]["title"], "The Matrix");
+
+        // turning it off keeps the accounts but tells Anchorr to stop
+        let body = format!(r#"{{"enabled":false,"url":"{anchorr_url}"}}"#);
+        let res = app.clone().oneshot(authed("PUT", "/api/v1/anchorr", &admin, &body)).await.unwrap();
+        assert_eq!(body_json(res).await["enabled"], false);
     }
 
     #[tokio::test]

@@ -40,11 +40,17 @@ pub struct Me {
     pub id: i64,
     pub username: String,
     pub permissions: u32,
+    pub discord_id: Option<String>,
 }
 
 impl From<&moka_db::users::User> for Me {
     fn from(u: &moka_db::users::User) -> Self {
-        Self { id: u.id, username: u.username.clone(), permissions: u.permissions().0 }
+        Self {
+            id: u.id,
+            username: u.username.clone(),
+            permissions: u.permissions().0,
+            discord_id: u.discord_id.clone(),
+        }
     }
 }
 

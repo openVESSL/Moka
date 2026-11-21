@@ -15,6 +15,8 @@ pub struct User {
     #[sqlx(try_from = "i64")]
     pub permissions: PermissionBits,
     pub created_at: i64,
+    /// Discord account linked to this user, as its numeric id.
+    pub discord_id: Option<String>,
 }
 
 /// Column adapter: SQLite stores the bitmask as a signed integer.
@@ -139,6 +141,16 @@ pub async fn set_password(pool: &Pool, id: i64, password_hash: &str) -> Result<(
         .await?;
     sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(id).execute(&mut *tx).await?;
     tx.commit().await
+}
+
+/// Links a Discord account to the user, or unlinks it with `None`.
+pub async fn set_discord_id(pool: &Pool, id: i64, discord_id: Option<&str>) -> Result<(), Error> {
+    sqlx::query("UPDATE users SET discord_id = ? WHERE id = ?")
+        .bind(discord_id)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn delete(pool: &Pool, id: i64) -> Result<(), Error> {

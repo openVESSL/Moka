@@ -4,6 +4,63 @@
  */
 
 export interface paths {
+    "/api/v1/anchorr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_anchorr"];
+        /**
+         * Turns the bot on (creating its account and key and handing them to Anchorr),
+         *     changes its token or server, or turns it off.
+         */
+        put: operations["put_anchorr"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/anchorr/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Films and episodes that arrived since a moment, for the bot to catch up
+         *     after being offline and to sum up the week.
+         */
+        get: operations["available"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/anchorr/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Users with a linked Discord account, for the bot to request in their name. */
+        get: operations["links"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-keys": {
         parameters: {
             query?: never;
@@ -581,6 +638,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/discord": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Links the signed-in user's own Discord account, so the Discord bot requests in their name. */
+        put: operations["set_own_discord"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/password": {
         parameters: {
             query?: never;
@@ -1059,6 +1133,26 @@ export interface components {
             /** Format: int64 */
             title_id: number;
         };
+        AnchorrUpdate: {
+            /** @description The Discord bot token. Needed the first time; omit to keep it. */
+            discord_token?: string | null;
+            enabled: boolean;
+            /** @description The Discord server to work in, when the bot is in several. */
+            guild_id?: string | null;
+            /** @description Moka's address for links in Discord; empty for none. */
+            public_url?: string;
+            /** @description Where Moka reaches Anchorr, e.g. `http://anchorr:8282`. */
+            url: string;
+        };
+        /** @description The connection as the UI sees it. The bot token and key never come back. */
+        AnchorrView: {
+            bot?: components["schemas"]["BotStatus"] | null;
+            enabled: boolean;
+            /** @description Why Anchorr could not be asked, in plain words. */
+            error?: string | null;
+            public_url: string;
+            url: string;
+        };
         ApiKeyView: {
             /** Format: int64 */
             created_at: number;
@@ -1115,6 +1209,21 @@ export interface components {
         BookPage: components["schemas"]["Book"] & {
             description?: string | null;
             subjects: string[];
+        };
+        /** @description What Anchorr reports about the bot. */
+        BotStatus: {
+            /** @description Whether new titles have a channel to be announced in. */
+            announce_channel_set?: boolean;
+            bot_name?: string | null;
+            bot_online?: boolean;
+            /** @description Anchorr's own dashboard, for channels, roles and messages. */
+            dashboard_url?: string | null;
+            /** @description The server the bot works in. */
+            guild_id?: string | null;
+            /** @description Servers the bot is in. */
+            guilds?: components["schemas"]["Guild"][];
+            /** @description Link that adds the bot to a Discord server with the rights it needs. */
+            invite_url?: string | null;
         };
         CatalogItem: {
             backdrop_path?: string | null;
@@ -1234,6 +1343,16 @@ export interface components {
         Decision: {
             note?: string | null;
         };
+        DiscordLink: {
+            /** @description The Discord account's numeric id; empty to unlink. */
+            discord_id: string;
+        };
+        DiscordLinkView: {
+            discord_id: string;
+            /** Format: int64 */
+            user_id: number;
+            username: string;
+        };
         DownloadClient: {
             base_url: string;
             category: string;
@@ -1266,6 +1385,40 @@ export interface components {
             error: string;
             message: string;
         };
+        EventEpisode: {
+            /** Format: int64 */
+            episode: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            overview?: string | null;
+            /** Format: int64 */
+            runtime_minutes?: number | null;
+            /** Format: int64 */
+            season: number;
+        };
+        EventTitle: {
+            backdrop_path?: string | null;
+            /** @description For a show: the episodes that arrived. */
+            episodes: components["schemas"]["EventEpisode"][];
+            /** Format: int64 */
+            id: number;
+            imdb_id?: string | null;
+            /** @description `movie` or `show`. */
+            kind: string;
+            /** @description The title's page in Moka, when a public address is set. */
+            link?: string | null;
+            overview?: string | null;
+            /** @description TMDB image paths (`/abc.jpg`). */
+            poster_path?: string | null;
+            /** Format: int64 */
+            runtime_minutes?: number | null;
+            title: string;
+            /** Format: int64 */
+            tmdb_id?: number | null;
+            /** Format: int64 */
+            year?: number | null;
+        };
         Font: {
             /** @description Index among attachments (for `-dump_attachment:t:N`). */
             index: number;
@@ -1274,6 +1427,10 @@ export interface components {
         GrabBody: {
             /** @description `index` from the release list. */
             index: number;
+        };
+        Guild: {
+            id: string;
+            name: string;
         };
         Health: {
             status: string;
@@ -1355,6 +1512,7 @@ export interface components {
             title_id: number;
         };
         Me: {
+            discord_id?: string | null;
             /** Format: int64 */
             id: number;
             /** Format: int32 */
@@ -1441,13 +1599,15 @@ export interface components {
         NewRequest: {
             /**
              * @description `movie` (default), `show`, `album`, `ebook` or `audiobook`. A show is
-             *     requested whole; specials are left out.
+             *     requested whole, specials left out, unless `seasons` names some.
              */
             kind?: components["schemas"]["RequestKind"];
             /** @description MusicBrainz album (release group) id, for albums. */
             mbid?: string | null;
             /** @description Open Library work id, for ebooks and audiobooks. */
             olid?: string | null;
+            /** @description For a show: only these seasons. Seasons asked for earlier stay followed. */
+            seasons?: number[];
             /**
              * Format: int64
              * @description TMDB id, for films and shows.
@@ -1724,6 +1884,16 @@ export interface components {
             /** Format: int64 */
             year?: number | null;
         };
+        /** @description What Anchorr receives when titles arrive, and what it reads back to catch up. */
+        TitleEvent: {
+            /** @description Always `available`. */
+            event: string;
+            /** Format: int64 */
+            occurred_at: number;
+            /** @description Users with an open request for the title, to tell them it is here. */
+            requester_user_ids: number[];
+            title: components["schemas"]["EventTitle"];
+        };
         Track: {
             codec: string;
             default: boolean;
@@ -1743,6 +1913,8 @@ export interface components {
             text: boolean;
         };
         UserUpdate: {
+            /** @description Links a Discord account (its numeric id); an empty string unlinks it. */
+            discord_id?: string | null;
             /** @description Sets a new password and signs the user out of every device. */
             password?: string | null;
             /** Format: int32 */
@@ -1751,6 +1923,8 @@ export interface components {
         UserView: {
             /** Format: int64 */
             created_at: number;
+            /** @description Linked Discord account (numeric id), used by the Discord bot. */
+            discord_id?: string | null;
             /** Format: int64 */
             id: number;
             /**
@@ -1778,6 +1952,96 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_anchorr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnchorrView"];
+                };
+            };
+        };
+    };
+    put_anchorr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnchorrUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnchorrView"];
+                };
+            };
+            /** @description Anchorr refused or is unreachable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    available: {
+        parameters: {
+            query: {
+                /** @description Unix time in seconds. */
+                since: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleEvent"][];
+                };
+            };
+        };
+    };
+    links: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordLinkView"][];
+                };
+            };
+        };
+    };
     list_keys: {
         parameters: {
             query?: never;
@@ -2760,6 +3024,34 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_own_discord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordLink"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description linked to another user */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

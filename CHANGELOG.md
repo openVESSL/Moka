@@ -6,13 +6,17 @@ All notable changes are recorded here. The format follows
 release may change behavior or configuration; such changes are listed with
 the steps to migrate.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-21
 
 ### Added
-- Discord bot: turn on Anchorr in Connections with just a bot token. People
-  search and request from Discord in their own name (their Discord ID is set
-  under Users), others through a guest account, and hear when their films and
-  shows are ready.
+- Discord bot through Anchorr: Anchorr connects to Moka from its own
+  dashboard (signed in as a Moka admin), or Moka sets it up from Connections >
+  Discord bot. People search and request from Discord in their own name
+  (their Discord ID is set under Users), others through a guest account, and
+  hear when their films and shows are ready.
+- Request rules per person, as in request apps: the right to request (and to
+  be auto-approved) films and shows apart, own limits for films and shows
+  over the global one, and whether the Discord bot messages them.
 - Shows can be requested season by season (`seasons` in a request); seasons
   asked for later are added to the ones already followed.
 - Jellyfin alongside Moka: targeted library refresh after each import (with

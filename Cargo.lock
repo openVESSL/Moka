@@ -1391,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "moka-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "moka-db"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "chacha20poly1305",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "moka-decision"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "moka-core",
  "moka-indexers",
@@ -1425,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "moka-download"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "moka-indexers"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "moka-net",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "moka-metadata"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "reqwest",
@@ -1466,7 +1466,7 @@ dependencies = [
 
 [[package]]
 name = "moka-net"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "reqwest",
@@ -1475,7 +1475,7 @@ dependencies = [
 
 [[package]]
 name = "moka-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "moka-core",
  "regex",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "moka-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "argon2",

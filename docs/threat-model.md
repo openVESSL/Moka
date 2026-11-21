@@ -34,7 +34,7 @@ listed as "tested" has an automated test that runs in CI.
 | Requests to internal cloud services (SSRF) | Outgoing requests refuse link-local, cloud-metadata, multicast and unspecified addresses after DNS resolution and on every redirect. | yes |
 | Path traversal through file names | Image and streaming routes accept only validated names; files are served from fixed folders. | yes |
 | Clickjacking, content sniffing, injected scripts | `Content-Security-Policy` limited to the server's origin, `X-Frame-Options: DENY`, `nosniff`. | yes |
-| An app acting for other users | Only a key whose account holds `act as user` may name a user in `X-Moka-User`; it then has that user's rights, without admin and without acting further. The Discord bot's account holds only that and request management, and nobody signs in with it. | yes |
+| An app acting for other users | Only a key whose account holds `act as user` may name a user in `X-Moka-User`; it then has that user's rights, without admin and without acting further. The Discord bot's account holds only that and request management, and nobody signs in with it. For people, the bot can set only their Discord link, messages, limits and film/show request rights; never admin rights, passwords, or its own account. | yes |
 | Data loss on upgrade | The database is copied next to itself before a schema migration. | yes |
 
 ## Not covered (known limits)

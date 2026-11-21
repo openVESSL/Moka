@@ -20,6 +20,8 @@ Working in development builds, not yet tested widely:
 - Music: catalog, album requests, release choice by audio format, import into `Artist/Album (Year)/` with the cover, and playback in the browser.
 - Books: catalog from Open Library, ebook and audiobook requests, release choice by format, import into `Author/Title (Year)/`, an EPUB reader and audiobook playback in the browser that remember where you stopped.
 
+- Requests per person: rights to request and to be auto-approved for films and shows apart, own limits, and a Discord bot (Anchorr) that requests in each person's name and tells them when their title is ready.
+
 - Phone and TV apps made for Jellyfin can connect to `http://your-server:8484/jellyfin` to browse and play films, shows and music (early: tested with the official client library, not yet with every app).
 
 Planned: books in those apps, a new interface.

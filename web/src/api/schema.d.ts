@@ -81,6 +81,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/anchorr/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The people the bot works for: every user but the bot's own account. */
+        get: operations["bot_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/anchorr/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["bot_update_user"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-keys": {
         parameters: {
             query?: never;
@@ -1261,6 +1294,16 @@ export interface components {
             /** @description Link that adds the bot to a Discord server with the rights it needs. */
             invite_url?: string | null;
         };
+        /**
+         * @description What the bot may change for a person: Discord link and messages, own limits, and
+         *     whether they may request (and get auto-approved) films and shows. Nothing else.
+         */
+        BotUserUpdate: components["schemas"]["UserUpdate"] & {
+            auto_approve_movies?: boolean | null;
+            auto_approve_shows?: boolean | null;
+            request_movies?: boolean | null;
+            request_shows?: boolean | null;
+        };
         CatalogItem: {
             backdrop_path?: string | null;
             local?: components["schemas"]["LocalState"] | null;
@@ -1382,9 +1425,13 @@ export interface components {
         DiscordLink: {
             /** @description The Discord account's numeric id; empty to unlink. */
             discord_id: string;
+            /** @description Whether the Discord bot may message you when your title is ready. */
+            notify?: boolean | null;
         };
         DiscordLinkView: {
             discord_id: string;
+            /** @description The user wants the bot's "ready" messages. */
+            notify: boolean;
             /** Format: int64 */
             user_id: number;
             username: string;
@@ -1948,26 +1995,45 @@ export interface components {
              */
             text: boolean;
         };
+        /** @description A request limit: at most `limit` requests every `days` days (0 = no limit). */
+        UserQuota: {
+            /** Format: int64 */
+            days: number;
+            /** Format: int64 */
+            limit: number;
+        };
         UserUpdate: {
+            /** @description Back to the global limit. */
+            clear_movie_quota?: boolean;
+            clear_show_quota?: boolean;
             /** @description Links a Discord account (its numeric id); an empty string unlinks it. */
             discord_id?: string | null;
+            discord_notify?: boolean | null;
+            movie_quota?: components["schemas"]["UserQuota"] | null;
             /** @description Sets a new password and signs the user out of every device. */
             password?: string | null;
             /** Format: int32 */
             permissions?: number | null;
+            show_quota?: components["schemas"]["UserQuota"] | null;
         };
         UserView: {
             /** Format: int64 */
             created_at: number;
             /** @description Linked Discord account (numeric id), used by the Discord bot. */
             discord_id?: string | null;
+            /** @description Whether the Discord bot messages them when their title is ready. */
+            discord_notify: boolean;
             /** Format: int64 */
             id: number;
+            movie_quota?: components["schemas"]["UserQuota"] | null;
             /**
              * Format: int32
-             * @description Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play.
+             * @description Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play,
+             *     64 act as user (apps), 128 request films, 256 request shows, 512 auto-approve films,
+             *     1024 auto-approve shows.
              */
             permissions: number;
+            show_quota?: components["schemas"]["UserQuota"] | null;
             username: string;
         };
         Webhook: {
@@ -2097,6 +2163,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscordLinkView"][];
+                };
+            };
+        };
+    };
+    bot_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"][];
+                };
+            };
+        };
+    };
+    bot_update_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotUserUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"];
                 };
             };
         };

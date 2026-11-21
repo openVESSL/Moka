@@ -148,6 +148,69 @@
         }
       }
     },
+    "/api/v1/anchorr/users": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The people the bot works for: every user but the bot's own account.",
+        "operationId": "bot_users",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anchorr/users/{id}": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "operationId": "bot_update_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotUserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/api-keys": {
       "get": {
         "tags": [
@@ -3018,6 +3081,43 @@
           }
         }
       },
+      "BotUserUpdate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UserUpdate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "auto_approve_movies": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "auto_approve_shows": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "request_movies": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "request_shows": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What the bot may change for a person: Discord link and messages, own limits, and\nwhether they may request (and get auto-approved) films and shows. Nothing else."
+      },
       "CatalogItem": {
         "type": "object",
         "required": [
@@ -3522,6 +3622,13 @@
           "discord_id": {
             "type": "string",
             "description": "The Discord account's numeric id; empty to unlink."
+          },
+          "notify": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the Discord bot may message you when your title is ready."
           }
         }
       },
@@ -3530,11 +3637,16 @@
         "required": [
           "user_id",
           "username",
-          "discord_id"
+          "discord_id",
+          "notify"
         ],
         "properties": {
           "discord_id": {
             "type": "string"
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "The user wants the bot's \"ready\" messages."
           },
           "user_id": {
             "type": "integer",
@@ -5398,15 +5510,57 @@
           }
         }
       },
+      "UserQuota": {
+        "type": "object",
+        "description": "A request limit: at most `limit` requests every `days` days (0 = no limit).",
+        "required": [
+          "limit",
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "UserUpdate": {
         "type": "object",
         "properties": {
+          "clear_movie_quota": {
+            "type": "boolean",
+            "description": "Back to the global limit."
+          },
+          "clear_show_quota": {
+            "type": "boolean"
+          },
           "discord_id": {
             "type": [
               "string",
               "null"
             ],
             "description": "Links a Discord account (its numeric id); an empty string unlinks it."
+          },
+          "discord_notify": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "movie_quota": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserQuota",
+                "description": "Own limit for films; `{\"limit\": null}`-like clearing is `clear_movie_quota`."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "password": {
             "type": [
@@ -5422,6 +5576,16 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "show_quota": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserQuota"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5431,7 +5595,8 @@
           "id",
           "username",
           "permissions",
-          "created_at"
+          "created_at",
+          "discord_notify"
         ],
         "properties": {
           "created_at": {
@@ -5445,15 +5610,40 @@
             ],
             "description": "Linked Discord account (numeric id), used by the Discord bot."
           },
+          "discord_notify": {
+            "type": "boolean",
+            "description": "Whether the Discord bot messages them when their title is ready."
+          },
           "id": {
             "type": "integer",
             "format": "int64"
           },
+          "movie_quota": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserQuota",
+                "description": "Own request limits; `None` uses the global one, a limit of 0 means none."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "permissions": {
             "type": "integer",
             "format": "int32",
-            "description": "Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play.",
+            "description": "Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play,\n64 act as user (apps), 128 request films, 256 request shows, 512 auto-approve films,\n1024 auto-approve shows.",
             "minimum": 0
+          },
+          "show_quota": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserQuota"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "username": {
             "type": "string"

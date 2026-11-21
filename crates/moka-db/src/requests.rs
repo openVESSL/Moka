@@ -144,6 +144,24 @@ pub async fn requester_ids(pool: &Pool, title_id: i64) -> Result<Vec<i64>, Error
     .await
 }
 
+/// Requests of one kind of title (`movie`, `show`) a user made in the last days.
+pub async fn count_recent_for_user_kind(
+    pool: &Pool,
+    user_id: i64,
+    kind: &str,
+    days: i64,
+) -> Result<i64, Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM requests r JOIN titles t ON t.id = r.title_id
+         WHERE r.user_id = ? AND t.kind = ? AND r.status != 'declined' AND r.created_at > ?",
+    )
+    .bind(user_id)
+    .bind(kind)
+    .bind(now() - days * 86_400)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn count_recent_for_user(pool: &Pool, user_id: i64, days: i64) -> Result<i64, Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM requests WHERE user_id = ? AND status != 'declined' AND created_at > ?",

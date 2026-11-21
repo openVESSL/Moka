@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, unwrap } from "../api/client";
+import { api, unwrap, type Schemas } from "../api/client";
 
 const PERMS = [
   { bit: 1, label: "Admin" },
@@ -10,7 +10,77 @@ const PERMS = [
   { bit: 8, label: "Auto-approve" },
   { bit: 16, label: "Manage library" },
   { bit: 32, label: "Play" },
+  { bit: 128, label: "Request films" },
+  { bit: 256, label: "Request shows" },
+  { bit: 512, label: "Auto-approve films" },
+  { bit: 1024, label: "Auto-approve shows" },
 ] as const;
+
+type User = Schemas["UserView"];
+type UserUpdate = Schemas["UserUpdate"];
+
+/** "3 every 7 days" fields; an empty number means the global limit. */
+function LimitField({ label, value, onChange }: { label: string; value: { limit: string; days: string }; onChange: (v: { limit: string; days: string }) => void }) {
+  return (
+    <fieldset className="flex items-end gap-2">
+      <legend className="field-label">{label}</legend>
+      <input
+        className="field data w-20 text-sm"
+        inputMode="numeric"
+        value={value.limit}
+        onChange={(e) => onChange({ ...value, limit: e.target.value.replace(/\D/g, "") })}
+        placeholder="global"
+        aria-label={`${label}: requests`}
+      />
+      <span className="pb-2 text-sm text-muted">every</span>
+      <input
+        className="field data w-16 text-sm"
+        inputMode="numeric"
+        value={value.days}
+        onChange={(e) => onChange({ ...value, days: e.target.value.replace(/\D/g, "") })}
+        aria-label={`${label}: days`}
+      />
+      <span className="pb-2 text-sm text-muted">days</span>
+    </fieldset>
+  );
+}
+
+/** Per person, like a request app: own limits for films and shows, and the bot's messages. */
+function RequestLimits({ user, onSave }: { user: User; onSave: (id: number, body: UserUpdate) => void }) {
+  const toField = (q?: { limit: number; days: number } | null) => ({ limit: q ? String(q.limit) : "", days: String(q?.days ?? 7) });
+  const [films, setFilms] = useState(toField(user.movie_quota));
+  const [shows, setShows] = useState(toField(user.show_quota));
+  const [notify, setNotify] = useState(user.discord_notify);
+  useEffect(() => {
+    setFilms(toField(user.movie_quota));
+    setShows(toField(user.show_quota));
+    setNotify(user.discord_notify);
+  }, [user]);
+  const quota = (f: { limit: string; days: string }) => ({ limit: Number(f.limit), days: Number(f.days) || 7 });
+  return (
+    <form
+      className="flex w-full flex-wrap items-end gap-x-6 gap-y-3 pb-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(user.id, {
+          discord_notify: notify,
+          ...(films.limit === "" ? { clear_movie_quota: true } : { movie_quota: quota(films) }),
+          ...(shows.limit === "" ? { clear_show_quota: true } : { show_quota: quota(shows) }),
+        });
+      }}
+    >
+      <LimitField label="Film limit" value={films} onChange={setFilms} />
+      <LimitField label="Show limit" value={shows} onChange={setShows} />
+      <label className="inline-flex items-center gap-1.5 pb-2 text-sm text-muted">
+        <input type="checkbox" className="accent-accent" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+        Discord message when ready
+      </label>
+      <button type="submit" className="btn-primary">
+        Save
+      </button>
+    </form>
+  );
+}
 
 /** The person's Discord account, so the Discord bot requests in their name. Saved when the field is left. */
 function DiscordId({ id, value, onSave }: { id: number; value: string; onSave: (id: number, discord_id: string) => void }) {
@@ -49,6 +119,12 @@ export function UsersSection() {
       unwrap(api.PUT("/api/v1/users/{id}", { params: { path: { id } }, body: { permissions } })),
     onSuccess: invalidate,
   });
+  const [open, setOpen] = useState<number | null>(null);
+  const setLimits = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: UserUpdate }) =>
+      unwrap(api.PUT("/api/v1/users/{id}", { params: { path: { id } }, body })),
+    onSettled: invalidate,
+  });
   const setDiscord = useMutation({
     mutationFn: ({ id, discord_id }: { id: number; discord_id: string }) =>
       unwrap(api.PUT("/api/v1/users/{id}", { params: { path: { id } }, body: { discord_id } })),
@@ -58,7 +134,7 @@ export function UsersSection() {
     mutationFn: (id: number) => unwrap(api.DELETE("/api/v1/users/{id}", { params: { path: { id } } })),
     onSuccess: invalidate,
   });
-  const error = create.error ?? setPerms.error ?? setDiscord.error ?? remove.error;
+  const error = create.error ?? setPerms.error ?? setDiscord.error ?? setLimits.error ?? remove.error;
 
   return (
     <div className="mt-6">
@@ -87,12 +163,21 @@ export function UsersSection() {
             <DiscordId id={u.id} value={u.discord_id ?? ""} onSave={(id, discord_id) => setDiscord.mutate({ id, discord_id })} />
             <button
               type="button"
+              className="text-sm text-muted underline-offset-4 hover:underline"
+              aria-expanded={open === u.id}
+              onClick={() => setOpen(open === u.id ? null : u.id)}
+            >
+              Limits
+            </button>
+            <button
+              type="button"
               aria-label={`Delete ${u.username}`}
               className="text-faint hover:text-danger"
               onClick={() => remove.mutate(u.id)}
             >
               <Trash2 aria-hidden className="size-4" />
             </button>
+            {open === u.id && <RequestLimits user={u} onSave={(id, body) => setLimits.mutate({ id, body })} />}
           </li>
         ))}
       </ul>

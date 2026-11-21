@@ -29,6 +29,37 @@ pub struct Quota {
     pub days: i64,
 }
 
+/// The user's own limit for films or shows wins over the global one; a limit
+/// of 0 means none for this user.
+async fn check_limit(db: &moka_db::Pool, user: &moka_db::users::User, kind: &str) -> ApiResult<()> {
+    let own = match kind {
+        "movie" => user.movie_quota_limit.map(|l| (l, user.movie_quota_days)),
+        "show" => user.show_quota_limit.map(|l| (l, user.show_quota_days)),
+        _ => None,
+    };
+    if let Some((limit, days)) = own {
+        let days = days.unwrap_or(7).max(1);
+        if limit > 0 && moka_db::requests::count_recent_for_user_kind(db, user.id, kind, days).await? >= limit
+        {
+            let what = if kind == "movie" { "films" } else { "shows" };
+            return Err(ApiError::TooManyRequests(format!(
+                "request limit reached: {limit} {what} every {days} days"
+            )));
+        }
+        return Ok(());
+    }
+    let quota: Quota = moka_db::settings::get(db, "requests.quota").await?.unwrap_or_default();
+    if let Some(limit) = quota.limit.filter(|l| *l > 0) {
+        let days = quota.days.max(1);
+        if moka_db::requests::count_recent_for_user(db, user.id, days).await? >= limit {
+            return Err(ApiError::TooManyRequests(format!(
+                "request limit reached: {limit} requests every {days} days"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NewRequest {
     /// TMDB id, for films and shows.
@@ -153,24 +184,22 @@ pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<NewRequest>,
 ) -> ApiResult<Json<Request>> {
-    user.require(Permissions::REQUEST)?;
+    let kind = match body.kind {
+        RequestKind::Movie => "movie",
+        RequestKind::Show => "show",
+        _ => "other",
+    };
     let perms = user.0.permissions();
+    if !perms.may_request(kind) {
+        return Err(ApiError::Forbidden);
+    }
     let db = &state.db;
 
     if !perms.has(Permissions::MANAGE_REQUESTS) {
-        let quota: Quota = moka_db::settings::get(db, "requests.quota").await?.unwrap_or_default();
-        if let Some(limit) = quota.limit.filter(|l| *l > 0) {
-            let used = moka_db::requests::count_recent_for_user(db, user.0.id, quota.days.max(1)).await?;
-            if used >= limit {
-                return Err(ApiError::TooManyRequests(format!(
-                    "request limit reached: {limit} requests every {} days",
-                    quota.days.max(1)
-                )));
-            }
-        }
+        check_limit(db, &user.0, kind).await?;
     }
 
-    let auto = perms.has(Permissions::AUTO_APPROVE);
+    let auto = perms.auto_approves(kind);
     let initial = if auto { TitleState::Wanted } else { TitleState::Requested };
     let mut title = match body.kind {
         RequestKind::Show => {

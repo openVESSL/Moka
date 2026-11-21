@@ -124,6 +124,8 @@ pub mod webhooks;
         anchorr::put_anchorr,
         anchorr::connect,
         anchorr::links,
+        anchorr::bot_users,
+        anchorr::bot_update_user,
         anchorr::available,
     ),
     components(schemas(Health, crate::error::ErrorBody))

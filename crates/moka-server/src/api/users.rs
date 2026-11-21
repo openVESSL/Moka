@@ -22,11 +22,29 @@ pub fn router() -> Router<AppState> {
 pub struct UserView {
     pub id: i64,
     pub username: String,
-    /// Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play.
+    /// Bitmask: 1 admin, 2 manage requests, 4 request, 8 auto-approve, 16 manage library, 32 play,
+    /// 64 act as user (apps), 128 request films, 256 request shows, 512 auto-approve films,
+    /// 1024 auto-approve shows.
     pub permissions: u32,
     pub created_at: i64,
     /// Linked Discord account (numeric id), used by the Discord bot.
     pub discord_id: Option<String>,
+    /// Whether the Discord bot messages them when their title is ready.
+    pub discord_notify: bool,
+    /// Own request limits; `None` uses the global one, a limit of 0 means none.
+    pub movie_quota: Option<UserQuota>,
+    pub show_quota: Option<UserQuota>,
+}
+
+/// A request limit: at most `limit` requests every `days` days (0 = no limit).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+pub struct UserQuota {
+    pub limit: i64,
+    pub days: i64,
+}
+
+fn quota(limit: Option<i64>, days: Option<i64>) -> Option<UserQuota> {
+    limit.map(|limit| UserQuota { limit, days: days.unwrap_or(7) })
 }
 
 impl From<moka_db::users::User> for UserView {
@@ -37,6 +55,9 @@ impl From<moka_db::users::User> for UserView {
             permissions: u.permissions().0,
             created_at: u.created_at,
             discord_id: u.discord_id.clone(),
+            discord_notify: u.discord_notify,
+            movie_quota: quota(u.movie_quota_limit, u.movie_quota_days),
+            show_quota: quota(u.show_quota_limit, u.show_quota_days),
         }
     }
 }
@@ -56,12 +77,23 @@ pub struct UserUpdate {
     pub password: Option<String>,
     /// Links a Discord account (its numeric id); an empty string unlinks it.
     pub discord_id: Option<String>,
+    pub discord_notify: Option<bool>,
+    /// Own limit for films; `{"limit": null}`-like clearing is `clear_movie_quota`.
+    pub movie_quota: Option<UserQuota>,
+    pub show_quota: Option<UserQuota>,
+    /// Back to the global limit.
+    #[serde(default)]
+    pub clear_movie_quota: bool,
+    #[serde(default)]
+    pub clear_show_quota: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DiscordLink {
     /// The Discord account's numeric id; empty to unlink.
     pub discord_id: String,
+    /// Whether the Discord bot may message you when your title is ready.
+    pub notify: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -70,7 +102,36 @@ pub struct PasswordChange {
     pub new: String,
 }
 
-const ALL: u32 = 0b111_1111;
+const ALL: u32 = Permissions::ALL.0;
+
+/// Discord link, DM choice and own limits, as given (missing fields are left alone).
+pub(crate) async fn apply_request_settings(s: &AppState, id: i64, b: &UserUpdate) -> ApiResult<()> {
+    if let Some(d) = &b.discord_id {
+        link_discord(s, id, d).await?;
+    }
+    if let Some(n) = b.discord_notify {
+        moka_db::users::set_discord_notify(&s.db, id, n).await?;
+    }
+    let check = |q: UserQuota| {
+        if q.limit < 0 || !(1..=365).contains(&q.days) {
+            return Err(ApiError::BadRequest("a limit is 0 or more requests every 1 to 365 days".into()));
+        }
+        Ok(q)
+    };
+    if b.clear_movie_quota {
+        moka_db::users::set_movie_quota(&s.db, id, None, None).await?;
+    } else if let Some(q) = b.movie_quota {
+        let q = check(q)?;
+        moka_db::users::set_movie_quota(&s.db, id, Some(q.limit), Some(q.days)).await?;
+    }
+    if b.clear_show_quota {
+        moka_db::users::set_show_quota(&s.db, id, None, None).await?;
+    } else if let Some(q) = b.show_quota {
+        let q = check(q)?;
+        moka_db::users::set_show_quota(&s.db, id, Some(q.limit), Some(q.days)).await?;
+    }
+    Ok(())
+}
 
 /// Links (or with an empty id unlinks) a Discord account, one Moka user per account.
 async fn link_discord(s: &AppState, user_id: i64, raw: &str) -> ApiResult<()> {
@@ -144,13 +205,11 @@ pub async fn update(
         }
         moka_db::users::set_permissions(&s.db, id, p).await?;
     }
-    if let Some(pw) = b.password {
-        check_password(&pw)?;
-        moka_db::users::set_password(&s.db, id, &hash_password(&pw)?).await?;
+    if let Some(pw) = &b.password {
+        check_password(pw)?;
+        moka_db::users::set_password(&s.db, id, &hash_password(pw)?).await?;
     }
-    if let Some(d) = b.discord_id {
-        link_discord(&s, id, &d).await?;
-    }
+    apply_request_settings(&s, id, &b).await?;
     let u = moka_db::users::by_id(&s.db, id).await?.ok_or(ApiError::NotFound("user"))?;
     Ok(Json(u.into()))
 }
@@ -189,5 +248,9 @@ pub async fn set_own_discord(
     State(s): State<AppState>,
     Json(b): Json<DiscordLink>,
 ) -> ApiResult<()> {
-    link_discord(&s, user.0.id, &b.discord_id).await
+    link_discord(&s, user.0.id, &b.discord_id).await?;
+    if let Some(n) = b.notify {
+        moka_db::users::set_discord_notify(&s.db, user.0.id, n).await?;
+    }
+    Ok(())
 }

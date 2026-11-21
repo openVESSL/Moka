@@ -119,7 +119,9 @@ export function AnchorrSection() {
           checked={f.enabled}
           onChange={(e) => setF((x) => ({ ...x, enabled: e.target.checked }))}
         />
-        Run the Discord bot
+        {data?.from_anchorr
+          ? "Connected from Anchorr (untick to disconnect)"
+          : "Set Anchorr up from here instead (needs MOKA_URL on Anchorr)"}
       </label>
       {f.enabled && !data?.from_anchorr && (
         <>

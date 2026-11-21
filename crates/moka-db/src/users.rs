@@ -17,6 +17,14 @@ pub struct User {
     pub created_at: i64,
     /// Discord account linked to this user, as its numeric id.
     pub discord_id: Option<String>,
+    /// Own request limits, films and shows apart: `None` uses the global
+    /// limit, a limit of 0 means none.
+    pub movie_quota_limit: Option<i64>,
+    pub movie_quota_days: Option<i64>,
+    pub show_quota_limit: Option<i64>,
+    pub show_quota_days: Option<i64>,
+    /// Whether the Discord bot may message the user when a title is ready.
+    pub discord_notify: bool,
 }
 
 /// Column adapter: SQLite stores the bitmask as a signed integer.
@@ -147,6 +155,46 @@ pub async fn set_password(pool: &Pool, id: i64, password_hash: &str) -> Result<(
 pub async fn set_discord_id(pool: &Pool, id: i64, discord_id: Option<&str>) -> Result<(), Error> {
     sqlx::query("UPDATE users SET discord_id = ? WHERE id = ?")
         .bind(discord_id)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_discord_notify(pool: &Pool, id: i64, notify: bool) -> Result<(), Error> {
+    sqlx::query("UPDATE users SET discord_notify = ? WHERE id = ?")
+        .bind(notify)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Own limit for films: `None` returns the user to the global limit.
+pub async fn set_movie_quota(
+    pool: &Pool,
+    id: i64,
+    limit: Option<i64>,
+    days: Option<i64>,
+) -> Result<(), Error> {
+    sqlx::query("UPDATE users SET movie_quota_limit = ?, movie_quota_days = ? WHERE id = ?")
+        .bind(limit)
+        .bind(days)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_show_quota(
+    pool: &Pool,
+    id: i64,
+    limit: Option<i64>,
+    days: Option<i64>,
+) -> Result<(), Error> {
+    sqlx::query("UPDATE users SET show_quota_limit = ?, show_quota_days = ? WHERE id = ?")
+        .bind(limit)
+        .bind(days)
         .bind(id)
         .execute(pool)
         .await?;

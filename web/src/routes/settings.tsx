@@ -65,7 +65,7 @@ export function ConnectionsPage() {
       </Section>
       <Section
         title="Discord bot"
-        intro="People search and request from your Discord server, and hear when their films and shows are ready. Paste a bot token and Moka sets up the rest: the bot's own account, and a guest account for people without a linked account (link someone by adding their Discord ID under Users)."
+        intro="People search and request from your Discord server through Anchorr, and hear when their films and shows are ready. Connect it from Anchorr: turn on System > Experimental > Use Moka there, then Connections > Moka. Each person's Discord ID, limits and messages are set under Users."
       >
         <AnchorrSection />
       </Section>

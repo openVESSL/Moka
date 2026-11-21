@@ -684,7 +684,7 @@ mod tests {
         let res = app.clone().oneshot(bot("GET", "/api/v1/anchorr/links", None, "")).await.unwrap();
         assert_eq!(
             body_json(res).await,
-            serde_json::json!([{"user_id": ana.id, "username": "ana", "discord_id": "123456789012345678"}])
+            serde_json::json!([{"user_id": ana.id, "username": "ana", "discord_id": "123456789012345678", "notify": true}])
         );
         let res = app
             .clone()
@@ -692,6 +692,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN, "people do not read everyone's links");
+
+        // the bot sets what Seerr sets per person: rights for films and shows, own limits, messages
+        let res = app.clone().oneshot(bot("GET", "/api/v1/anchorr/users", None, "")).await.unwrap();
+        let people = body_json(res).await;
+        let names: Vec<&str> =
+            people.as_array().unwrap().iter().map(|u| u["username"].as_str().unwrap()).collect();
+        assert!(
+            names.contains(&"ana") && !names.contains(&"anchorr-bot"),
+            "the bot's own account is not listed"
+        );
+        let change = r#"{"request_shows":false,"movie_quota":{"limit":1,"days":7},"discord_notify":false}"#;
+        let res = app
+            .clone()
+            .oneshot(bot("PUT", &format!("/api/v1/anchorr/users/{}", ana.id), None, change))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let view = body_json(res).await;
+        assert_eq!(view["movie_quota"], serde_json::json!({"limit": 1, "days": 7}));
+        assert_eq!(view["discord_notify"], false);
+        let res = app
+            .clone()
+            .oneshot(bot("POST", "/api/v1/requests", Some(ana.id), r#"{"tmdb_id":603}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS, "her own film limit is reached");
+        assert!(body_json(res).await["message"].as_str().unwrap().contains("1 films every 7 days"));
+        let res = app
+            .clone()
+            .oneshot(bot("POST", "/api/v1/requests", Some(ana.id), r#"{"tmdb_id":1399,"kind":"show"}"#))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "no more shows for her");
+        let res = app.clone().oneshot(bot("GET", "/api/v1/anchorr/links", None, "")).await.unwrap();
+        assert_eq!(body_json(res).await[0]["notify"], false);
+        // never more than that
+        let res = app
+            .clone()
+            .oneshot(bot(
+                "PUT",
+                &format!("/api/v1/anchorr/users/{admin_id}"),
+                None,
+                r#"{"request_movies":false,"permissions":0}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body_json(res).await["permissions"], 1, "an admin stays an admin");
+        let me = body_json(app.clone().oneshot(bot("GET", "/api/v1/me", None, "")).await.unwrap()).await;
+        let own = format!("/api/v1/anchorr/users/{}", me["id"]);
+        let res = app.clone().oneshot(bot("PUT", &own, None, r#"{"discord_id":""}"#)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "the bot does not change its own account");
 
         // the film arrives: Anchorr hears it, and can read it back later
         for to in ["wanted", "searching", "grabbed", "downloading", "importing", "available"] {
